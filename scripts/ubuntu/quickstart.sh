@@ -5,6 +5,7 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 hostname="${OPENCUTTLES_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
 origin="${OPENCUTTLES_ALLOWED_ORIGIN:-https://${hostname}}"
 env_file="/etc/opencuttles/opencuttles.env"
+go_version="${OPENCUTTLES_GO_VERSION:-1.23.10}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This quickstart is intended for Ubuntu Server." >&2
@@ -13,10 +14,33 @@ fi
 
 echo "Installing host dependencies..."
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl git make rsync sqlite3 ufw caddy golang-go nodejs npm
+sudo apt-get install -y ca-certificates curl git make rsync sqlite3 ufw caddy nodejs npm tar
+
+go_bin="$(command -v go || true)"
+if [[ -z "$go_bin" ]] || ! "$go_bin" version | grep -Eq 'go1\.(23|24|25)'; then
+  arch="$(dpkg --print-architecture)"
+  case "$arch" in
+    amd64) go_arch="amd64" ;;
+    arm64) go_arch="arm64" ;;
+    *) echo "Unsupported architecture for Go quick install: ${arch}" >&2; exit 1 ;;
+  esac
+  echo "Installing Go ${go_version} for linux/${go_arch}..."
+  curl -fsSL "https://go.dev/dl/go${go_version}.linux-${go_arch}.tar.gz" -o /tmp/opencuttles-go.tgz
+  sudo rm -rf /usr/local/go
+  sudo tar -C /usr/local -xzf /tmp/opencuttles-go.tgz
+  export PATH="/usr/local/go/bin:${PATH}"
+else
+  export PATH="$(dirname "$go_bin"):${PATH}"
+fi
+
+echo "Using $(go version)"
 
 echo "Checking host readiness..."
-bash "${root_dir}/scripts/ubuntu/check-host.sh" || true
+if ! bash "${root_dir}/scripts/ubuntu/check-host.sh"; then
+  echo
+  echo "Continuing setup. Missing Cuttlefish/ADB tools only block live Android instance launch."
+  echo "The dashboard and API will start with OPENCUTTLES_EXECUTE_CVD=0 until you install them."
+fi
 
 echo "Preparing reproducible dependency files..."
 (cd "${root_dir}/backend" && go mod tidy)

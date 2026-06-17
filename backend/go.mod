@@ -1,5 +1,5 @@
 module github.com/opencuttles/opencuttles/backend
 
-go 1.25
+go 1.23
 
-require modernc.org/sqlite v1.52.0
+require modernc.org/sqlite v1.37.1
