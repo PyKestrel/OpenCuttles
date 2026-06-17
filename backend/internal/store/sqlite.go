@@ -199,7 +199,7 @@ func (s *SQLite) ListImages(ctx context.Context) ([]domain.Image, error) {
 	}
 	defer rows.Close()
 
-	var images []domain.Image
+	images := make([]domain.Image, 0)
 	for rows.Next() {
 		image, err := scanImage(rows)
 		if err != nil {
@@ -316,7 +316,7 @@ func (s *SQLite) ListInstances(ctx context.Context) ([]domain.Instance, error) {
 	}
 	defer rows.Close()
 
-	var instances []domain.Instance
+	instances := make([]domain.Instance, 0)
 	for rows.Next() {
 		instance, err := scanInstance(rows)
 		if err != nil {
@@ -394,7 +394,7 @@ func (s *SQLite) ListOperations(ctx context.Context) ([]domain.Operation, error)
 	}
 	defer rows.Close()
 
-	var operations []domain.Operation
+	operations := make([]domain.Operation, 0)
 	for rows.Next() {
 		operation, err := scanOperation(rows)
 		if err != nil {

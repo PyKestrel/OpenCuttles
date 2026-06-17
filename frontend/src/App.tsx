@@ -43,7 +43,14 @@ export default function App() {
       api.health(),
       canAdmin ? api.audit().catch(() => []) : Promise.resolve([]),
     ]);
-    setData({ host, images, instances, operations, health, audit });
+    setData({
+      host,
+      images: images ?? [],
+      instances: instances ?? [],
+      operations: operations ?? [],
+      health,
+      audit: audit ?? [],
+    });
   }
 
   useEffect(() => {

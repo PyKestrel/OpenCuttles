@@ -114,7 +114,7 @@ func (s *SQLite) ListAuditEvents(ctx context.Context, limit int) ([]domain.Audit
 	}
 	defer rows.Close()
 
-	var events []domain.AuditEvent
+	events := make([]domain.AuditEvent, 0)
 	for rows.Next() {
 		event, err := scanAuditEvent(rows)
 		if err != nil {
