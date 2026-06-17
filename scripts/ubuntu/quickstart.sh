@@ -15,6 +15,7 @@ fi
 echo "Installing host dependencies..."
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl git make rsync sqlite3 ufw caddy nodejs npm tar
+sudo useradd --system --create-home --home-dir /var/lib/opencuttles --shell /usr/sbin/nologin opencuttles 2>/dev/null || true
 
 go_bin="$(command -v go || true)"
 if [[ -z "$go_bin" ]] || ! "$go_bin" version | grep -Eq 'go1\.(23|24|25)'; then
@@ -35,6 +36,9 @@ fi
 
 echo "Using $(go version)"
 
+echo "Installing Android virtualization tools..."
+bash "${root_dir}/scripts/ubuntu/install-android-tools.sh"
+
 echo "Checking host readiness..."
 if ! bash "${root_dir}/scripts/ubuntu/check-host.sh"; then
   echo
@@ -44,7 +48,14 @@ fi
 
 echo "Preparing reproducible dependency files..."
 (cd "${root_dir}/backend" && go mod tidy)
-(cd "${root_dir}/frontend" && npm install)
+(
+  cd "${root_dir}/frontend"
+  if ! npm install; then
+    echo "npm install failed; removing stale lockfile and retrying once..."
+    rm -f package-lock.json
+    npm install
+  fi
+)
 
 echo "Building OpenCuttles package..."
 (cd "${root_dir}" && make package)

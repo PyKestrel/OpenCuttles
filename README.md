@@ -81,6 +81,9 @@ bash scripts/ubuntu/quickstart.sh
 
 Set `OPENCUTTLES_HOSTNAME=opencuttles.example.com` before running quickstart to
 control the Caddy hostname and allowed browser origin.
+Quickstart installs `adb` and, if missing, builds and installs the Google
+Cuttlefish host packages. Set `OPENCUTTLES_SKIP_CUTTLEFISH_INSTALL=1` to skip the
+Cuttlefish build and start only the dashboard/API in dry-run mode.
 
 ## Local Development
 
