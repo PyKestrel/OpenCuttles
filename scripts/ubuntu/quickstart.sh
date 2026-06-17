@@ -3,10 +3,27 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 hostname="${OPENCUTTLES_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
-origin="${OPENCUTTLES_ALLOWED_ORIGIN:-https://${hostname}}"
 env_file="/etc/opencuttles/opencuttles.env"
 go_version="${OPENCUTTLES_GO_VERSION:-1.23.10}"
 node_major="${OPENCUTTLES_NODE_MAJOR:-22}"
+
+is_ip_address() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+if [[ -n "${OPENCUTTLES_ALLOWED_ORIGIN:-}" ]]; then
+  origin="$OPENCUTTLES_ALLOWED_ORIGIN"
+elif [[ "${OPENCUTTLES_HTTP:-0}" == "1" || "$hostname" != *.* ]] || is_ip_address "$hostname"; then
+  origin="http://${hostname}"
+else
+  origin="https://${hostname}"
+fi
+
+site_address="$origin"
+secure_cookies="1"
+if [[ "$origin" == http://* ]]; then
+  secure_cookies="0"
+fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This quickstart is intended for Ubuntu Server." >&2
@@ -75,6 +92,10 @@ echo "Building OpenCuttles package..."
 echo "Installing OpenCuttles services..."
 bash "${root_dir}/scripts/ubuntu/install.sh" "${root_dir}/dist/package"
 
+if sudo test -f /etc/caddy/conf.d/opencuttles.caddy; then
+  sudo sed -i "1s#.*#${site_address} {#" /etc/caddy/conf.d/opencuttles.caddy
+fi
+
 if sudo test ! -s "$env_file"; then
   sudo install -m 0640 "${root_dir}/deploy/systemd/opencuttles.env.example" "$env_file"
 fi
@@ -83,7 +104,7 @@ bootstrap_token="$(openssl rand -hex 24 2>/dev/null || date +%s%N)"
 sudo sed -i \
   -e "s#^OPENCUTTLES_ALLOWED_ORIGIN=.*#OPENCUTTLES_ALLOWED_ORIGIN=${origin}#" \
   -e "s#^OPENCUTTLES_BOOTSTRAP_TOKEN=.*#OPENCUTTLES_BOOTSTRAP_TOKEN=${bootstrap_token}#" \
-  -e "s#^OPENCUTTLES_SECURE_COOKIES=.*#OPENCUTTLES_SECURE_COOKIES=1#" \
+  -e "s#^OPENCUTTLES_SECURE_COOKIES=.*#OPENCUTTLES_SECURE_COOKIES=${secure_cookies}#" \
   -e "s#^OPENCUTTLES_TRUST_PROXY_HEADERS=.*#OPENCUTTLES_TRUST_PROXY_HEADERS=1#" \
   "$env_file"
 

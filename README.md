@@ -81,6 +81,10 @@ bash scripts/ubuntu/quickstart.sh
 
 Set `OPENCUTTLES_HOSTNAME=opencuttles.example.com` before running quickstart to
 control the Caddy hostname and allowed browser origin.
+Single-label hostnames and IP addresses, such as `opencuttles` or `192.168.1.50`,
+default to plain HTTP to avoid local TLS certificate errors. Use
+`OPENCUTTLES_ALLOWED_ORIGIN=https://your.domain.example` for a real HTTPS
+hostname.
 Quickstart installs Go 1.23 and Node.js 22 when the host versions are missing or
 too old.
 Quickstart installs `adb` and, if missing, builds and installs the Google

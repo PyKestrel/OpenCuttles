@@ -21,6 +21,10 @@ Set `OPENCUTTLES_CONFIGURE_FIREWALL=1` to let quickstart apply the bundled UFW
 rules.
 Set `OPENCUTTLES_SKIP_CUTTLEFISH_INSTALL=1` to skip the Cuttlefish build and run
 only the dashboard/API in dry-run mode.
+Single-label hostnames and IP addresses default to HTTP, for example
+`OPENCUTTLES_HOSTNAME=opencuttles`. Fully qualified domains default to HTTPS.
+Set `OPENCUTTLES_ALLOWED_ORIGIN=https://your.domain.example` to force the exact
+browser origin.
 
 ## 1. Prepare the host
 
