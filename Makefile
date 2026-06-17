@@ -1,8 +1,11 @@
 SHELL := bash
 
-.PHONY: all test test-backend test-frontend build build-backend build-frontend lint package clean
+.PHONY: all dev test test-backend test-frontend build build-backend build-frontend lint package clean
 
 all: test build
+
+dev:
+	bash scripts/dev/start.sh
 
 test: test-backend test-frontend
 
@@ -30,6 +33,7 @@ package: build
 	mkdir -p dist/package/opt/opencuttles/bin dist/package/opt/opencuttles/frontend
 	cp dist/opencuttles-api dist/package/opt/opencuttles/bin/
 	cp -R frontend/dist dist/package/opt/opencuttles/frontend/dist
+	cp frontend/package.json dist/package/opt/opencuttles/frontend/
 	cp -R deploy dist/package/
 	cp -R scripts dist/package/
 	cp -R docs dist/package/

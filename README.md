@@ -54,6 +54,34 @@ Run the readiness check on the target host:
 bash scripts/ubuntu/check-host.sh
 ```
 
+## Fast Start
+
+Local development on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\dev\setup.ps1
+powershell -ExecutionPolicy Bypass -File scripts\dev\start.ps1
+```
+
+Local development on Linux/macOS:
+
+```bash
+bash scripts/dev/setup.sh
+bash scripts/dev/start.sh
+```
+
+Then open `http://localhost:5173`. The dev server stores data in `data/dev`,
+runs in dry-run Cuttlefish mode, and does not require a bootstrap token.
+
+One-command Ubuntu Server quickstart:
+
+```bash
+bash scripts/ubuntu/quickstart.sh
+```
+
+Set `OPENCUTTLES_HOSTNAME=opencuttles.example.com` before running quickstart to
+control the Caddy hostname and allowed browser origin.
+
 ## Local Development
 
 Backend:

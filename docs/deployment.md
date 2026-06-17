@@ -3,6 +3,21 @@
 This guide describes the intended single-host MVP deployment. It assumes an
 Ubuntu Server VM with nested virtualization enabled.
 
+## Quickstart
+
+For a new Ubuntu Server host, run:
+
+```bash
+OPENCUTTLES_HOSTNAME=opencuttles.example.com bash scripts/ubuntu/quickstart.sh
+```
+
+The script installs common host dependencies, prepares Go/npm dependencies,
+builds a package, installs the systemd/Caddy assets, generates a one-time
+bootstrap token, starts the API, and prints the dashboard URL.
+
+Set `OPENCUTTLES_CONFIGURE_FIREWALL=1` to let quickstart apply the bundled UFW
+rules.
+
 ## 1. Prepare the host
 
 Install Cuttlefish, Android platform tools, Go, Node.js, Caddy, UFW, sqlite3,
