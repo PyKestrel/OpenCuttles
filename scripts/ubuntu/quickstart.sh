@@ -6,6 +6,7 @@ hostname="${OPENCUTTLES_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
 origin="${OPENCUTTLES_ALLOWED_ORIGIN:-https://${hostname}}"
 env_file="/etc/opencuttles/opencuttles.env"
 go_version="${OPENCUTTLES_GO_VERSION:-1.23.10}"
+node_major="${OPENCUTTLES_NODE_MAJOR:-22}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This quickstart is intended for Ubuntu Server." >&2
@@ -14,7 +15,7 @@ fi
 
 echo "Installing host dependencies..."
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl git make rsync sqlite3 ufw caddy nodejs npm tar
+sudo apt-get install -y ca-certificates curl git make rsync sqlite3 ufw caddy tar
 sudo useradd --system --create-home --home-dir /var/lib/opencuttles --shell /usr/sbin/nologin opencuttles 2>/dev/null || true
 
 go_bin="$(command -v go || true)"
@@ -35,6 +36,17 @@ else
 fi
 
 echo "Using $(go version)"
+
+node_bin="$(command -v node || true)"
+if [[ -z "$node_bin" ]] || ! "$node_bin" -v | grep -Eq '^v(2[0-9]|[3-9][0-9])\.'; then
+  echo "Installing Node.js ${node_major}.x..."
+  curl -fsSL "https://deb.nodesource.com/setup_${node_major}.x" | sudo -E bash -
+  sudo apt-get install -y nodejs
+else
+  echo "Using $(node -v) and npm $(npm -v)"
+fi
+
+echo "Using Node $(node -v) and npm $(npm -v)"
 
 echo "Installing Android virtualization tools..."
 bash "${root_dir}/scripts/ubuntu/install-android-tools.sh"

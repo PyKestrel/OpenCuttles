@@ -11,10 +11,11 @@ For a new Ubuntu Server host, run:
 OPENCUTTLES_HOSTNAME=opencuttles.example.com bash scripts/ubuntu/quickstart.sh
 ```
 
-The script installs common host dependencies, installs `adb`, builds and installs
-Google Cuttlefish host packages if they are missing, prepares Go/npm
-dependencies, builds a package, installs the systemd/Caddy assets, generates a
-one-time bootstrap token, starts the API, and prints the dashboard URL.
+The script installs common host dependencies, installs Go 1.23 and Node.js 22
+when needed, installs `adb`, builds and installs Google Cuttlefish host packages
+if they are missing, prepares Go/npm dependencies, builds a package, installs the
+systemd/Caddy assets, generates a one-time bootstrap token, starts the API, and
+prints the dashboard URL.
 
 Set `OPENCUTTLES_CONFIGURE_FIREWALL=1` to let quickstart apply the bundled UFW
 rules.
@@ -23,7 +24,7 @@ only the dashboard/API in dry-run mode.
 
 ## 1. Prepare the host
 
-Install Cuttlefish, Android platform tools, Go, Node.js, Caddy, UFW, sqlite3,
+Install Cuttlefish, Android platform tools, Go 1.23+, Node.js 20+, Caddy, UFW, sqlite3,
 and rsync using your standard package source, or run:
 
 ```bash
