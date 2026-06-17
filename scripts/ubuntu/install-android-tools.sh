@@ -23,11 +23,11 @@ else
     echo "Building Cuttlefish Debian packages. This can take several minutes..."
     (
       cd "$build_dir"
-      debuild -i -us -uc -b -d
+      tools/buildutils/build_packages.sh
     )
 
     echo "Installing Cuttlefish Debian packages..."
-    sudo dpkg -i "${build_dir}"/../cuttlefish-base_*_*.deb "${build_dir}"/../cuttlefish-user_*_*.deb || sudo apt-get -f install -y
+    sudo apt-get install -y "${build_dir}"/cuttlefish-base_*_*.deb "${build_dir}"/cuttlefish-user_*_*.deb
   fi
 fi
 
