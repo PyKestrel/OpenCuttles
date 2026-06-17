@@ -21,8 +21,10 @@ if [[ ! -f /etc/opencuttles/opencuttles.env ]]; then
   sudo install -m 0640 "${release_dir}/deploy/systemd/opencuttles.env.example" /etc/opencuttles/opencuttles.env
 fi
 sudo install -m 0644 "${release_dir}/deploy/proxy/Caddyfile" /etc/caddy/conf.d/opencuttles.caddy
-if [[ -f /etc/caddy/Caddyfile ]] && ! sudo grep -qF "$caddy_include_marker" /etc/caddy/Caddyfile; then
-  echo "$caddy_include_marker" | sudo tee -a /etc/caddy/Caddyfile >/dev/null
+if [[ -f /etc/caddy/Caddyfile ]] && sudo grep -q "/usr/share/caddy" /etc/caddy/Caddyfile; then
+  echo "$caddy_include_marker" | sudo tee /etc/caddy/Caddyfile >/dev/null
+elif [[ -f /etc/caddy/Caddyfile ]] && ! sudo grep -qF "$caddy_include_marker" /etc/caddy/Caddyfile; then
+  printf '\n%s\n' "$caddy_include_marker" | sudo tee -a /etc/caddy/Caddyfile >/dev/null
 elif [[ ! -f /etc/caddy/Caddyfile ]]; then
   echo "$caddy_include_marker" | sudo tee /etc/caddy/Caddyfile >/dev/null
 fi
