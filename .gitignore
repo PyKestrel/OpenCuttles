@@ -1,0 +1,13 @@
+# Backend
+backend/opencuttles.db
+backend/*.db
+backend/bin/
+
+# Frontend
+frontend/dist/
+frontend/node_modules/
+
+# Local editor and OS files
+.DS_Store
+Thumbs.db
+.env

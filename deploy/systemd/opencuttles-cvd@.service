@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenCuttles Cuttlefish instance %i
+Documentation=https://source.android.com/docs/devices/cuttlefish
+After=network-online.target opencuttles-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opencuttles
+Group=kvm
+WorkingDirectory=/var/lib/opencuttles/instances/%i
+Environment=HOME=/var/lib/opencuttles
+ExecStart=/usr/bin/launch_cvd --base_instance_num=%i --num_instances=1
+ExecStop=/usr/bin/stop_cvd
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

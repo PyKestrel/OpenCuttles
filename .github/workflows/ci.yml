@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Test backend
+        run: cd backend && go test ./...
+      - name: Build backend
+        run: cd backend && go build ./cmd/opencuttles-api
+
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+      - name: Test frontend
+        run: cd frontend && npm test -- --run
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell scripts
+        run: bash -n scripts/ubuntu/*.sh
+
+  package:
+    runs-on: ubuntu-24.04
+    needs: [backend, frontend, scripts]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build package
+        run: make package

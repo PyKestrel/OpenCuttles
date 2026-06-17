@@ -1,0 +1,28 @@
+[Unit]
+Description=OpenCuttles API
+Documentation=https://github.com/opencuttles/opencuttles
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opencuttles
+Group=opencuttles
+SupplementaryGroups=kvm
+WorkingDirectory=/opt/opencuttles
+EnvironmentFile=-/etc/opencuttles/opencuttles.env
+ExecStart=/opt/opencuttles/bin/opencuttles-api
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/opencuttles /var/log/opencuttles /run/opencuttles
+RuntimeDirectory=opencuttles
+RuntimeDirectoryMode=0750
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
