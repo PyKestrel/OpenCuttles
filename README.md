@@ -91,6 +91,10 @@ too old.
 Quickstart installs `adb` and, if missing, builds and installs the Google
 Cuttlefish host packages. Set `OPENCUTTLES_SKIP_CUTTLEFISH_INSTALL=1` to skip the
 Cuttlefish build and start only the dashboard/API in dry-run mode.
+Set `OPENCUTTLES_PREPARE_DEFAULT_IMAGE=1` to fetch and unpack a default
+Cuttlefish image into `/var/lib/opencuttles/images/default` using `cvd fetch`.
+Override the build with `OPENCUTTLES_CVD_BUILD`, for example
+`aosp-main/aosp_cf_x86_64_phone-userdebug`.
 
 ## Local Development
 

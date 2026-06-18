@@ -68,6 +68,12 @@ echo "Using Node $(node -v) and npm $(npm -v)"
 echo "Installing Android virtualization tools..."
 bash "${root_dir}/scripts/ubuntu/install-android-tools.sh"
 
+if [[ "${OPENCUTTLES_PREPARE_DEFAULT_IMAGE:-0}" == "1" ]]; then
+  echo "Preparing default Cuttlefish image..."
+  OPENCUTTLES_DEFAULT_IMAGE_PATH="${OPENCUTTLES_DEFAULT_IMAGE_PATH:-/var/lib/opencuttles/images/default}" \
+    bash "${root_dir}/scripts/ubuntu/prepare-default-image.sh"
+fi
+
 echo "Checking host readiness..."
 if ! bash "${root_dir}/scripts/ubuntu/check-host.sh"; then
   echo

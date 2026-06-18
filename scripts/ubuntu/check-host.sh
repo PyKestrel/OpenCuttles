@@ -18,6 +18,10 @@ has_command() {
   command -v "$1" >/dev/null 2>&1
 }
 
+has_cuttlefish_lifecycle() {
+  has_command cvd || { has_command launch_cvd && has_command stop_cvd; }
+}
+
 has_kvm() {
   [[ -e /dev/kvm && -r /dev/kvm && -w /dev/kvm ]]
 }
@@ -41,9 +45,7 @@ has_disk() {
 echo "OpenCuttles Ubuntu host readiness"
 echo
 
-check "cvd command found" has_command cvd
-check "launch_cvd command found" has_command launch_cvd
-check "stop_cvd command found" has_command stop_cvd
+check "Cuttlefish lifecycle command found" has_cuttlefish_lifecycle
 check "adb command found" has_command adb
 check "/dev/kvm is accessible" has_kvm
 check "CPU exposes virtualization flags" has_nested_virt_hint

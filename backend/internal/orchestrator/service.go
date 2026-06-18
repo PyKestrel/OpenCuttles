@@ -36,8 +36,6 @@ func (s *Service) Host(ctx context.Context) domain.Host {
 		DiskFreeBytes: s.diskFreeBytes(ctx),
 		Prerequisites: []domain.Prerequisite{
 			s.pathCheck("cvd", "Install Google Cuttlefish host tools."),
-			s.pathCheck("launch_cvd", "Install Google Cuttlefish host tools."),
-			s.pathCheck("stop_cvd", "Install Google Cuttlefish host tools."),
 			s.pathCheck("adb", "Install Android platform tools."),
 			s.kvmCheck(),
 		},
@@ -258,11 +256,19 @@ func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
 		fmt.Sprintf("--adb_port=%d", instance.ADBPort),
 		fmt.Sprintf("--webrtc_port=%d", instance.WebRTCPort),
 	}
-	result, err := s.runner.Run(ctx, "launch_cvd", args...)
+	command, commandArgs := s.startCommand(args)
+	result, err := s.runner.Run(ctx, command, commandArgs...)
 	if err != nil {
-		return fmt.Errorf("launch_cvd failed: %w: %s", err, result.Output)
+		return fmt.Errorf("%s failed: %w: %s", command, err, result.Output)
 	}
 	return nil
+}
+
+func (s *Service) startCommand(launchArgs []string) (string, []string) {
+	if _, err := s.runner.LookPath("launch_cvd"); err == nil {
+		return "launch_cvd", launchArgs
+	}
+	return "cvd", append([]string{"start"}, launchArgs...)
 }
 
 func (s *Service) isADBReachable(ctx context.Context, instance domain.Instance) bool {
@@ -279,11 +285,19 @@ func (s *Service) stop(ctx context.Context, instance domain.Instance) error {
 		return nil
 	}
 	instanceNumber := instance.ADBPort - 6520 + 1
-	result, err := s.runner.Run(ctx, "stop_cvd", fmt.Sprintf("--instance_num=%d", instanceNumber))
+	command, args := s.stopCommand(instanceNumber)
+	result, err := s.runner.Run(ctx, command, args...)
 	if err != nil {
-		return fmt.Errorf("stop_cvd failed: %w: %s", err, result.Output)
+		return fmt.Errorf("%s failed: %w: %s", command, err, result.Output)
 	}
 	return nil
+}
+
+func (s *Service) stopCommand(instanceNumber int) (string, []string) {
+	if _, err := s.runner.LookPath("stop_cvd"); err == nil {
+		return "stop_cvd", []string{fmt.Sprintf("--instance_num=%d", instanceNumber)}
+	}
+	return "cvd", []string{"stop", fmt.Sprintf("--instance_num=%d", instanceNumber)}
 }
 
 func (s *Service) waitReady(ctx context.Context, instance domain.Instance) error {

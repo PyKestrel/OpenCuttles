@@ -7,7 +7,7 @@ build as merge-ready.
 
 - `scripts/ubuntu/check-host.sh` exits successfully.
 - `/dev/kvm` exists and is readable/writable by the service user.
-- `cvd`, `launch_cvd`, `stop_cvd`, and `adb` are available on `PATH`.
+- `cvd` and `adb` are available on `PATH`; legacy `launch_cvd` / `stop_cvd` are optional fallbacks.
 - The host has enough free memory and disk for at least one Cuttlefish instance.
 - The OpenCuttles API service starts under systemd.
 

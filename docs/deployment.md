@@ -21,6 +21,11 @@ Set `OPENCUTTLES_CONFIGURE_FIREWALL=1` to let quickstart apply the bundled UFW
 rules.
 Set `OPENCUTTLES_SKIP_CUTTLEFISH_INSTALL=1` to skip the Cuttlefish build and run
 only the dashboard/API in dry-run mode.
+Set `OPENCUTTLES_PREPARE_DEFAULT_IMAGE=1` to download and unpack the default
+Cuttlefish image under `/var/lib/opencuttles/images/default`. By default this
+uses `cvd fetch --default_build=aosp-main/aosp_cf_x86_64_phone-userdebug`, which
+matches the Android Cuttlefish docs requirement to use device images and host
+packages from the same build.
 Single-label hostnames and IP addresses default to HTTP, for example
 `OPENCUTTLES_HOSTNAME=opencuttles`. Fully qualified domains default to HTTPS.
 Set `OPENCUTTLES_ALLOWED_ORIGIN=https://your.domain.example` to force the exact
@@ -103,6 +108,20 @@ site hostname in both Caddy and `OPENCUTTLES_ALLOWED_ORIGIN` before first login.
 Place the default Cuttlefish image bundle under
 `/var/lib/opencuttles/images/default` to enable one-click instance creation
 without registering an image first.
+You can prepare it automatically with:
+
+```bash
+OPENCUTTLES_PREPARE_DEFAULT_IMAGE=1 bash scripts/ubuntu/quickstart.sh
+```
+
+If `cvd fetch` is unavailable in your Cuttlefish version, provide explicit
+artifact URLs from the same Android CI build:
+
+```bash
+OPENCUTTLES_CVD_IMAGE_URL=https://.../aosp_cf_x86_64_phone-img-xxxxxx.zip \
+OPENCUTTLES_CVD_HOST_PACKAGE_URL=https://.../cvd-host_package.tar.gz \
+bash scripts/ubuntu/prepare-default-image.sh
+```
 
 ## 4. Start services
 
