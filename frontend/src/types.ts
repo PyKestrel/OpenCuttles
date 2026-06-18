@@ -108,7 +108,7 @@ export type CreateImagePayload = {
 
 export type CreateInstancePayload = {
   name: string;
-  imageId: string;
+  imageId?: string;
   cpuCores: number;
   memoryMb: number;
 };

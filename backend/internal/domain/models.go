@@ -187,7 +187,7 @@ type CreateImageRequest struct {
 
 type CreateInstanceRequest struct {
 	Name     string `json:"name"`
-	ImageID  string `json:"imageId"`
+	ImageID  string `json:"imageId,omitempty"`
 	CPUCores int    `json:"cpuCores"`
 	MemoryMB int    `json:"memoryMb"`
 }

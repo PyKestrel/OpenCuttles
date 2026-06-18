@@ -91,11 +91,15 @@ OPENCUTTLES_BOOTSTRAP_TOKEN=generate-a-long-random-one-time-token
 OPENCUTTLES_TRUST_PROXY_HEADERS=1
 OPENCUTTLES_EXECUTE_CVD=1
 OPENCUTTLES_IMAGE_ROOT=/var/lib/opencuttles/images
+OPENCUTTLES_DEFAULT_IMAGE_PATH=/var/lib/opencuttles/images/default
 ```
 
 The Caddy config is installed as `/etc/caddy/conf.d/opencuttles.caddy` and the
 installer appends an import line to `/etc/caddy/Caddyfile` if needed. Review the
 site hostname in both Caddy and `OPENCUTTLES_ALLOWED_ORIGIN` before first login.
+Place the default Cuttlefish image bundle under
+`/var/lib/opencuttles/images/default` to enable one-click instance creation
+without registering an image first.
 
 ## 4. Start services
 

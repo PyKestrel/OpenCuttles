@@ -215,8 +215,43 @@ func (s *SQLite) GetImage(ctx context.Context, id string) (domain.Image, error) 
 	return scanImage(row)
 }
 
+func (s *SQLite) GetOrCreateDefaultImage(ctx context.Context) (domain.Image, error) {
+	defaultPath := strings.TrimSpace(os.Getenv("OPENCUTTLES_DEFAULT_IMAGE_PATH"))
+	if defaultPath == "" {
+		root := strings.TrimSpace(os.Getenv("OPENCUTTLES_IMAGE_ROOT"))
+		if root == "" {
+			root = "/var/lib/opencuttles/images"
+		}
+		defaultPath = filepath.Join(root, "default")
+	}
+	if err := ValidateImagePath(defaultPath, false); err != nil {
+		return domain.Image{}, err
+	}
+
+	row := s.db.QueryRowContext(ctx, `SELECT id, name, path, android_api, description, created_at FROM images WHERE path = ? ORDER BY created_at LIMIT 1`, defaultPath)
+	image, err := scanImage(row)
+	if err == nil {
+		return image, nil
+	}
+	if !IsNotFound(err) {
+		return domain.Image{}, err
+	}
+	return s.CreateImage(ctx, domain.CreateImageRequest{
+		Name:        "Default Cuttlefish image",
+		Path:        defaultPath,
+		Description: "Automatically registered by OpenCuttles for one-click instance creation.",
+	})
+}
+
 func (s *SQLite) CreateInstance(ctx context.Context, req domain.CreateInstanceRequest) (domain.Instance, error) {
-	if _, err := s.GetImage(ctx, req.ImageID); err != nil {
+	imageID := strings.TrimSpace(req.ImageID)
+	if imageID == "" {
+		image, err := s.GetOrCreateDefaultImage(ctx)
+		if err != nil {
+			return domain.Instance{}, fmt.Errorf("default image: %w", err)
+		}
+		imageID = image.ID
+	} else if _, err := s.GetImage(ctx, imageID); err != nil {
 		return domain.Instance{}, fmt.Errorf("image lookup: %w", err)
 	}
 
@@ -237,7 +272,7 @@ func (s *SQLite) CreateInstance(ctx context.Context, req domain.CreateInstanceRe
 		ID:              instanceID,
 		Name:            req.Name,
 		HostID:          "local",
-		ImageID:         req.ImageID,
+		ImageID:         imageID,
 		State:           domain.StateStopped,
 		CPUCores:        nonZero(req.CPUCores, 2),
 		MemoryMB:        nonZero(req.MemoryMB, 4096),

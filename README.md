@@ -14,7 +14,8 @@ tracking, health checks, deployment templates, and dashboard.
 - Manage one Ubuntu Server host.
 - Bootstrap a local admin and protect the API/dashboard with secure sessions.
 - Use an OIDC-ready RBAC model with admin, operator, and viewer roles.
-- Register Android images that can be launched by Cuttlefish.
+- Automatically register the default Android image for one-click instance creation.
+- Optionally register additional Android images that can be launched by Cuttlefish.
 - Create, start, stop, and delete local Cuttlefish instances.
 - Track lifecycle state, allocated ports, capacity, health, and operation
   history in SQLite.

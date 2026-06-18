@@ -11,7 +11,9 @@ import (
 
 func TestStoreAuthAuditAndInstancePersistence(t *testing.T) {
 	ctx := context.Background()
-	db, err := OpenSQLite(filepath.Join(t.TempDir(), "opencuttles.db"))
+	tempDir := t.TempDir()
+	t.Setenv("OPENCUTTLES_IMAGE_ROOT", filepath.Join(tempDir, "images"))
+	db, err := OpenSQLite(filepath.Join(tempDir, "opencuttles.db"))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -52,5 +54,35 @@ func TestStoreAuthAuditAndInstancePersistence(t *testing.T) {
 	}
 	if len(events) != 1 {
 		t.Fatalf("audit events = %d", len(events))
+	}
+}
+
+func TestCreateInstanceAutoRegistersDefaultImage(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	t.Setenv("OPENCUTTLES_IMAGE_ROOT", filepath.Join(tempDir, "images"))
+
+	db, err := OpenSQLite(filepath.Join(tempDir, "opencuttles.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	instance, err := db.CreateInstance(ctx, domain.CreateInstanceRequest{Name: "android-auto"})
+	if err != nil {
+		t.Fatalf("create instance with default image: %v", err)
+	}
+	if instance.ImageID == "" {
+		t.Fatalf("expected image id to be populated")
+	}
+	images, err := db.ListImages(ctx)
+	if err != nil {
+		t.Fatalf("list images: %v", err)
+	}
+	if len(images) != 1 {
+		t.Fatalf("images = %d, want 1", len(images))
+	}
+	if images[0].Name != "Default Cuttlefish image" {
+		t.Fatalf("default image name = %q", images[0].Name)
 	}
 }

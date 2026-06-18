@@ -215,8 +215,8 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, badRequest("invalid instance payload"))
 		return
 	}
-	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.ImageID) == "" {
-		writeError(w, badRequest("instance name and imageId are required"))
+	if strings.TrimSpace(req.Name) == "" {
+		writeError(w, badRequest("instance name is required"))
 		return
 	}
 	instance, err := s.store.CreateInstance(r.Context(), req)

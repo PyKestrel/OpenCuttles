@@ -116,8 +116,19 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <>
+      <div className="cloud-appbar">
+        <button className="hamburger" aria-label="Navigation">☰</button>
+        <div className="cloud-product">OpenCuttles</div>
+        <div className="project-picker">single-host</div>
+        <div className="cloud-search">Search resources, instances, images</div>
+        <div className="cloud-spacer" />
+        <button className="icon-button" title="Cloud Shell">▣</button>
+        <button className="icon-button" title="Help">?</button>
+        <span className="avatar">{principal.displayName.slice(0, 1).toUpperCase()}</span>
+      </div>
+      <div className="app-shell">
+        <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">OC</div>
           <div>
@@ -145,12 +156,12 @@ export default function App() {
             </button>
           ))}
         </div>
-      </aside>
+        </aside>
 
-      <main>
+        <main>
         <header className="topbar">
           <div>
-            <span className="eyebrow">Single-host MVP</span>
+            <span className="eyebrow">Dashboard</span>
             <h1>Android device control plane</h1>
           </div>
           <div className="topbar-actions">
@@ -230,8 +241,9 @@ export default function App() {
         </section> : null}
 
         {view === "dashboard" || view === "instances" ? <ConsolePanel instance={selectedInstance} /> : null}
-      </main>
-    </div>
+        </main>
+      </div>
+    </>
   );
 }
 
@@ -349,7 +361,7 @@ function InstanceTable({
   onDelete: (id: string) => void;
 }) {
   if (instances.length === 0) {
-    return <div className="empty">No Android devices yet. Register an image and create an instance.</div>;
+    return <div className="empty">No Android devices yet. Create an instance and OpenCuttles will use the default Cuttlefish image automatically.</div>;
   }
 
   return (
@@ -418,6 +430,7 @@ function CreateForms({
   const [imageId, setImageId] = useState("");
   const [cpuCores, setCpuCores] = useState(2);
   const [memoryMb, setMemoryMb] = useState(4096);
+  const [showImageRegistration, setShowImageRegistration] = useState(false);
 
   async function submitImage(event: FormEvent) {
     event.preventDefault();
@@ -441,23 +454,11 @@ function CreateForms({
 
   return (
     <div className="forms">
-      <form onSubmit={submitImage}>
-        <h3>Register image</h3>
-        <label>
-          Name
-          <input value={imageName} onChange={(event) => setImageName(event.target.value)} placeholder="AOSP main" />
-        </label>
-        <label>
-          Image path
-          <input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="/var/lib/cuttlefish/images/aosp" />
-        </label>
-        <button className="primary" disabled={!canOperate || busy || !imageName || !imagePath}>
-          Register image
-        </button>
-      </form>
-
       <form onSubmit={submitInstance}>
-        <h3>Create instance</h3>
+        <h3>Create Android instance</h3>
+        <p className="form-help">
+          Pick a name and size. If no image is selected, OpenCuttles automatically registers and uses the default image at <code>/var/lib/opencuttles/images/default</code>.
+        </p>
         <label>
           Name
           <input
@@ -467,9 +468,9 @@ function CreateForms({
           />
         </label>
         <label>
-          Image
+          Image override <span className="optional">(optional)</span>
           <select value={imageId} onChange={(event) => setImageId(event.target.value)}>
-            <option value="">Select image</option>
+            <option value="">Use default image automatically</option>
             {images.map((image) => (
               <option value={image.id} key={image.id}>
                 {image.name}
@@ -485,10 +486,31 @@ function CreateForms({
           Memory MB
           <input type="number" min="1024" step="512" value={memoryMb} onChange={(event) => setMemoryMb(Number(event.target.value))} />
         </label>
-        <button className="primary" disabled={!canOperate || busy || !instanceName || !imageId}>
+        <button className="primary" disabled={!canOperate || busy || !instanceName}>
           Create instance
         </button>
       </form>
+
+      <button className="text-button" type="button" onClick={() => setShowImageRegistration((value) => !value)}>
+        {showImageRegistration ? "Hide image registration" : "Register a custom image"}
+      </button>
+
+      {showImageRegistration && (
+        <form onSubmit={submitImage}>
+          <h3>Register custom image</h3>
+          <label>
+            Name
+            <input value={imageName} onChange={(event) => setImageName(event.target.value)} placeholder="AOSP main" />
+          </label>
+          <label>
+            Image path
+            <input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="/var/lib/opencuttles/images/aosp" />
+          </label>
+          <button className="primary" disabled={!canOperate || busy || !imageName || !imagePath}>
+            Register image
+          </button>
+        </form>
+      )}
     </div>
   );
 }
