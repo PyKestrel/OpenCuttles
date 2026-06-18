@@ -25,6 +25,9 @@ Single-label hostnames and IP addresses default to HTTP, for example
 `OPENCUTTLES_HOSTNAME=opencuttles`. Fully qualified domains default to HTTPS.
 Set `OPENCUTTLES_ALLOWED_ORIGIN=https://your.domain.example` to force the exact
 browser origin.
+Enable HSTS only for real HTTPS domains. Do not send HSTS for local names such as
+`opencuttles`, because browsers can cache it and force future HTTP requests to
+HTTPS.
 
 ## 1. Prepare the host
 
