@@ -21,13 +21,43 @@ else
     git clone --depth 1 "$repo_url" "$build_dir"
 
     echo "Building Cuttlefish Debian packages. This can take several minutes..."
+    # Disable lintian during the build. Upstream Cuttlefish packages trip many
+    # lintian policy checks (bad changelog, Bazel runfiles in /usr/bin, CDN
+    # links, etc.). Those are cosmetic and emit E:/W: tags that make lintian
+    # exit non-zero, which would otherwise abort the build even though the .deb
+    # files were produced successfully.
+    build_rc=0
     (
       cd "$build_dir"
-      tools/buildutils/build_packages.sh
-    )
+      # debuild reads DEBUILD_LINTIAN from a devscripts config file, so write a
+      # throwaway HOME config that turns lintian off for this build only.
+      tmp_home="$(mktemp -d)"
+      printf 'DEBUILD_LINTIAN=no\n' >"${tmp_home}/.devscripts"
+      HOME="$tmp_home" DEB_CHECK_COMMAND="" tools/buildutils/build_packages.sh
+    ) || build_rc=$?
+
+    # Trust the produced artifacts rather than the build script's exit code:
+    # lintian failures (and other non-fatal post-build steps) must not block
+    # installation if the packages we need actually exist.
+    shopt -s nullglob
+    base_debs=("${build_dir}"/cuttlefish-base_*_*.deb)
+    user_debs=("${build_dir}"/cuttlefish-user_*_*.deb)
+    shopt -u nullglob
+
+    if [[ ${#base_debs[@]} -eq 0 || ${#user_debs[@]} -eq 0 ]]; then
+      echo "ERROR: Cuttlefish package build did not produce the expected .deb files (exit ${build_rc})." >&2
+      echo "       Inspect the build output in: ${build_dir}" >&2
+      echo "       To skip Cuttlefish and run the OpenCuttles dashboard only, re-run with:" >&2
+      echo "         OPENCUTTLES_SKIP_CUTTLEFISH_INSTALL=1 bash scripts/ubuntu/quickstart.sh" >&2
+      exit 1
+    fi
+
+    if [[ "$build_rc" -ne 0 ]]; then
+      echo "Cuttlefish build script exited ${build_rc} (likely lintian policy warnings); .deb files were produced, continuing."
+    fi
 
     echo "Installing Cuttlefish Debian packages..."
-    sudo apt-get install -y "${build_dir}"/cuttlefish-base_*_*.deb "${build_dir}"/cuttlefish-user_*_*.deb
+    sudo apt-get install -y "${base_debs[@]}" "${user_debs[@]}"
   fi
 fi
 
