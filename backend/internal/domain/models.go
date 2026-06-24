@@ -14,6 +14,11 @@ const (
 
 	ConsoleProviderCuttlefishWebRTC = "cuttlefish-webrtc"
 
+	ImageStatusPending  = "pending"
+	ImageStatusFetching = "fetching"
+	ImageStatusReady    = "ready"
+	ImageStatusError    = "error"
+
 	RoleAdmin    = "admin"
 	RoleOperator = "operator"
 	RoleViewer   = "viewer"
@@ -47,7 +52,20 @@ type Image struct {
 	Path        string    `json:"path"`
 	AndroidAPI  string    `json:"androidApi,omitempty"`
 	Description string    `json:"description,omitempty"`
+	BuildTarget string    `json:"buildTarget,omitempty"`
+	VersionID   string    `json:"versionId,omitempty"`
+	Status      string    `json:"status,omitempty"`
+	SizeBytes   int64     `json:"sizeBytes,omitempty"`
+	LastError   string    `json:"lastError,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type AndroidVersion struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Branch      string `json:"branch"`
+	BuildTarget string `json:"buildTarget"`
+	Description string `json:"description,omitempty"`
 }
 
 type Instance struct {
@@ -55,11 +73,16 @@ type Instance struct {
 	Name            string    `json:"name"`
 	HostID          string    `json:"hostId"`
 	ImageID         string    `json:"imageId"`
+	AndroidVersion  string    `json:"androidVersion,omitempty"`
 	State           string    `json:"state"`
 	CPUCores        int       `json:"cpuCores"`
 	MemoryMB        int       `json:"memoryMb"`
+	DisplayWidth    int       `json:"displayWidth"`
+	DisplayHeight   int       `json:"displayHeight"`
+	DPI             int       `json:"dpi"`
 	ADBPort         int       `json:"adbPort"`
 	WebRTCPort      int       `json:"webrtcPort"`
+	DeviceID        string    `json:"deviceId"`
 	ConsoleProvider string    `json:"consoleProvider"`
 	ConsoleURL      string    `json:"consoleUrl"`
 	LastError       string    `json:"lastError,omitempty"`
@@ -186,8 +209,12 @@ type CreateImageRequest struct {
 }
 
 type CreateInstanceRequest struct {
-	Name     string `json:"name"`
-	ImageID  string `json:"imageId,omitempty"`
-	CPUCores int    `json:"cpuCores"`
-	MemoryMB int    `json:"memoryMb"`
+	Name           string `json:"name"`
+	ImageID        string `json:"imageId,omitempty"`
+	AndroidVersion string `json:"androidVersion,omitempty"`
+	CPUCores       int    `json:"cpuCores"`
+	MemoryMB       int    `json:"memoryMb"`
+	DisplayWidth   int    `json:"displayWidth,omitempty"`
+	DisplayHeight  int    `json:"displayHeight,omitempty"`
+	DPI            int    `json:"dpi,omitempty"`
 }

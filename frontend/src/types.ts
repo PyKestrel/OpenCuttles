@@ -15,13 +15,28 @@ export type Host = {
   updatedAt: string;
 };
 
+export type ImageStatus = "pending" | "fetching" | "ready" | "error";
+
 export type Image = {
   id: string;
   name: string;
   path: string;
   androidApi?: string;
   description?: string;
+  buildTarget?: string;
+  versionId?: string;
+  status?: ImageStatus;
+  sizeBytes?: number;
+  lastError?: string;
   createdAt: string;
+};
+
+export type AndroidVersion = {
+  id: string;
+  label: string;
+  branch: string;
+  buildTarget: string;
+  description?: string;
 };
 
 export type InstanceState =
@@ -39,11 +54,16 @@ export type Instance = {
   name: string;
   hostId: string;
   imageId: string;
+  androidVersion?: string;
   state: InstanceState;
   cpuCores: number;
   memoryMb: number;
+  displayWidth: number;
+  displayHeight: number;
+  dpi: number;
   adbPort: number;
   webrtcPort: number;
+  deviceId: string;
   consoleProvider: string;
   consoleUrl: string;
   lastError?: string;
@@ -109,6 +129,10 @@ export type CreateImagePayload = {
 export type CreateInstancePayload = {
   name: string;
   imageId?: string;
+  androidVersion?: string;
   cpuCores: number;
   memoryMb: number;
+  displayWidth?: number;
+  displayHeight?: number;
+  dpi?: number;
 };

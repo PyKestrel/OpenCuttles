@@ -1,6 +1,15 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
-import type { AuditEvent, HealthReport, Host, Image, Instance, Operation, Principal } from "./types";
+import type {
+  AndroidVersion,
+  AuditEvent,
+  HealthReport,
+  Host,
+  Image,
+  Instance,
+  Operation,
+  Principal,
+} from "./types";
 
 type LoadState = {
   host?: Host;
@@ -8,6 +17,7 @@ type LoadState = {
   instances: Instance[];
   operations: Operation[];
   audit: AuditEvent[];
+  androidVersions: AndroidVersion[];
   health?: HealthReport;
 };
 
@@ -16,6 +26,7 @@ const initialState: LoadState = {
   instances: [],
   operations: [],
   audit: [],
+  androidVersions: [],
 };
 
 export default function App() {
@@ -35,13 +46,14 @@ export default function App() {
 
   async function refresh() {
     const canAdmin = principal ? hasPermission(principal, "admin") : false;
-    const [host, images, instances, operations, health, audit] = await Promise.all([
+    const [host, images, instances, operations, health, audit, androidVersions] = await Promise.all([
       api.host(),
       api.images(),
       api.instances(),
       api.operations(),
       api.health(),
       canAdmin ? api.audit().catch(() => []) : Promise.resolve([]),
+      api.androidVersions().catch(() => []),
     ]);
     setData({
       host,
@@ -50,6 +62,7 @@ export default function App() {
       operations: operations ?? [],
       health,
       audit: audit ?? [],
+      androidVersions: androidVersions ?? [],
     });
   }
 
@@ -226,7 +239,7 @@ export default function App() {
                 <h2>Create resources</h2>
               </div>
             </div>
-            <CreateForms images={data.images} busy={busy} canOperate={hasPermission(principal, "operate")} onAction={runAction} />
+            <CreateForms images={data.images} androidVersions={data.androidVersions} busy={busy} canOperate={hasPermission(principal, "operate")} onAction={runAction} />
           </div>
         </section> : null}
 
@@ -413,13 +426,22 @@ function InstanceTable({
   );
 }
 
+const RESOLUTION_PRESETS = [
+  { id: "phone", label: "Phone · 720 × 1280 (320 dpi)", width: 720, height: 1280, dpi: 320 },
+  { id: "phone-hd", label: "Phone HD · 1080 × 1920 (440 dpi)", width: 1080, height: 1920, dpi: 440 },
+  { id: "tablet", label: "Tablet · 1200 × 1920 (240 dpi)", width: 1200, height: 1920, dpi: 240 },
+  { id: "compact", label: "Compact · 480 × 800 (240 dpi)", width: 480, height: 800, dpi: 240 },
+];
+
 function CreateForms({
   images,
+  androidVersions,
   busy,
   canOperate,
   onAction,
 }: {
   images: Image[];
+  androidVersions: AndroidVersion[];
   busy: boolean;
   canOperate: boolean;
   onAction: (action: () => Promise<unknown>) => Promise<void>;
@@ -427,10 +449,20 @@ function CreateForms({
   const [imageName, setImageName] = useState("");
   const [imagePath, setImagePath] = useState("");
   const [instanceName, setInstanceName] = useState("");
+  const [androidVersion, setAndroidVersion] = useState("");
   const [imageId, setImageId] = useState("");
   const [cpuCores, setCpuCores] = useState(2);
   const [memoryMb, setMemoryMb] = useState(4096);
-  const [showImageRegistration, setShowImageRegistration] = useState(false);
+  const [resolution, setResolution] = useState(RESOLUTION_PRESETS[0].id);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  useEffect(() => {
+    if (!androidVersion && androidVersions.length > 0) {
+      setAndroidVersion(androidVersions[0].id);
+    }
+  }, [androidVersions, androidVersion]);
+
+  const preset = RESOLUTION_PRESETS.find((item) => item.id === resolution) ?? RESOLUTION_PRESETS[0];
 
   async function submitImage(event: FormEvent) {
     event.preventDefault();
@@ -444,9 +476,13 @@ function CreateForms({
     await onAction(() =>
       api.createInstance({
         name: instanceName,
-        imageId,
+        androidVersion: imageId ? undefined : androidVersion,
+        imageId: imageId || undefined,
         cpuCores,
         memoryMb,
+        displayWidth: preset.width,
+        displayHeight: preset.height,
+        dpi: preset.dpi,
       }),
     );
     setInstanceName("");
@@ -455,9 +491,9 @@ function CreateForms({
   return (
     <div className="forms">
       <form onSubmit={submitInstance}>
-        <h3>Create Android instance</h3>
+        <h3>Deploy Android instance</h3>
         <p className="form-help">
-          Pick a name and size. If no image is selected, OpenCuttles automatically registers and uses the default image at <code>/var/lib/opencuttles/images/default</code>.
+          Choose a version and size, then deploy. OpenCuttles fetches the image automatically with <code>cvd fetch</code> and launches the device &mdash; no manual image registration required.
         </p>
         <label>
           Name
@@ -468,48 +504,75 @@ function CreateForms({
           />
         </label>
         <label>
-          Image override <span className="optional">(optional)</span>
-          <select value={imageId} onChange={(event) => setImageId(event.target.value)}>
-            <option value="">Use default image automatically</option>
-            {images.map((image) => (
-              <option value={image.id} key={image.id}>
-                {image.name}
+          Android version
+          <select value={androidVersion} onChange={(event) => setAndroidVersion(event.target.value)} disabled={Boolean(imageId)}>
+            {androidVersions.length === 0 && <option value="">Loading versions…</option>}
+            {androidVersions.map((version) => (
+              <option value={version.id} key={version.id}>
+                {version.label}
               </option>
             ))}
           </select>
         </label>
         <label>
-          CPU cores
-          <input type="number" min="1" max="16" value={cpuCores} onChange={(event) => setCpuCores(Number(event.target.value))} />
+          Resolution
+          <select value={resolution} onChange={(event) => setResolution(event.target.value)}>
+            {RESOLUTION_PRESETS.map((item) => (
+              <option value={item.id} key={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
         </label>
-        <label>
-          Memory MB
-          <input type="number" min="1024" step="512" value={memoryMb} onChange={(event) => setMemoryMb(Number(event.target.value))} />
-        </label>
-        <button className="primary" disabled={!canOperate || busy || !instanceName}>
-          Create instance
+        <div className="form-row">
+          <label>
+            CPU cores
+            <input type="number" min="1" max="16" value={cpuCores} onChange={(event) => setCpuCores(Number(event.target.value))} />
+          </label>
+          <label>
+            Memory MB
+            <input type="number" min="1024" step="512" value={memoryMb} onChange={(event) => setMemoryMb(Number(event.target.value))} />
+          </label>
+        </div>
+        <button className="primary" disabled={!canOperate || busy || !instanceName || (!androidVersion && !imageId)}>
+          Deploy instance
         </button>
       </form>
 
-      <button className="text-button" type="button" onClick={() => setShowImageRegistration((value) => !value)}>
-        {showImageRegistration ? "Hide image registration" : "Register a custom image"}
+      <button className="text-button" type="button" onClick={() => setShowAdvanced((value) => !value)}>
+        {showAdvanced ? "Hide advanced options" : "Advanced: custom image"}
       </button>
 
-      {showImageRegistration && (
-        <form onSubmit={submitImage}>
-          <h3>Register custom image</h3>
+      {showAdvanced && (
+        <div className="advanced-block">
           <label>
-            Name
-            <input value={imageName} onChange={(event) => setImageName(event.target.value)} placeholder="AOSP main" />
+            Use a registered image instead <span className="optional">(overrides version)</span>
+            <select value={imageId} onChange={(event) => setImageId(event.target.value)}>
+              <option value="">Auto-fetch selected Android version</option>
+              {images.map((image) => (
+                <option value={image.id} key={image.id}>
+                  {image.name}
+                  {image.status && image.status !== "ready" ? ` (${image.status})` : ""}
+                </option>
+              ))}
+            </select>
           </label>
-          <label>
-            Image path
-            <input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="/var/lib/opencuttles/images/aosp" />
-          </label>
-          <button className="primary" disabled={!canOperate || busy || !imageName || !imagePath}>
-            Register image
-          </button>
-        </form>
+
+          <form onSubmit={submitImage}>
+            <h3>Register custom image</h3>
+            <label>
+              Name
+              <input value={imageName} onChange={(event) => setImageName(event.target.value)} placeholder="AOSP main" />
+            </label>
+            <label>
+              Image path
+              <input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="/var/lib/opencuttles/images/aosp" />
+            </label>
+            <button className="primary" disabled={!canOperate || busy || !imageName || !imagePath}>
+              Register image
+            </button>
+          </form>
+        </div>
       )}
     </div>
   );
@@ -646,27 +709,42 @@ function ReadOnlyNotice() {
   );
 }
 
+const PROGRESS_STATES: Record<string, string> = {
+  provisioning: "Fetching Android image (cvd fetch)…",
+  starting: "Launching Cuttlefish device…",
+  booting: "Waiting for Android to boot…",
+};
+
 function ConsolePanel({ instance }: { instance?: Instance }) {
   const canOpen = instance?.state === "running";
+  const progressLabel = instance ? PROGRESS_STATES[instance.state] : undefined;
   return (
     <section className="panel console-panel">
       <div className="panel-title">
         <div>
-          <span className="eyebrow">Console</span>
-          <h2>{instance ? `${instance.name} WebRTC` : "Cuttlefish WebRTC"}</h2>
+          <span className="eyebrow">Interactive console</span>
+          <h2>{instance ? `${instance.name} · ${instance.deviceId || "device"}` : "Cuttlefish WebRTC"}</h2>
         </div>
         {instance && (
           <a className={`open-link ${canOpen ? "" : "disabled-link"}`} href={canOpen ? instance.consoleUrl : undefined} target="_blank" rel="noreferrer">
-            Open console
+            Open in new tab
           </a>
         )}
       </div>
       {instance && canOpen ? (
-        <iframe title={`${instance.name} console`} src={instance.consoleUrl} />
+        <iframe className="console-frame" title={`${instance.name} console`} src={instance.consoleUrl} allow="autoplay; microphone; camera; clipboard-write" />
+      ) : progressLabel ? (
+        <div className="console-progress">
+          <div className="spinner" />
+          <strong>{progressLabel}</strong>
+          <small>This can take several minutes the first time an image is downloaded.</small>
+        </div>
+      ) : instance?.state === "error" ? (
+        <div className="alert">Deployment failed: {instance.lastError || "unknown error"}</div>
       ) : instance ? (
-        <div className="empty">Start the instance before opening its WebRTC console.</div>
+        <div className="empty">Start the instance to open its interactive console.</div>
       ) : (
-        <div className="empty">Select an instance to load its WebRTC console.</div>
+        <div className="empty">Select an instance to load its interactive console.</div>
       )}
     </section>
   );

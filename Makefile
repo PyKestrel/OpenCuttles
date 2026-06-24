@@ -30,9 +30,10 @@ lint:
 	bash -n scripts/ubuntu/*.sh
 
 package: build
-	mkdir -p dist/package/opt/opencuttles/bin dist/package/opt/opencuttles/frontend
+	rm -rf dist/package
+	mkdir -p dist/package/opt/opencuttles/bin dist/package/opt/opencuttles/frontend/dist
 	cp dist/opencuttles-api dist/package/opt/opencuttles/bin/
-	cp -R frontend/dist dist/package/opt/opencuttles/frontend/dist
+	cp -R frontend/dist/. dist/package/opt/opencuttles/frontend/dist/
 	cp frontend/package.json dist/package/opt/opencuttles/frontend/
 	cp -R deploy dist/package/
 	cp -R scripts dist/package/

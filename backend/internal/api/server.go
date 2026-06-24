@@ -1,13 +1,16 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -19,6 +22,7 @@ import (
 	"time"
 
 	"github.com/opencuttles/opencuttles/backend/internal/auth"
+	"github.com/opencuttles/opencuttles/backend/internal/catalog"
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
@@ -60,6 +64,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/host", s.require(domain.PermissionView, s.host))
 	s.mux.HandleFunc("GET /api/v1/health", s.require(domain.PermissionView, s.deepHealth))
 	s.mux.HandleFunc("GET /api/v1/metrics", s.require(domain.PermissionView, s.metrics))
+	s.mux.HandleFunc("GET /api/v1/android-versions", s.require(domain.PermissionView, s.listAndroidVersions))
 	s.mux.HandleFunc("GET /api/v1/images", s.require(domain.PermissionView, s.listImages))
 	s.mux.HandleFunc("POST /api/v1/images", s.require(domain.PermissionOperate, s.createImage))
 	s.mux.HandleFunc("GET /api/v1/instances", s.require(domain.PermissionView, s.listInstances))
@@ -171,6 +176,10 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, "opencuttles_instances_running %d\n", running)
 }
 
+func (s *Server) listAndroidVersions(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, catalog.AndroidVersions())
+}
+
 func (s *Server) listImages(w http.ResponseWriter, r *http.Request) {
 	images, err := s.store.ListImages(r.Context())
 	if err != nil {
@@ -219,17 +228,32 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, badRequest("instance name is required"))
 		return
 	}
+	// Resolve a chosen Android version into a backing image (fetched on deploy).
+	if strings.TrimSpace(req.ImageID) == "" && strings.TrimSpace(req.AndroidVersion) != "" {
+		version, ok := catalog.Lookup(req.AndroidVersion)
+		if !ok {
+			writeError(w, badRequest("unknown android version"))
+			return
+		}
+		image, err := s.store.GetOrCreateVersionImage(r.Context(), version.ID, version.Label, catalog.DefaultBuild(version))
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		req.ImageID = image.ID
+	}
 	instance, err := s.store.CreateInstance(r.Context(), req)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	operation, err := s.store.CreateOperation(r.Context(), instance.ID, "create", "instance record created")
-	if err == nil {
-		_, _ = s.store.FinishOperation(r.Context(), operation.ID, "succeeded", "instance created")
-	}
 	principal, _ := principalFromContext(r.Context())
-	s.audit(r, principal, "create_instance", "instance", instance.ID, "succeeded", instance.Name)
+	// One-click: create == deploy. Kick off fetch + launch asynchronously.
+	if _, err := s.orch.Deploy(r.Context(), instance.ID); err != nil {
+		s.audit(r, principal, "deploy_instance", "instance", instance.ID, "failed", err.Error())
+	} else {
+		s.audit(r, principal, "create_instance", "instance", instance.ID, "accepted", instance.Name)
+	}
 	writeJSON(w, http.StatusCreated, instance)
 }
 
@@ -315,25 +339,74 @@ func (s *Server) consoleProxy(w http.ResponseWriter, r *http.Request, instanceID
 		writeError(w, clientError{status: http.StatusConflict, message: "console is available only while the instance is running"})
 		return
 	}
-	target, err := url.Parse("http://127.0.0.1:" + strconv.Itoa(instance.WebRTCPort))
+	// The interactive console is served by the host-wide cuttlefish-operator on
+	// HTTPS :8443 (self-signed), multiplexed per device via deviceId. We reverse
+	// proxy it under this instance's console prefix and reuse OpenCuttles auth.
+	target, err := url.Parse("https://127.0.0.1:" + strconv.Itoa(instance.WebRTCPort))
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	prefix := "/api/v1/instances/" + instance.ID + "/console"
 	principal, _ := principalFromContext(r.Context())
-	s.audit(r, principal, "open_console", "instance", instance.ID, "succeeded", "console proxied")
+	if strings.HasSuffix(r.URL.Path, "/console") || strings.Contains(r.URL.Path, "client.html") {
+		s.audit(r, principal, "open_console", "instance", instance.ID, "succeeded", "console proxied")
+	}
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
-		req.URL.Path = strings.TrimPrefix(r.URL.Path, "/api/v1/instances/"+instance.ID+"/console")
-		if req.URL.Path == "" {
-			req.URL.Path = "/"
+		path := strings.TrimPrefix(r.URL.Path, prefix)
+		if path == "" {
+			path = "/"
 		}
+		req.URL.Path = path
 		req.Host = target.Host
+		// Disable upstream compression so response bodies can be rewritten.
+		req.Header.Set("Accept-Encoding", "identity")
+	}
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if strings.Contains(resp.Header.Get("Content-Type"), "text/html") {
+			return rewriteConsoleHTML(resp, prefix)
+		}
+		return nil
+	}
+	proxy.ErrorHandler = func(rw http.ResponseWriter, _ *http.Request, perr error) {
+		writeError(rw, clientError{status: http.StatusBadGateway, message: "console backend unavailable: " + perr.Error()})
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// rewriteConsoleHTML makes the operator's root-absolute asset references resolve
+// under the per-instance console prefix and injects a <base> for relative URLs.
+func rewriteConsoleHTML(resp *http.Response, prefix string) error {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+
+	html := string(body)
+	if idx := strings.Index(html, "<head>"); idx >= 0 {
+		base := `<base href="` + prefix + `/">`
+		html = html[:idx+len("<head>")] + base + html[idx+len("<head>"):]
+	}
+	replacer := strings.NewReplacer(
+		`src="/`, `src="`+prefix+`/`,
+		`href="/`, `href="`+prefix+`/`,
+		`src='/`, `src='`+prefix+`/`,
+		`href='/`, `href='`+prefix+`/`,
+	)
+	html = replacer.Replace(html)
+
+	buf := []byte(html)
+	resp.Body = io.NopCloser(bytes.NewReader(buf))
+	resp.ContentLength = int64(len(buf))
+	resp.Header.Set("Content-Length", strconv.Itoa(len(buf)))
+	resp.Header.Del("Content-Encoding")
+	return nil
 }
 
 func (s *Server) withMiddleware(next http.Handler) http.Handler {

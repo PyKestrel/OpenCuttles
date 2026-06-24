@@ -21,7 +21,13 @@ describe("App", () => {
       if (url.endsWith("/host")) {
         return Promise.resolve(response({ id: "local", name: "host-01", cpuCount: 8, memoryBytes: 0, diskFreeBytes: 0, prerequisites: [], updatedAt: new Date().toISOString() }));
       }
-      if (url.endsWith("/images") || url.endsWith("/instances") || url.endsWith("/operations") || url.endsWith("/audit")) {
+      if (
+        url.endsWith("/images") ||
+        url.endsWith("/instances") ||
+        url.endsWith("/operations") ||
+        url.endsWith("/audit") ||
+        url.endsWith("/android-versions")
+      ) {
         return Promise.resolve(response([]));
       }
       if (url.endsWith("/health")) {

@@ -3,10 +3,12 @@ package orchestrator
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -38,6 +40,7 @@ func (s *Service) Host(ctx context.Context) domain.Host {
 			s.pathCheck("cvd", "Install Google Cuttlefish host tools."),
 			s.pathCheck("adb", "Install Android platform tools."),
 			s.kvmCheck(),
+			s.virtualizationCheck(),
 		},
 		UpdatedAt: time.Now().UTC(),
 	}
@@ -149,6 +152,109 @@ func (s *Service) runStart(id, operationID string) {
 	_, _ = s.store.FinishOperation(ctx, operationID, "succeeded", "instance is running")
 }
 
+// Deploy provisions an instance end to end: it fetches the backing Android
+// image when needed (cvd fetch), launches Cuttlefish, and waits for boot. It is
+// the one-click path used right after an instance record is created.
+func (s *Service) Deploy(ctx context.Context, id string) (domain.Operation, error) {
+	current, err := s.store.GetInstance(ctx, id)
+	if err != nil {
+		return domain.Operation{}, err
+	}
+	if current.State != domain.StateStopped && current.State != domain.StateError {
+		return domain.Operation{}, fmt.Errorf("cannot deploy instance from state %q", current.State)
+	}
+	operation, err := s.store.CreateOperation(ctx, id, "deploy", "deploying Android instance")
+	if err != nil {
+		return domain.Operation{}, err
+	}
+	if _, err := s.store.UpdateInstanceState(ctx, id, domain.StateProvisioning, ""); err != nil {
+		return operation, err
+	}
+	go s.runDeploy(id, operation.ID)
+	return operation, nil
+}
+
+func (s *Service) runDeploy(id, operationID string) {
+	// Image fetches can pull several GB, so allow a generous deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
+	defer cancel()
+
+	fail := func(err error) {
+		_, _ = s.store.UpdateInstanceState(ctx, id, domain.StateError, err.Error())
+		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+	}
+
+	instance, err := s.store.GetInstance(ctx, id)
+	if err != nil {
+		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		return
+	}
+	image, err := s.store.GetImage(ctx, instance.ImageID)
+	if err != nil {
+		fail(fmt.Errorf("image lookup: %w", err))
+		return
+	}
+	if err := s.ensureImage(ctx, image); err != nil {
+		fail(err)
+		return
+	}
+
+	if _, err := s.store.UpdateInstanceState(ctx, id, domain.StateStarting, ""); err != nil {
+		fail(err)
+		return
+	}
+	if err := s.launch(ctx, instance); err != nil {
+		fail(err)
+		return
+	}
+	if _, err := s.store.UpdateInstanceState(ctx, id, domain.StateBooting, ""); err != nil {
+		fail(err)
+		return
+	}
+	if err := s.waitReady(ctx, instance); err != nil {
+		fail(err)
+		return
+	}
+	if _, err := s.store.UpdateInstanceState(ctx, id, domain.StateRunning, ""); err != nil {
+		fail(err)
+		return
+	}
+	_, _ = s.store.FinishOperation(ctx, operationID, "succeeded", "instance is running")
+}
+
+// ensureImage downloads the backing image with cvd fetch when it is not already
+// marked ready. In dry-run mode it simply marks the image ready.
+func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
+	if image.Status == domain.ImageStatusReady {
+		return nil
+	}
+	if !realCuttlefishExecutionEnabled() {
+		return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+	}
+	// A custom registered image with no build target is expected to exist on disk already.
+	if strings.TrimSpace(image.BuildTarget) == "" {
+		return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+	}
+
+	if err := s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusFetching, 0, ""); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(image.Path, 0o750); err != nil {
+		_ = s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusError, 0, err.Error())
+		return fmt.Errorf("create image dir: %w", err)
+	}
+	result, err := s.runner.Run(ctx, "cvd", "fetch",
+		"--default_build="+image.BuildTarget,
+		"--target_directory="+image.Path,
+	)
+	if err != nil {
+		msg := fmt.Sprintf("cvd fetch failed: %v: %s", err, result.Output)
+		_ = s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusError, 0, msg)
+		return fmt.Errorf("%s", msg)
+	}
+	return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+}
+
 func (s *Service) StopInstance(ctx context.Context, id string) (domain.Instance, domain.Operation, error) {
 	current, err := s.store.GetInstance(ctx, id)
 	if err != nil {
@@ -242,19 +348,25 @@ func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
 		return nil
 	}
 	instanceNumber := instance.ADBPort - 6520 + 1
-	instanceDir := fmt.Sprintf("/var/lib/opencuttles/instances/%s", instance.ID)
+	instanceDir := filepath.Join(instanceRoot(), instance.ID)
 	if err := os.MkdirAll(instanceDir, 0750); err != nil {
 		return fmt.Errorf("create instance dir: %w", err)
 	}
 	args := []string{
 		"--num_instances=1",
 		fmt.Sprintf("--base_instance_num=%d", instanceNumber),
+		"--start_webrtc=true",
 		fmt.Sprintf("--cpus=%d", instance.CPUCores),
 		fmt.Sprintf("--memory_mb=%d", instance.MemoryMB),
 		fmt.Sprintf("--system_image_dir=%s", image.Path),
 		fmt.Sprintf("--instance_dir=%s", instanceDir),
 		fmt.Sprintf("--adb_port=%d", instance.ADBPort),
-		fmt.Sprintf("--webrtc_port=%d", instance.WebRTCPort),
+	}
+	if instance.DisplayWidth > 0 && instance.DisplayHeight > 0 {
+		args = append(args, fmt.Sprintf("--x_res=%d", instance.DisplayWidth), fmt.Sprintf("--y_res=%d", instance.DisplayHeight))
+	}
+	if instance.DPI > 0 {
+		args = append(args, fmt.Sprintf("--dpi=%d", instance.DPI))
 	}
 	command, commandArgs := s.startCommand(args)
 	result, err := s.runner.Run(ctx, command, commandArgs...)
@@ -324,9 +436,13 @@ func (s *Service) waitReady(ctx context.Context, instance domain.Instance) error
 }
 
 func (s *Service) waitWebRTC(ctx context.Context, port int) error {
-	client := http.Client{Timeout: 2 * time.Second}
+	// The cuttlefish-operator serves HTTPS with a self-signed certificate.
+	client := http.Client{
+		Timeout:   2 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	}
 	deadline := time.Now().Add(45 * time.Second)
-	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+	url := fmt.Sprintf("https://127.0.0.1:%d", port)
 	for time.Now().Before(deadline) {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		resp, err := client.Do(req)
@@ -359,6 +475,18 @@ func (s *Service) kvmCheck() domain.Prerequisite {
 		return domain.Prerequisite{Name: "/dev/kvm", OK: false, Detail: err.Error(), Remedy: "Enable KVM or nested virtualization and grant the service user access."}
 	}
 	return domain.Prerequisite{Name: "/dev/kvm", OK: true, Detail: info.Mode().String()}
+}
+
+func (s *Service) virtualizationCheck() domain.Prerequisite {
+	data, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		return domain.Prerequisite{Name: "cpu-virtualization", OK: false, Detail: err.Error(), Remedy: "Run on a Linux host with hardware virtualization enabled."}
+	}
+	text := string(data)
+	if strings.Contains(text, "vmx") || strings.Contains(text, "svm") {
+		return domain.Prerequisite{Name: "cpu-virtualization", OK: true, Detail: "hardware virtualization (vmx/svm) available"}
+	}
+	return domain.Prerequisite{Name: "cpu-virtualization", OK: false, Detail: "vmx/svm flag not present", Remedy: "Enable nested virtualization for this VM/host."}
 }
 
 func memoryBytes() uint64 {
@@ -399,6 +527,14 @@ func (s *Service) diskFreeBytes(ctx context.Context) uint64 {
 	}
 	kb, _ := strconv.ParseUint(fields[3], 10, 64)
 	return kb * 1024
+}
+
+func instanceRoot() string {
+	root := strings.TrimSpace(os.Getenv("OPENCUTTLES_INSTANCE_ROOT"))
+	if root == "" {
+		root = "/var/lib/opencuttles/instances"
+	}
+	return root
 }
 
 func executionMode() string {

@@ -1,4 +1,5 @@
 import type {
+  AndroidVersion,
   AuditEvent,
   BootstrapStatus,
   CreateImagePayload,
@@ -43,6 +44,7 @@ export const api = {
   me: () => request<Principal>("/api/v1/auth/me"),
   host: () => request<Host>("/api/v1/host"),
   health: () => request<HealthReport>("/api/v1/health"),
+  androidVersions: () => request<AndroidVersion[]>("/api/v1/android-versions"),
   images: () => request<Image[]>("/api/v1/images"),
   createImage: (payload: CreateImagePayload) =>
     request<Image>("/api/v1/images", {

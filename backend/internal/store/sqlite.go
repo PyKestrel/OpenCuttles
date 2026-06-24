@@ -167,11 +167,81 @@ func (s *SQLite) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+
+	// v2: additive columns for Android-version image fetch + richer instance options.
+	additive := []struct{ table, column, ddl string }{
+		{"images", "build_target", `ALTER TABLE images ADD COLUMN build_target TEXT NOT NULL DEFAULT ''`},
+		{"images", "version_id", `ALTER TABLE images ADD COLUMN version_id TEXT NOT NULL DEFAULT ''`},
+		{"images", "status", `ALTER TABLE images ADD COLUMN status TEXT NOT NULL DEFAULT 'ready'`},
+		{"images", "size_bytes", `ALTER TABLE images ADD COLUMN size_bytes INTEGER NOT NULL DEFAULT 0`},
+		{"images", "last_error", `ALTER TABLE images ADD COLUMN last_error TEXT NOT NULL DEFAULT ''`},
+		{"instances", "android_version", `ALTER TABLE instances ADD COLUMN android_version TEXT NOT NULL DEFAULT ''`},
+		{"instances", "display_width", `ALTER TABLE instances ADD COLUMN display_width INTEGER NOT NULL DEFAULT 0`},
+		{"instances", "display_height", `ALTER TABLE instances ADD COLUMN display_height INTEGER NOT NULL DEFAULT 0`},
+		{"instances", "dpi", `ALTER TABLE instances ADD COLUMN dpi INTEGER NOT NULL DEFAULT 0`},
+		{"instances", "device_id", `ALTER TABLE instances ADD COLUMN device_id TEXT NOT NULL DEFAULT ''`},
+	}
+	for _, column := range additive {
+		if err := s.ensureColumn(ctx, column.table, column.column, column.ddl); err != nil {
+			return err
+		}
+	}
+
 	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (1, ?)`, formatTime(time.Now().UTC()))
 	if err != nil {
 		return err
 	}
+	_, err = s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (2, ?)`, formatTime(time.Now().UTC()))
+	if err != nil {
+		return err
+	}
 	return nil
+}
+
+// ensureColumn adds a column when it is not already present so that schema
+// upgrades on existing databases are idempotent.
+func (s *SQLite) ensureColumn(ctx context.Context, table, column, ddl string) error {
+	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	found := false
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			ctype   string
+			notNull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, ddl)
+	return err
+}
+
+const imageColumns = `id, name, path, android_api, description, build_target, version_id, status, size_bytes, last_error, created_at`
+
+func (s *SQLite) insertImage(ctx context.Context, image domain.Image) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO images (`+imageColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		image.ID, image.Name, image.Path, image.AndroidAPI, image.Description,
+		image.BuildTarget, image.VersionID, image.Status, image.SizeBytes, image.LastError,
+		formatTime(image.CreatedAt))
+	return err
 }
 
 func (s *SQLite) CreateImage(ctx context.Context, req domain.CreateImageRequest) (domain.Image, error) {
@@ -185,15 +255,55 @@ func (s *SQLite) CreateImage(ctx context.Context, req domain.CreateImageRequest)
 		Path:        req.Path,
 		AndroidAPI:  req.AndroidAPI,
 		Description: req.Description,
+		Status:      domain.ImageStatusReady,
 		CreatedAt:   now,
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO images (id, name, path, android_api, description, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		image.ID, image.Name, image.Path, image.AndroidAPI, image.Description, formatTime(image.CreatedAt))
-	return image, err
+	if err := s.insertImage(ctx, image); err != nil {
+		return domain.Image{}, err
+	}
+	return image, nil
+}
+
+// GetOrCreateVersionImage returns the image row backing an Android version,
+// creating a pending placeholder (to be populated by cvd fetch) if needed.
+func (s *SQLite) GetOrCreateVersionImage(ctx context.Context, versionID, label, buildTarget string) (domain.Image, error) {
+	path := filepath.Join(imageRoot(), versionID)
+	if err := ValidateImagePath(path, false); err != nil {
+		return domain.Image{}, err
+	}
+	row := s.db.QueryRowContext(ctx, `SELECT `+imageColumns+` FROM images WHERE version_id = ? ORDER BY created_at LIMIT 1`, versionID)
+	image, err := scanImage(row)
+	if err == nil {
+		return image, nil
+	}
+	if !IsNotFound(err) {
+		return domain.Image{}, err
+	}
+	image = domain.Image{
+		ID:          newID("img"),
+		Name:        label,
+		Path:        path,
+		BuildTarget: buildTarget,
+		VersionID:   versionID,
+		Status:      domain.ImageStatusPending,
+		Description: "Auto-fetched with cvd fetch by OpenCuttles.",
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := s.insertImage(ctx, image); err != nil {
+		return domain.Image{}, err
+	}
+	return image, nil
+}
+
+// UpdateImageStatus records progress of an image fetch.
+func (s *SQLite) UpdateImageStatus(ctx context.Context, id, status string, sizeBytes int64, lastError string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE images SET status = ?, size_bytes = ?, last_error = ? WHERE id = ?`,
+		status, sizeBytes, lastError, id)
+	return err
 }
 
 func (s *SQLite) ListImages(ctx context.Context) ([]domain.Image, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, path, android_api, description, created_at FROM images ORDER BY created_at DESC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+imageColumns+` FROM images ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -211,24 +321,28 @@ func (s *SQLite) ListImages(ctx context.Context) ([]domain.Image, error) {
 }
 
 func (s *SQLite) GetImage(ctx context.Context, id string) (domain.Image, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, name, path, android_api, description, created_at FROM images WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT `+imageColumns+` FROM images WHERE id = ?`, id)
 	return scanImage(row)
+}
+
+func imageRoot() string {
+	root := strings.TrimSpace(os.Getenv("OPENCUTTLES_IMAGE_ROOT"))
+	if root == "" {
+		root = "/var/lib/opencuttles/images"
+	}
+	return root
 }
 
 func (s *SQLite) GetOrCreateDefaultImage(ctx context.Context) (domain.Image, error) {
 	defaultPath := strings.TrimSpace(os.Getenv("OPENCUTTLES_DEFAULT_IMAGE_PATH"))
 	if defaultPath == "" {
-		root := strings.TrimSpace(os.Getenv("OPENCUTTLES_IMAGE_ROOT"))
-		if root == "" {
-			root = "/var/lib/opencuttles/images"
-		}
-		defaultPath = filepath.Join(root, "default")
+		defaultPath = filepath.Join(imageRoot(), "default")
 	}
 	if err := ValidateImagePath(defaultPath, false); err != nil {
 		return domain.Image{}, err
 	}
 
-	row := s.db.QueryRowContext(ctx, `SELECT id, name, path, android_api, description, created_at FROM images WHERE path = ? ORDER BY created_at LIMIT 1`, defaultPath)
+	row := s.db.QueryRowContext(ctx, `SELECT `+imageColumns+` FROM images WHERE path = ? ORDER BY created_at LIMIT 1`, defaultPath)
 	image, err := scanImage(row)
 	if err == nil {
 		return image, nil
@@ -267,29 +381,38 @@ func (s *SQLite) CreateInstance(ctx context.Context, req domain.CreateInstanceRe
 		return domain.Instance{}, err
 	}
 	instanceID := newID("cvd")
+	instanceNumber := adbPort - basePort + 1
+	deviceID := fmt.Sprintf("cvd-%d", instanceNumber)
 
 	instance := domain.Instance{
 		ID:              instanceID,
 		Name:            req.Name,
 		HostID:          "local",
 		ImageID:         imageID,
+		AndroidVersion:  req.AndroidVersion,
 		State:           domain.StateStopped,
 		CPUCores:        nonZero(req.CPUCores, 2),
 		MemoryMB:        nonZero(req.MemoryMB, 4096),
+		DisplayWidth:    nonZero(req.DisplayWidth, 720),
+		DisplayHeight:   nonZero(req.DisplayHeight, 1280),
+		DPI:             nonZero(req.DPI, 320),
 		ADBPort:         adbPort,
 		WebRTCPort:      webrtcPort,
+		DeviceID:        deviceID,
 		ConsoleProvider: domain.ConsoleProviderCuttlefishWebRTC,
-		ConsoleURL:      fmt.Sprintf("/api/v1/instances/%s/console", instanceID),
+		ConsoleURL:      fmt.Sprintf("/api/v1/instances/%s/console/client.html?deviceId=%s", instanceID, deviceID),
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
 
 	_, err = tx.ExecContext(ctx, `INSERT INTO instances (
-		id, name, host_id, image_id, state, cpu_cores, memory_mb, adb_port, webrtc_port,
+		id, name, host_id, image_id, android_version, state, cpu_cores, memory_mb,
+		display_width, display_height, dpi, adb_port, webrtc_port, device_id,
 		console_provider, console_url, last_error, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		instance.ID, instance.Name, instance.HostID, instance.ImageID, instance.State,
-		instance.CPUCores, instance.MemoryMB, instance.ADBPort, instance.WebRTCPort,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		instance.ID, instance.Name, instance.HostID, instance.ImageID, instance.AndroidVersion, instance.State,
+		instance.CPUCores, instance.MemoryMB, instance.DisplayWidth, instance.DisplayHeight, instance.DPI,
+		instance.ADBPort, instance.WebRTCPort, instance.DeviceID,
 		instance.ConsoleProvider, instance.ConsoleURL, instance.LastError,
 		formatTime(instance.CreatedAt), formatTime(instance.UpdatedAt))
 	if err != nil {
@@ -344,8 +467,10 @@ func ValidateImagePath(path string, requireExisting bool) error {
 	return nil
 }
 
+const instanceColumns = `id, name, host_id, image_id, android_version, state, cpu_cores, memory_mb, display_width, display_height, dpi, adb_port, webrtc_port, device_id, console_provider, console_url, last_error, created_at, updated_at`
+
 func (s *SQLite) ListInstances(ctx context.Context) ([]domain.Instance, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, host_id, image_id, state, cpu_cores, memory_mb, adb_port, webrtc_port, console_provider, console_url, last_error, created_at, updated_at FROM instances ORDER BY created_at DESC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+instanceColumns+` FROM instances ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +488,7 @@ func (s *SQLite) ListInstances(ctx context.Context) ([]domain.Instance, error) {
 }
 
 func (s *SQLite) GetInstance(ctx context.Context, id string) (domain.Instance, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, name, host_id, image_id, state, cpu_cores, memory_mb, adb_port, webrtc_port, console_provider, console_url, last_error, created_at, updated_at FROM instances WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT `+instanceColumns+` FROM instances WHERE id = ?`, id)
 	return scanInstance(row)
 }
 
@@ -448,16 +573,23 @@ type queryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
+// basePort is the first ADB port Cuttlefish assigns (instance 1 -> cvd-1).
+const basePort = 6520
+
+// webrtcOperatorPort is the host-wide port served by cuttlefish-operator; the
+// interactive console for every device is multiplexed through it by deviceId.
+const webrtcOperatorPort = 8443
+
 func nextPortsTx(ctx context.Context, q queryer) (int, int, error) {
 	var maxADB sql.NullInt64
 	if err := q.QueryRowContext(ctx, `SELECT MAX(adb_port) FROM instances`).Scan(&maxADB); err != nil {
 		return 0, 0, err
 	}
-	nextADB := 6520
+	nextADB := basePort
 	if maxADB.Valid {
 		nextADB = int(maxADB.Int64) + 1
 	}
-	return nextADB, 8443 + (nextADB - 6520), nil
+	return nextADB, webrtcOperatorPort, nil
 }
 
 type scanner interface {
@@ -467,7 +599,8 @@ type scanner interface {
 func scanImage(row scanner) (domain.Image, error) {
 	var image domain.Image
 	var createdAt string
-	if err := row.Scan(&image.ID, &image.Name, &image.Path, &image.AndroidAPI, &image.Description, &createdAt); err != nil {
+	if err := row.Scan(&image.ID, &image.Name, &image.Path, &image.AndroidAPI, &image.Description,
+		&image.BuildTarget, &image.VersionID, &image.Status, &image.SizeBytes, &image.LastError, &createdAt); err != nil {
 		return domain.Image{}, err
 	}
 	image.CreatedAt = parseTime(createdAt)
@@ -478,8 +611,9 @@ func scanInstance(row scanner) (domain.Instance, error) {
 	var instance domain.Instance
 	var createdAt, updatedAt string
 	if err := row.Scan(
-		&instance.ID, &instance.Name, &instance.HostID, &instance.ImageID, &instance.State,
-		&instance.CPUCores, &instance.MemoryMB, &instance.ADBPort, &instance.WebRTCPort,
+		&instance.ID, &instance.Name, &instance.HostID, &instance.ImageID, &instance.AndroidVersion, &instance.State,
+		&instance.CPUCores, &instance.MemoryMB, &instance.DisplayWidth, &instance.DisplayHeight, &instance.DPI,
+		&instance.ADBPort, &instance.WebRTCPort, &instance.DeviceID,
 		&instance.ConsoleProvider, &instance.ConsoleURL, &instance.LastError, &createdAt, &updatedAt,
 	); err != nil {
 		return domain.Instance{}, err

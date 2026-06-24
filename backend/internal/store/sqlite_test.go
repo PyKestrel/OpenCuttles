@@ -41,8 +41,15 @@ func TestStoreAuthAuditAndInstancePersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create instance: %v", err)
 	}
-	if instance.ConsoleURL != "/api/v1/instances/"+instance.ID+"/console" {
-		t.Fatalf("console url = %q", instance.ConsoleURL)
+	wantConsole := "/api/v1/instances/" + instance.ID + "/console/client.html?deviceId=" + instance.DeviceID
+	if instance.ConsoleURL != wantConsole {
+		t.Fatalf("console url = %q, want %q", instance.ConsoleURL, wantConsole)
+	}
+	if instance.DeviceID != "cvd-1" {
+		t.Fatalf("device id = %q, want cvd-1", instance.DeviceID)
+	}
+	if instance.WebRTCPort != webrtcOperatorPort {
+		t.Fatalf("webrtc port = %d, want %d", instance.WebRTCPort, webrtcOperatorPort)
 	}
 
 	if _, err := db.CreateAuditEvent(ctx, domain.AuditEvent{ActorID: user.ID, Action: "test", Resource: "instance", ResourceID: instance.ID, Outcome: "succeeded"}); err != nil {
@@ -84,5 +91,94 @@ func TestCreateInstanceAutoRegistersDefaultImage(t *testing.T) {
 	}
 	if images[0].Name != "Default Cuttlefish image" {
 		t.Fatalf("default image name = %q", images[0].Name)
+	}
+}
+
+func TestGetOrCreateVersionImage(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	t.Setenv("OPENCUTTLES_IMAGE_ROOT", filepath.Join(tempDir, "images"))
+
+	db, err := OpenSQLite(filepath.Join(tempDir, "opencuttles.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	buildTarget := "aosp-android14-gsi/aosp_cf_x86_64_phone-userdebug"
+	image, err := db.GetOrCreateVersionImage(ctx, "android14", "Android 14 (GSI)", buildTarget)
+	if err != nil {
+		t.Fatalf("get or create version image: %v", err)
+	}
+	if image.Status != domain.ImageStatusPending {
+		t.Fatalf("status = %q, want pending", image.Status)
+	}
+	if image.BuildTarget != buildTarget || image.VersionID != "android14" {
+		t.Fatalf("build target/version mismatch: %+v", image)
+	}
+
+	again, err := db.GetOrCreateVersionImage(ctx, "android14", "Android 14 (GSI)", buildTarget)
+	if err != nil {
+		t.Fatalf("get or create version image (again): %v", err)
+	}
+	if again.ID != image.ID {
+		t.Fatalf("expected same image id, got %q and %q", image.ID, again.ID)
+	}
+
+	if err := db.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 1234, ""); err != nil {
+		t.Fatalf("update image status: %v", err)
+	}
+	ready, err := db.GetImage(ctx, image.ID)
+	if err != nil {
+		t.Fatalf("get image: %v", err)
+	}
+	if ready.Status != domain.ImageStatusReady || ready.SizeBytes != 1234 {
+		t.Fatalf("image not marked ready: %+v", ready)
+	}
+}
+
+func TestCreateInstanceDeployFields(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	t.Setenv("OPENCUTTLES_IMAGE_ROOT", filepath.Join(tempDir, "images"))
+
+	db, err := OpenSQLite(filepath.Join(tempDir, "opencuttles.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	image, err := db.CreateImage(ctx, domain.CreateImageRequest{Name: "AOSP", Path: filepath.Join(tempDir, "img")})
+	if err != nil {
+		t.Fatalf("create image: %v", err)
+	}
+	instance, err := db.CreateInstance(ctx, domain.CreateInstanceRequest{
+		Name:           "android-01",
+		ImageID:        image.ID,
+		AndroidVersion: "android14",
+		DisplayWidth:   1080,
+		DisplayHeight:  1920,
+		DPI:            440,
+	})
+	if err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if instance.AndroidVersion != "android14" {
+		t.Fatalf("android version = %q", instance.AndroidVersion)
+	}
+	if instance.DisplayWidth != 1080 || instance.DisplayHeight != 1920 || instance.DPI != 440 {
+		t.Fatalf("display options not persisted: %+v", instance)
+	}
+	if instance.DeviceID != "cvd-1" {
+		t.Fatalf("device id = %q, want cvd-1", instance.DeviceID)
+	}
+
+	// Round-trip through the store to confirm scanning of the new columns.
+	loaded, err := db.GetInstance(ctx, instance.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if loaded.DisplayWidth != 1080 || loaded.DeviceID != "cvd-1" || loaded.AndroidVersion != "android14" {
+		t.Fatalf("loaded instance mismatch: %+v", loaded)
 	}
 }

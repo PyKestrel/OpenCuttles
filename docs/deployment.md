@@ -143,6 +143,29 @@ Open the Caddy hostname in a browser, bootstrap the first local admin user using
 `OPENCUTTLES_BOOTSTRAP_TOKEN`, then rotate or remove the token from
 `/etc/opencuttles/opencuttles.env` after the admin exists.
 
+## Interactive console (WebRTC)
+
+The device console is Cuttlefish's built-in WebRTC stream served by the host-wide
+`cuttlefish-operator` on `:8443`. OpenCuttles reverse-proxies it per instance at
+`/api/v1/instances/<id>/console/...` (reusing OpenCuttles auth and TLS), so the
+operator port itself stays host-local. Browsers connect to the media stream
+directly over `TCP/UDP 15550-15599`, which `scripts/ubuntu/firewall.sh` opens.
+
+- Make sure the `cuttlefish-operator` service is enabled (the Android tools
+  installer does this automatically).
+- This default works for LAN/VPN access where the browser can reach the host's
+  `15550-15599` range. For browsers behind arbitrary NAT/firewalls, deploy a TURN
+  relay (e.g. `coturn`) and point the operator at it. TURN is an optional
+  follow-up and is not bundled.
+
+## Image storage and disk
+
+Each Android version is fetched on first deploy with `cvd fetch` into
+`OPENCUTTLES_IMAGE_ROOT/<versionId>` and is several GB. Provision the image
+volume accordingly (the host check warns when `/var/lib` has < 50 GB free) and
+expect the first deploy of a new version to take several minutes while the image
+downloads. Subsequent instances of the same version reuse the cached image.
+
 ## Backup and restore
 
 ```bash

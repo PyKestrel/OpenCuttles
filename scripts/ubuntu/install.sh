@@ -15,7 +15,7 @@ sudo install -d -o opencuttles -g opencuttles /var/lib/opencuttles /var/lib/open
 sudo install -d -m 0755 /etc/caddy/conf.d
 
 sudo rsync -a "${release_dir}/opt/opencuttles/bin/" /opt/opencuttles/bin/
-sudo rsync -a "${release_dir}/opt/opencuttles/frontend/dist/" /opt/opencuttles/frontend/dist/
+sudo rsync -a --delete "${release_dir}/opt/opencuttles/frontend/dist/" /opt/opencuttles/frontend/dist/
 sudo install -m 0644 "${release_dir}/deploy/systemd/opencuttles-api.service" /etc/systemd/system/opencuttles-api.service
 if [[ ! -f /etc/opencuttles/opencuttles.env ]]; then
   sudo install -m 0640 "${release_dir}/deploy/systemd/opencuttles.env.example" /etc/opencuttles/opencuttles.env
