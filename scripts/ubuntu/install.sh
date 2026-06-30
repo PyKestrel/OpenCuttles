@@ -14,6 +14,15 @@ sudo usermod -aG kvm opencuttles
 sudo install -d -o opencuttles -g opencuttles /var/lib/opencuttles /var/lib/opencuttles/images /var/log/opencuttles /opt/opencuttles/bin /etc/opencuttles
 sudo install -d -m 0755 /etc/caddy/conf.d
 
+# cvd downloads images to /var/tmp/cvd and hardlinks them into the image dir.
+# When /var/lib/opencuttles is a separate mount that fails with EXDEV, so keep
+# the cvd cache on the same filesystem as the images via a symlink. Only replace
+# /var/tmp/cvd when it is absent or already a symlink (never a real directory).
+sudo install -d -o opencuttles -g opencuttles /var/lib/opencuttles/images/.cvd-cache
+if [[ -L /var/tmp/cvd || ! -e /var/tmp/cvd ]]; then
+  sudo ln -sfn /var/lib/opencuttles/images/.cvd-cache /var/tmp/cvd
+fi
+
 # The frontend is embedded in the binary, so only the binary needs deploying.
 sudo rsync -a "${release_dir}/opt/opencuttles/bin/" /opt/opencuttles/bin/
 sudo install -m 0644 "${release_dir}/deploy/systemd/opencuttles-api.service" /etc/systemd/system/opencuttles-api.service

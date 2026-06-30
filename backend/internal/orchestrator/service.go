@@ -252,14 +252,11 @@ func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
 		_ = s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusError, 0, err.Error())
 		return fmt.Errorf("create image dir: %w", err)
 	}
-	// cvd downloads artifacts to a cache and then hardlinks them into the target
-	// directory. If the cache (default /var/tmp) and the image volume are on
-	// different filesystems, the hardlink fails with EXDEV. Pin cvd's temp/cache
-	// onto the same filesystem as the image root so the hardlink stays in-device.
-	cacheDir := filepath.Join(imageRoot(), ".cvd-cache")
-	if mkErr := os.MkdirAll(cacheDir, 0o750); mkErr == nil {
-		_ = os.Setenv("TMPDIR", cacheDir)
-	}
+	// cvd downloads artifacts to a cache (hardcoded at /var/tmp/cvd) and then
+	// hardlinks them into the target directory. If that cache and the image
+	// volume are on different filesystems, the hardlink fails with EXDEV. Keep
+	// the cache on the image filesystem so the hardlink stays in-device.
+	ensureCvdCacheColocated(imageRoot())
 	result, err := s.runner.Run(ctx, "cvd", "fetch",
 		"--default_build="+image.BuildTarget,
 		"--target_directory="+image.Path,
@@ -270,6 +267,31 @@ func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
 		return fmt.Errorf("%s", msg)
 	}
 	return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+}
+
+// ensureCvdCacheColocated makes cvd's download cache (/var/tmp/cvd) live on the
+// same filesystem as the image root, so cvd can hardlink fetched artifacts into
+// the target directory instead of failing with EXDEV across mounts. It only
+// creates a symlink when /var/tmp/cvd is absent or already our symlink; it never
+// clobbers an existing real directory (which may belong to another cvd user).
+func ensureCvdCacheColocated(root string) {
+	cache := filepath.Join(root, ".cvd-cache")
+	if err := os.MkdirAll(cache, 0o750); err != nil {
+		return
+	}
+	const link = "/var/tmp/cvd"
+	if fi, err := os.Lstat(link); err == nil {
+		if fi.Mode()&os.ModeSymlink == 0 {
+			// A real directory already exists; leave it alone.
+			return
+		}
+		if dst, _ := os.Readlink(link); dst == cache {
+			return
+		}
+		_ = os.Remove(link)
+	}
+	_ = os.MkdirAll(filepath.Dir(link), 0o1777)
+	_ = os.Symlink(cache, link)
 }
 
 // imagePopulated reports whether an image directory exists and contains files.
