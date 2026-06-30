@@ -1,5 +1,4 @@
 opencuttles.example.com {
-	root * /opt/opencuttles/frontend/dist
 	encode gzip zstd
 	request_body {
 		max_size 100MB
@@ -13,12 +12,7 @@ opencuttles.example.com {
 		-Server
 	}
 
-	handle /api/* {
-		reverse_proxy 127.0.0.1:8080
-	}
-
-	handle {
-		try_files {path} /index.html
-		file_server
-	}
+	# OpenCuttles is a single binary that serves both the API and the embedded
+	# SPA, so Caddy only needs to terminate TLS and forward everything upstream.
+	reverse_proxy 127.0.0.1:8080
 }

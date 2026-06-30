@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/opencuttles/opencuttles/backend/internal/auth"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
@@ -124,6 +125,42 @@ func TestRewriteConsoleHTML(t *testing.T) {
 	}
 	if !strings.Contains(html, `href="`+prefix+`/style.css"`) {
 		t.Fatalf("link href not rewritten: %s", html)
+	}
+}
+
+func TestServeStaticSPA(t *testing.T) {
+	srv := &Server{
+		webAssets: fstest.MapFS{
+			"index.html":    {Data: []byte("<!doctype html><title>OpenCuttles</title>")},
+			"assets/app.js": {Data: []byte("console.log('hi')")},
+		},
+	}
+
+	// Existing asset is served directly.
+	rec := httptest.NewRecorder()
+	srv.serveStatic(rec, httptest.NewRequest(http.MethodGet, "/assets/app.js", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("asset status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "console.log") {
+		t.Fatalf("asset body = %q", rec.Body.String())
+	}
+
+	// Unknown client-side route falls back to index.html.
+	rec = httptest.NewRecorder()
+	srv.serveStatic(rec, httptest.NewRequest(http.MethodGet, "/instances/abc", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("spa fallback status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "OpenCuttles") {
+		t.Fatalf("spa fallback body = %q", rec.Body.String())
+	}
+
+	// Unknown API routes must not be swallowed by the SPA handler.
+	rec = httptest.NewRecorder()
+	srv.serveStatic(rec, httptest.NewRequest(http.MethodGet, "/api/v1/nope", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("api 404 status = %d", rec.Code)
 	}
 }
 

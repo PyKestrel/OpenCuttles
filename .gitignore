@@ -7,6 +7,10 @@ backend/bin/
 frontend/dist/
 frontend/node_modules/
 
+# Embedded frontend build (staged by the Makefile, keep only the placeholder)
+backend/internal/web/dist/*
+!backend/internal/web/dist/.gitkeep
+
 # Local editor and OS files
 .DS_Store
 Thumbs.db

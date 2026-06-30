@@ -37,7 +37,9 @@ describe("App", () => {
     });
 
     render(<App />);
-    await waitFor(() => expect(screen.getByText("Android device control plane")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument(),
+    );
     expect(screen.getByText("host-01")).toBeInTheDocument();
   });
 });

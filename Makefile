@@ -1,6 +1,8 @@
 SHELL := bash
 
-.PHONY: all dev test test-backend test-frontend build build-backend build-frontend lint package clean
+WEB_EMBED := backend/internal/web/dist
+
+.PHONY: all dev test test-backend test-frontend build build-backend build-frontend embed-frontend lint package update clean
 
 all: test build
 
@@ -15,14 +17,23 @@ test-backend:
 test-frontend:
 	cd frontend && npm test -- --run
 
-build: build-backend build-frontend
-
-build-backend:
-	mkdir -p dist
-	cd backend && go build -trimpath -ldflags="-s -w" -o ../dist/opencuttles-api ./cmd/opencuttles-api
+# The frontend is embedded into the Go binary (single-artifact deploy), so the
+# backend build depends on the built + staged frontend assets.
+build: build-backend
 
 build-frontend:
-	cd frontend && npm ci && npm run build
+	# Prefer a clean, reproducible install; fall back to npm install when the
+	# lockfile is missing or out of sync so a fresh clone builds without extra steps.
+	cd frontend && { npm ci || npm install; } && npm run build
+
+# Stage the built SPA into the embed directory consumed by //go:embed.
+embed-frontend: build-frontend
+	find $(WEB_EMBED) -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
+	cp -R frontend/dist/. $(WEB_EMBED)/
+
+build-backend: embed-frontend
+	mkdir -p dist
+	cd backend && go build -trimpath -ldflags="-s -w" -o ../dist/opencuttles-api ./cmd/opencuttles-api
 
 lint:
 	cd backend && go test ./...
@@ -31,13 +42,15 @@ lint:
 
 package: build
 	rm -rf dist/package
-	mkdir -p dist/package/opt/opencuttles/bin dist/package/opt/opencuttles/frontend/dist
+	mkdir -p dist/package/opt/opencuttles/bin
 	cp dist/opencuttles-api dist/package/opt/opencuttles/bin/
-	cp -R frontend/dist/. dist/package/opt/opencuttles/frontend/dist/
-	cp frontend/package.json dist/package/opt/opencuttles/frontend/
 	cp -R deploy dist/package/
 	cp -R scripts dist/package/
 	cp -R docs dist/package/
 
+update:
+	bash scripts/ubuntu/update.sh
+
 clean:
 	rm -rf dist frontend/dist
+	find $(WEB_EMBED) -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true

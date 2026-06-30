@@ -18,8 +18,8 @@ sudo cp -a /etc/opencuttles "$rollback_dir/etc-opencuttles" 2>/dev/null || true
 bash "${script_dir}/backup.sh" "/var/backups/opencuttles"
 
 sudo systemctl stop opencuttles-api
+# The frontend is embedded in the binary; only the binary needs replacing.
 sudo rsync -a "${release_dir}/opt/opencuttles/bin/" /opt/opencuttles/bin/
-sudo rsync -a --delete "${release_dir}/opt/opencuttles/frontend/dist/" /opt/opencuttles/frontend/dist/
 sudo install -m 0644 "${release_dir}/deploy/systemd/opencuttles-api.service" /etc/systemd/system/opencuttles-api.service
 sudo install -m 0644 "${release_dir}/deploy/proxy/Caddyfile" /etc/caddy/conf.d/opencuttles.caddy
 sudo systemctl daemon-reload

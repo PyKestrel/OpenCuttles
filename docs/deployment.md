@@ -12,14 +12,19 @@ OPENCUTTLES_HOSTNAME=opencuttles.example.com bash scripts/ubuntu/quickstart.sh
 ```
 
 The script installs common host dependencies, installs Go 1.23 and Node.js 22
-when needed, installs `adb`, builds and installs Google Cuttlefish host packages
-if they are missing, prepares Go/npm dependencies, builds a package, installs the
-systemd/Caddy assets, generates a one-time bootstrap token, starts the API, and
-prints the dashboard URL.
+when needed, installs `adb`, installs the Google Cuttlefish host packages if they
+are missing, prepares Go/npm dependencies, builds a single-binary package,
+installs the systemd/Caddy assets, generates a one-time bootstrap token, starts
+the API, and prints the dashboard URL.
+
+Cuttlefish is installed from prebuilt packages by default (Google Artifact
+Registry, then the latest GitHub release `.deb` assets) - seconds, not hours, and
+almost no disk. The slow Bazel source build is opt-in via
+`OPENCUTTLES_BUILD_CUTTLEFISH_FROM_SOURCE=1` and is disk-gated (it needs ~40 GB).
 
 Set `OPENCUTTLES_CONFIGURE_FIREWALL=1` to let quickstart apply the bundled UFW
 rules.
-Set `OPENCUTTLES_SKIP_CUTTLEFISH_INSTALL=1` to skip the Cuttlefish build and run
+Set `OPENCUTTLES_SKIP_CUTTLEFISH_INSTALL=1` to skip Cuttlefish entirely and run
 only the dashboard/API in dry-run mode.
 Set `OPENCUTTLES_PREPARE_DEFAULT_IMAGE=1` to download and unpack the default
 Cuttlefish image under `/var/lib/opencuttles/images/default`. By default this
@@ -59,26 +64,16 @@ bash scripts/ubuntu/check-host.sh
 
 ## 2. Build artifacts
 
-Backend:
-
-```bash
-cd backend
-go build -o ../dist/opencuttles-api ./cmd/opencuttles-api
-```
-
-Frontend:
-
-```bash
-cd frontend
-npm install
-npm run build
-```
-
-Package:
+OpenCuttles ships as a single binary with the dashboard embedded. `make package`
+builds the frontend, stages it into the embed directory, builds the binary, and
+assembles the release under `dist/package`:
 
 ```bash
 make package
 ```
+
+There is no separate frontend bundle to deploy; the binary serves the SPA, the
+API, and the device-console proxy on one port.
 
 ## 3. Install artifacts
 
@@ -174,6 +169,15 @@ bash scripts/ubuntu/restore.sh /var/backups/opencuttles/opencuttles-YYYYmmddTHHM
 ```
 
 ## Upgrade and rollback
+
+One-command update (pull, package, rollback-safe upgrade, firewall, operator,
+health check):
+
+```bash
+bash scripts/ubuntu/update.sh   # or: make update
+```
+
+Manual upgrade/rollback:
 
 ```bash
 bash scripts/ubuntu/upgrade.sh dist/package

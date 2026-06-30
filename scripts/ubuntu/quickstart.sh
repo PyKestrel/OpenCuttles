@@ -81,18 +81,13 @@ if ! bash "${root_dir}/scripts/ubuntu/check-host.sh"; then
   echo "The dashboard and API will start with OPENCUTTLES_EXECUTE_CVD=0 until you install them."
 fi
 
-echo "Preparing reproducible dependency files..."
+echo "Preparing Go dependencies..."
 (cd "${root_dir}/backend" && go mod tidy)
-(
-  cd "${root_dir}/frontend"
-  if ! npm install; then
-    echo "npm install failed; removing stale lockfile and retrying once..."
-    rm -f package-lock.json
-    npm install
-  fi
-)
 
-echo "Building OpenCuttles package..."
+# 'make package' builds the frontend, embeds it into the Go binary, and stages
+# the single-artifact release. It installs npm deps itself (npm ci, falling back
+# to npm install), so there is no separate frontend install step here.
+echo "Building OpenCuttles package (frontend is embedded into the binary)..."
 (cd "${root_dir}" && make package)
 
 echo "Installing OpenCuttles services..."

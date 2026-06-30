@@ -11,11 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +29,7 @@ import (
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
+	"github.com/opencuttles/opencuttles/backend/internal/web"
 )
 
 type Server struct {
@@ -37,6 +41,7 @@ type Server struct {
 	secureCookies bool
 	allowedOrigin string
 	authLimiter   *rateLimiter
+	webAssets     fs.FS
 }
 
 func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *auth.Service, logger *slog.Logger, secureCookies bool, allowedOrigin string) http.Handler {
@@ -49,6 +54,9 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 		secureCookies: secureCookies,
 		allowedOrigin: allowedOrigin,
 		authLimiter:   newRateLimiter(),
+	}
+	if assets, ok := web.Assets(); ok {
+		server.webAssets = assets
 	}
 	server.routes()
 	return server.withMiddleware(server.mux)
@@ -74,6 +82,58 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/v1/instances/", s.require(domain.PermissionOperate, s.instanceRoute))
 	s.mux.HandleFunc("GET /api/v1/operations", s.require(domain.PermissionView, s.listOperations))
 	s.mux.HandleFunc("GET /api/v1/audit", s.require(domain.PermissionAdmin, s.listAudit))
+	// SPA + static assets (embedded). Least-specific pattern, so it only
+	// catches paths not handled by the /api routes above.
+	s.mux.HandleFunc("/", s.serveStatic)
+}
+
+// serveStatic serves the embedded single-page app. Unknown non-API paths fall
+// back to index.html so client-side routing works.
+func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		writeError(w, notFound("route not found"))
+		return
+	}
+	if s.webAssets == nil {
+		writeError(w, notFound("frontend is not built into this binary"))
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeError(w, notFound("route not found"))
+		return
+	}
+
+	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if name == "" {
+		name = "index.html"
+	}
+	data, err := fs.ReadFile(s.webAssets, name)
+	if err != nil {
+		// SPA fallback for client-side routes.
+		name = "index.html"
+		data, err = fs.ReadFile(s.webAssets, name)
+		if err != nil {
+			writeError(w, notFound("not found"))
+			return
+		}
+	}
+
+	ctype := mime.TypeByExtension(path.Ext(name))
+	if ctype == "" {
+		ctype = http.DetectContentType(data)
+	}
+	w.Header().Set("Content-Type", ctype)
+	if name == "index.html" {
+		w.Header().Set("Cache-Control", "no-cache")
+	} else if strings.HasPrefix(name, "assets/") {
+		// Vite emits content-hashed filenames under assets/.
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_, _ = w.Write(data)
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {

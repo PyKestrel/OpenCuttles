@@ -89,10 +89,25 @@ export default function App() {
     if (!principal) {
       return;
     }
-    const timer = window.setInterval(() => {
+    // Resource-conscious polling: skip refreshes while the tab is hidden and
+    // catch up immediately when it becomes visible again.
+    const tick = () => {
+      if (document.hidden) {
+        return;
+      }
       refresh().catch((err: Error) => setError(err.message));
-    }, 5000);
-    return () => window.clearInterval(timer);
+    };
+    const timer = window.setInterval(tick, 5000);
+    const onVisibility = () => {
+      if (!document.hidden) {
+        tick();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [principal]);
 
   async function runAction(action: () => Promise<unknown>) {
@@ -130,57 +145,58 @@ export default function App() {
 
   return (
     <>
-      <div className="cloud-appbar">
-        <button className="hamburger" aria-label="Navigation">☰</button>
-        <div className="cloud-product">OpenCuttles</div>
-        <div className="project-picker">single-host</div>
-        <div className="cloud-search">Search resources, instances, images</div>
-        <div className="cloud-spacer" />
-        <button className="icon-button" title="Cloud Shell">▣</button>
-        <button className="icon-button" title="Help">?</button>
-        <span className="avatar">{principal.displayName.slice(0, 1).toUpperCase()}</span>
-      </div>
-      <div className="app-shell">
-        <aside className="sidebar">
-        <div className="brand">
+      <header className="masthead">
+        <div className="masthead-brand">
           <div className="brand-mark">OC</div>
-          <div>
+          <div className="masthead-title">
             <strong>OpenCuttles</strong>
-            <span>Android Virtualization</span>
+            <span>{data.host?.name ?? "local host"}</span>
           </div>
         </div>
-        <nav>
-          {visibleViews(principal).map((item) => (
-            <button className={view === item ? "active" : ""} key={item} onClick={() => setView(item)}>
-              {item}
-            </button>
-          ))}
-        </nav>
-        <div className="inventory">
-          <h3>Inventory</h3>
-          <button className="tree-node">Host: {data.host?.name ?? "local"}</button>
-          {data.instances.map((instance) => (
-            <button
-              className={`tree-node child ${selectedInstance?.id === instance.id ? "selected" : ""}`}
-              key={instance.id}
-              onClick={() => setSelectedInstanceId(instance.id)}
-            >
-              {instance.name}
-            </button>
-          ))}
+        <div className="masthead-actions">
+          <span className="masthead-user">{principal.displayName} · {principal.role}</span>
+          <button disabled={busy} onClick={() => runAction(refresh)}>Refresh</button>
+          <button className="link-button" onClick={logout}>Session</button>
         </div>
+      </header>
+      <div className="app-shell">
+        <aside className="sidebar">
+          <nav className="nav-groups">
+            {navGroups(principal).map((group) => (
+              <div className="nav-group" key={group.title}>
+                <h4>{group.title}</h4>
+                {group.items.map((item) => (
+                  <button className={view === item ? "active" : ""} key={item} onClick={() => setView(item)}>
+                    {NAV_LABELS[item] ?? item}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </nav>
+          <div className="inventory">
+            <h4>Devices</h4>
+            {data.instances.length === 0 && <span className="inventory-empty">No instances yet</span>}
+            {data.instances.map((instance) => (
+              <button
+                className={`tree-node ${selectedInstance?.id === instance.id ? "selected" : ""}`}
+                key={instance.id}
+                onClick={() => {
+                  setSelectedInstanceId(instance.id);
+                  setView("instances");
+                }}
+              >
+                <span className={`state-dot state-${instance.state}`} />
+                {instance.name}
+              </button>
+            ))}
+          </div>
         </aside>
 
         <main>
         <header className="topbar">
           <div>
-            <span className="eyebrow">Dashboard</span>
-            <h1>Android device control plane</h1>
-          </div>
-          <div className="topbar-actions">
-            <span className="user-pill">{principal.displayName} · {principal.role}</span>
-            <button disabled={busy} onClick={() => runAction(refresh)}>Refresh</button>
-            <button className="primary" onClick={logout}>Logout</button>
+            <span className="eyebrow">{NAV_LABELS[view] ?? "Overview"}</span>
+            <h1>{PAGE_TITLES[view] ?? "Android device control plane"}</h1>
           </div>
         </header>
 
@@ -197,14 +213,6 @@ export default function App() {
             label="Prerequisites"
             value={`${data.host?.prerequisites.filter((item) => item.ok).length ?? 0}/${data.host?.prerequisites.length ?? 0}`}
           />
-        </section>
-
-        <section className="tabs">
-          {visibleViews(principal).map((item) => (
-            <button className={view === item ? "active-tab" : ""} key={item} onClick={() => setView(item)}>
-              {item}
-            </button>
-          ))}
         </section>
 
         {view === "dashboard" || view === "instances" || view === "images" ? <section className="workspace-grid">
@@ -754,10 +762,43 @@ function hasPermission(principal: Principal, permission: string) {
   return principal.permissions.includes("admin") || principal.permissions.includes(permission);
 }
 
+const NAV_LABELS: Record<string, string> = {
+  dashboard: "Overview",
+  instances: "Instances",
+  images: "Images",
+  operations: "Activity",
+  host: "Host",
+  audit: "Audit",
+  settings: "Settings",
+};
+
+const PAGE_TITLES: Record<string, string> = {
+  dashboard: "Overview",
+  instances: "Android instances",
+  images: "Images",
+  operations: "Activity log",
+  host: "Host health",
+  audit: "Audit events",
+  settings: "Settings",
+};
+
+const NAV_GROUP_DEFS: { title: string; items: string[] }[] = [
+  { title: "System", items: ["dashboard", "instances", "images", "operations"] },
+  { title: "Tools", items: ["host", "audit", "settings"] },
+];
+
+function navGroups(principal: Principal) {
+  const allowed = new Set(visibleViews(principal));
+  return NAV_GROUP_DEFS.map((group) => ({
+    title: group.title,
+    items: group.items.filter((item) => allowed.has(item)),
+  })).filter((group) => group.items.length > 0);
+}
+
 function visibleViews(principal: Principal) {
   const base = ["dashboard", "host", "images", "instances", "operations", "settings"];
   if (hasPermission(principal, "admin")) {
-    return [...base.slice(0, 5), "audit", "settings"];
+    return [...base, "audit"];
   }
   return base;
 }
