@@ -20,6 +20,8 @@ if sudo test -d "$config_dir"; then
   sudo tar -C "$config_dir" -czf "${target}/config.tar.gz" .
 fi
 
+# The snapshot directory is root-created, so write the checksum as root, then
+# hand the whole snapshot back to the invoking user.
+sudo sh -c "cd '${target}' && sha256sum opencuttles.db > SHA256SUMS"
 sudo chown -R "$(id -u):$(id -g)" "$target"
-sha256sum "${target}/opencuttles.db" > "${target}/SHA256SUMS"
 echo "Backup written to ${target}"
