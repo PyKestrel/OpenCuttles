@@ -57,6 +57,19 @@ func (r *recordingRunner) find(command string) (CommandResult, bool) {
 	return CommandResult{}, false
 }
 
+// findFirstArg returns the first recorded call to command whose first argument
+// equals firstArg (e.g. the "cvd create" call rather than "cvd stop").
+func (r *recordingRunner) findFirstArg(command, firstArg string) (CommandResult, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, call := range r.calls {
+		if call.Command == command && len(call.Args) > 0 && call.Args[0] == firstArg {
+			return call, true
+		}
+	}
+	return CommandResult{}, false
+}
+
 func hasArgContaining(args []string, substr string) bool {
 	for _, arg := range args {
 		if strings.Contains(arg, substr) {
@@ -144,14 +157,11 @@ func TestLaunchPassesDisplayFlags(t *testing.T) {
 		t.Fatalf("launch: %v", err)
 	}
 
-	start, ok := runner.find("cvd")
+	start, ok := runner.findFirstArg("cvd", "create")
 	if !ok {
-		t.Fatalf("expected a cvd invocation, got %+v", runner.calls)
+		t.Fatalf("expected a cvd create invocation, got %+v", runner.calls)
 	}
-	if len(start.Args) == 0 || start.Args[0] != "create" {
-		t.Fatalf("expected cvd create, got %v", start.Args)
-	}
-	for _, want := range []string{"--start_webrtc=true", "--x_res=1080", "--y_res=1920", "--dpi=440", "--base_instance_num=1"} {
+	for _, want := range []string{"--start_webrtc=true", "--x_res=1080", "--y_res=1920", "--dpi=440", "--base_instance_num=1", "--group_name=cvd_1"} {
 		if !hasArgContaining(start.Args, want) {
 			t.Fatalf("missing %q in launch args %v", want, start.Args)
 		}

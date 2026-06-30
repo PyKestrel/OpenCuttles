@@ -381,6 +381,14 @@ func (s *Service) runDelete(id, operationID string, instance domain.Instance) {
 		}
 	}
 
+	// Release the cvd group from the instance database so its number/resources
+	// are reusable and a future create cannot collide. Best-effort.
+	if realCuttlefishExecutionEnabled() {
+		instanceNumber := instance.ADBPort - 6520 + 1
+		instanceDir := filepath.Join(instanceRoot(), instance.ID)
+		s.clearStaleGroup(ctx, instanceDir, instanceNumber)
+	}
+
 	if err := s.store.DeleteInstance(ctx, id); err != nil {
 		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
 		return
@@ -418,7 +426,10 @@ func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
 	if instance.DPI > 0 {
 		args = append(args, fmt.Sprintf("--dpi=%d", instance.DPI))
 	}
-	command, commandArgs := s.startCommand(args, image.Path, instanceDir)
+	// Clear any stale group left by a crash or earlier failed launch so "cvd
+	// create" does not fail with "conflicts with existing instance".
+	s.clearStaleGroup(ctx, instanceDir, instanceNumber)
+	command, commandArgs := s.startCommand(args, image.Path, instanceDir, groupName(instanceNumber))
 	// Run from the instance directory (owned by the service user). cvd opens the
 	// cwd; inheriting the systemd WorkingDirectory or an admin home would fail
 	// with PERMISSION_DENIED.
@@ -429,7 +440,7 @@ func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
 	return nil
 }
 
-func (s *Service) startCommand(launchArgs []string, imagePath, instanceDir string) (string, []string) {
+func (s *Service) startCommand(launchArgs []string, imagePath, instanceDir, group string) (string, []string) {
 	if _, err := s.runner.LookPath("launch_cvd"); err == nil {
 		args := append([]string{}, launchArgs...)
 		args = append(args, "--system_image_dir="+imagePath, "--instance_dir="+instanceDir)
@@ -438,10 +449,30 @@ func (s *Service) startCommand(launchArgs []string, imagePath, instanceDir strin
 	// Modern cvd: "create" provisions a new instance group from the images and
 	// starts it ("cvd start" only resumes an already-created group). cvd locates
 	// the fetched host tools + images via --host_path/--product_path, both of
-	// which "cvd fetch" populated under the image directory.
+	// which "cvd fetch" populated under the image directory. A stable group name
+	// lets stop/remove target this instance deterministically.
 	args := append([]string{"create"}, launchArgs...)
-	args = append(args, "--host_path="+imagePath, "--product_path="+imagePath)
+	args = append(args, "--host_path="+imagePath, "--product_path="+imagePath, "--group_name="+group)
 	return "cvd", args
+}
+
+// groupName is the cvd instance-group name OpenCuttles assigns to an instance.
+// cvd would otherwise auto-name groups like "cvd_1"; setting it explicitly makes
+// stop and remove deterministic across restarts.
+func groupName(instanceNumber int) string {
+	return fmt.Sprintf("cvd_%d", instanceNumber)
+}
+
+// clearStaleGroup best-effort stops and removes any existing cvd group with this
+// instance's name. Errors are intentionally ignored: a missing group (the normal
+// first-launch case) reports an error that is not actionable here.
+func (s *Service) clearStaleGroup(ctx context.Context, dir string, instanceNumber int) {
+	if _, err := s.runner.LookPath("launch_cvd"); err == nil {
+		return // legacy toolchain tracks instances by number, not named groups
+	}
+	group := groupName(instanceNumber)
+	_, _ = s.runner.RunInDir(ctx, dir, "cvd", "stop", "--group_name="+group)
+	_, _ = s.runner.RunInDir(ctx, dir, "cvd", "remove", "--group_name="+group)
 }
 
 func (s *Service) isADBReachable(ctx context.Context, instance domain.Instance) bool {
@@ -471,7 +502,7 @@ func (s *Service) stopCommand(instanceNumber int) (string, []string) {
 	if _, err := s.runner.LookPath("stop_cvd"); err == nil {
 		return "stop_cvd", []string{fmt.Sprintf("--instance_num=%d", instanceNumber)}
 	}
-	return "cvd", []string{"stop", fmt.Sprintf("--instance_num=%d", instanceNumber)}
+	return "cvd", []string{"stop", "--group_name=" + groupName(instanceNumber)}
 }
 
 func (s *Service) waitReady(ctx context.Context, instance domain.Instance) error {
