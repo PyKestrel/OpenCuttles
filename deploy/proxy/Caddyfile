@@ -1,7 +1,8 @@
-# Default: serve over HTTP on every host/IP on port 80 so the dashboard is
-# reachable by IP or hostname with zero DNS/TLS setup. quickstart.sh rewrites
-# this first line to "https://your.domain" when you deploy with a real FQDN.
 :80 {
+	# Line 1 above is the site address and is rewritten by quickstart.sh:
+	#   - HTTP mode (local hostname / IP): ":80" serves every host on port 80,
+	#     so the dashboard is reachable by IP or hostname with no DNS/TLS setup.
+	#   - HTTPS mode (real FQDN): becomes "https://your.domain" for automatic TLS.
 	encode gzip zstd
 	request_body {
 		max_size 100MB
