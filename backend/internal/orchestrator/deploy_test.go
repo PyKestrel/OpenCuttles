@@ -144,8 +144,8 @@ func TestLaunchPassesDisplayFlags(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected a cvd invocation, got %+v", runner.calls)
 	}
-	if len(start.Args) == 0 || start.Args[0] != "start" {
-		t.Fatalf("expected cvd start, got %v", start.Args)
+	if len(start.Args) == 0 || start.Args[0] != "create" {
+		t.Fatalf("expected cvd create, got %v", start.Args)
 	}
 	for _, want := range []string{"--start_webrtc=true", "--x_res=1080", "--y_res=1920", "--dpi=440", "--base_instance_num=1"} {
 		if !hasArgContaining(start.Args, want) {

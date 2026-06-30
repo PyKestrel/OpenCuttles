@@ -432,7 +432,10 @@ func (s *Service) startCommand(launchArgs []string) (string, []string) {
 	if _, err := s.runner.LookPath("launch_cvd"); err == nil {
 		return "launch_cvd", launchArgs
 	}
-	return "cvd", append([]string{"start"}, launchArgs...)
+	// Modern cvd: "create" provisions a new instance group from the images and
+	// starts it. "cvd start" only resumes an already-created group and fails with
+	// "no devices present" on a first launch.
+	return "cvd", append([]string{"create"}, launchArgs...)
 }
 
 func (s *Service) isADBReachable(ctx context.Context, instance domain.Instance) bool {
