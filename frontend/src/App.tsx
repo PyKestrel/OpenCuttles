@@ -143,6 +143,38 @@ export default function App() {
     return <AuthGate bootstrapRequired={bootstrapRequired} error={error} onAuthenticated={handleAuthenticated} />;
   }
 
+  const canOperate = hasPermission(principal, "operate");
+  const canAdmin = hasPermission(principal, "admin");
+  const runningCount = data.instances.filter((instance) => instance.state === "running").length;
+  const okPrereqs = data.host?.prerequisites.filter((item) => item.ok).length ?? 0;
+  const totalPrereqs = data.host?.prerequisites.length ?? 0;
+
+  const instancesPanel = (
+    <div className="panel">
+      <div className="panel-title">
+        <div>
+          <span className="eyebrow">Compute</span>
+          <h2>Cuttlefish instances</h2>
+        </div>
+        <span className="muted">{data.instances.length} total</span>
+      </div>
+      <InstanceTable
+        instances={data.instances}
+        selectedId={selectedInstance?.id}
+        busy={busy}
+        canOperate={canOperate}
+        onSelect={setSelectedInstanceId}
+        onStart={(id) => runAction(() => api.startInstance(id))}
+        onStop={(id) => runAction(() => api.stopInstance(id))}
+        onDelete={(id) => {
+          if (window.confirm("Delete this Android instance? This cannot be undone.")) {
+            runAction(() => api.deleteInstance(id));
+          }
+        }}
+      />
+    </div>
+  );
+
   return (
     <>
       <header className="masthead">
@@ -193,75 +225,79 @@ export default function App() {
         </aside>
 
         <main>
-        <header className="topbar">
-          <div>
-            <span className="eyebrow">{NAV_LABELS[view] ?? "Overview"}</span>
-            <h1>{PAGE_TITLES[view] ?? "Android device control plane"}</h1>
-          </div>
-        </header>
-
-        {error && <div className="alert">{error}</div>}
-
-        <section className="cards">
-          <MetricCard label="Host CPU" value={data.host ? `${data.host.cpuCount} cores` : "Loading"} />
-          <MetricCard label="Instances" value={String(data.instances.length)} />
-          <MetricCard
-            label="Running"
-            value={String(data.instances.filter((instance) => instance.state === "running").length)}
-          />
-          <MetricCard
-            label="Prerequisites"
-            value={`${data.host?.prerequisites.filter((item) => item.ok).length ?? 0}/${data.host?.prerequisites.length ?? 0}`}
-          />
-        </section>
-
-        {view === "dashboard" || view === "instances" || view === "images" ? <section className="workspace-grid">
-          <div className="panel wide">
-            <div className="panel-title">
+          <div className="page">
+            <header className="topbar">
               <div>
-                <span className="eyebrow">Compute</span>
-                <h2>Cuttlefish instances</h2>
+                <span className="eyebrow">{NAV_LABELS[view] ?? "Overview"}</span>
+                <h1>{PAGE_TITLES[view] ?? "Android device control plane"}</h1>
               </div>
-              <span className="muted">{data.instances.length} total</span>
-            </div>
-            <InstanceTable
-              instances={data.instances}
-              selectedId={selectedInstance?.id}
-              busy={busy}
-              canOperate={hasPermission(principal, "operate")}
-              onSelect={setSelectedInstanceId}
-              onStart={(id) => runAction(() => api.startInstance(id))}
-              onStop={(id) => runAction(() => api.stopInstance(id))}
-              onDelete={(id) => {
-                if (window.confirm("Delete this Android instance? This cannot be undone.")) {
-                  runAction(() => api.deleteInstance(id));
-                }
-              }}
-            />
+              {(view === "dashboard" || view === "instances") && (
+                <span className="topbar-meta">
+                  {data.instances.length} instances · {runningCount} running
+                </span>
+              )}
+            </header>
+
+            {error && <div className="alert">{error}</div>}
+
+            {(view === "dashboard" || view === "host") && (
+              <section className="cards">
+                <MetricCard label="Host CPU" value={data.host ? `${data.host.cpuCount} cores` : "—"} />
+                <MetricCard label="Memory" value={formatBytes(data.host?.memoryBytes ?? 0)} />
+                <MetricCard label="Instances" value={String(data.instances.length)} />
+                <MetricCard label="Running" value={String(runningCount)} />
+                <MetricCard label="Prerequisites" value={`${okPrereqs}/${totalPrereqs}`} />
+              </section>
+            )}
+
+            {view === "dashboard" && (
+              <>
+                {instancesPanel}
+                <section className="grid even">
+                  <Operations operations={data.operations} />
+                  <HostHealth host={data.host} health={data.health} />
+                </section>
+              </>
+            )}
+
+            {view === "instances" && (
+              <>
+                <section className="grid split">
+                  {instancesPanel}
+                  <div className="panel">
+                    <div className="panel-title">
+                      <div>
+                        <span className="eyebrow">Provisioning</span>
+                        <h2>New instance</h2>
+                      </div>
+                    </div>
+                    <CreateForms images={data.images} androidVersions={data.androidVersions} busy={busy} canOperate={canOperate} onAction={runAction} />
+                  </div>
+                </section>
+                <section className="grid split">
+                  <ConsolePanel instance={selectedInstance} />
+                  <InstanceDetails instance={selectedInstance} />
+                </section>
+              </>
+            )}
+
+            {view === "images" && (
+              <ImagesPanel images={data.images} busy={busy} canOperate={canOperate} onAction={runAction} />
+            )}
+
+            {view === "operations" && <Operations operations={data.operations} />}
+
+            {view === "host" && (
+              <section className="grid even">
+                <HostHealth host={data.host} health={data.health} />
+                <Prerequisites host={data.host} />
+              </section>
+            )}
+
+            {view === "audit" && (canAdmin ? <AuditLog events={data.audit} /> : <ReadOnlyNotice />)}
+
+            {view === "settings" && <SettingsPanel principal={principal} host={data.host} health={data.health} />}
           </div>
-
-          <div className="panel">
-            <div className="panel-title">
-              <div>
-                <span className="eyebrow">Provisioning</span>
-                <h2>Create resources</h2>
-              </div>
-            </div>
-            <CreateForms images={data.images} androidVersions={data.androidVersions} busy={busy} canOperate={hasPermission(principal, "operate")} onAction={runAction} />
-          </div>
-        </section> : null}
-
-        {view === "dashboard" || view === "host" || view === "settings" ? <section className="workspace-grid">
-          <InstanceDetails instance={selectedInstance} />
-          <HostHealth host={data.host} health={data.health} />
-        </section> : null}
-
-        {view === "dashboard" || view === "operations" || view === "audit" ? <section className="workspace-grid">
-          <Operations operations={data.operations} />
-          {hasPermission(principal, "admin") ? <AuditLog events={data.audit} /> : <ReadOnlyNotice />}
-        </section> : null}
-
-        {view === "dashboard" || view === "instances" ? <ConsolePanel instance={selectedInstance} /> : null}
         </main>
       </div>
     </>
@@ -714,6 +750,171 @@ function ReadOnlyNotice() {
       </div>
       <div className="empty">Your role can view inventory and health, but cannot access audit events or perform lifecycle actions.</div>
     </div>
+  );
+}
+
+function ImagesPanel({
+  images,
+  busy,
+  canOperate,
+  onAction,
+}: {
+  images: Image[];
+  busy: boolean;
+  canOperate: boolean;
+  onAction: (action: () => Promise<unknown>) => Promise<void>;
+}) {
+  const [imageName, setImageName] = useState("");
+  const [imagePath, setImagePath] = useState("");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await onAction(() => api.createImage({ name: imageName, path: imagePath }));
+    setImageName("");
+    setImagePath("");
+  }
+
+  return (
+    <section className="grid split">
+      <div className="panel">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">Catalog</span>
+            <h2>Images</h2>
+          </div>
+          <span className="muted">{images.length} total</span>
+        </div>
+        {images.length === 0 ? (
+          <div className="empty">No images yet. Deploying an instance auto-fetches the chosen Android version.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Path</th>
+              </tr>
+            </thead>
+            <tbody>
+              {images.map((image) => (
+                <tr key={image.id}>
+                  <td>
+                    <strong>{image.name}</strong>
+                    <small>{image.id}</small>
+                  </td>
+                  <td>
+                    <span className={`state state-${image.status === "ready" ? "running" : image.status === "error" ? "error" : "provisioning"}`}>
+                      {image.status ?? "ready"}
+                    </span>
+                  </td>
+                  <td>
+                    <small>{image.path}</small>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div className="panel">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">Provisioning</span>
+            <h2>Register image</h2>
+          </div>
+        </div>
+        <form className="forms" onSubmit={submit}>
+          <p className="form-help">
+            Register an image directory already present on the host. For most workflows just deploy an instance &mdash; OpenCuttles fetches the image automatically.
+          </p>
+          <label>
+            Name
+            <input value={imageName} onChange={(event) => setImageName(event.target.value)} placeholder="AOSP main" />
+          </label>
+          <label>
+            Image path
+            <input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="/var/lib/opencuttles/images/aosp" />
+          </label>
+          <button className="primary" disabled={!canOperate || busy || !imageName || !imagePath}>
+            Register image
+          </button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function Prerequisites({ host }: { host?: Host }) {
+  const prerequisites = host?.prerequisites ?? [];
+  return (
+    <div className="panel">
+      <div className="panel-title">
+        <div>
+          <span className="eyebrow">Readiness</span>
+          <h2>Prerequisites</h2>
+        </div>
+        <span className="muted">{prerequisites.filter((item) => item.ok).length}/{prerequisites.length}</span>
+      </div>
+      <div className="health-list">
+        {prerequisites.length === 0 && <div className="empty">No prerequisite data.</div>}
+        {prerequisites.map((item) => (
+          <div className="activity-row" key={item.name}>
+            <span className={`dot dot-${item.ok ? "succeeded" : "failed"}`} />
+            <div>
+              <strong>{item.name}</strong>
+              <small>{item.detail}{!item.ok && item.remedy ? ` — ${item.remedy}` : ""}</small>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsPanel({ principal, host, health }: { principal: Principal; host?: Host; health?: HealthReport }) {
+  const executionMode = health?.checks.find((check) => check.name === "execution_mode")?.message;
+  return (
+    <section className="grid even">
+      <div className="panel">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">Account</span>
+            <h2>Current session</h2>
+          </div>
+        </div>
+        <dl className="details">
+          <dt>Display name</dt>
+          <dd>{principal.displayName}</dd>
+          <dt>Username</dt>
+          <dd>{principal.username}</dd>
+          <dt>Role</dt>
+          <dd>{principal.role}</dd>
+          <dt>Permissions</dt>
+          <dd>{principal.permissions.join(", ")}</dd>
+        </dl>
+      </div>
+      <div className="panel">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">Runtime</span>
+            <h2>Server</h2>
+          </div>
+          <span className={`state state-${health?.status === "ok" ? "running" : "error"}`}>{health?.status ?? "unknown"}</span>
+        </div>
+        <dl className="details">
+          <dt>Host</dt>
+          <dd>{host?.name ?? "local host"}</dd>
+          <dt>CPU</dt>
+          <dd>{host?.cpuCount ?? 0} cores</dd>
+          <dt>Memory</dt>
+          <dd>{formatBytes(host?.memoryBytes ?? 0)}</dd>
+          <dt>Disk free</dt>
+          <dd>{formatBytes(host?.diskFreeBytes ?? 0)}</dd>
+          <dt>Execution mode</dt>
+          <dd>{executionMode ?? "unknown"}</dd>
+        </dl>
+      </div>
+    </section>
   );
 }
 

@@ -293,16 +293,30 @@ a {
 
 /* Main content ---------------------------------------------------------- */
 main {
+  padding: 1.25rem 1.5rem 2rem;
+  min-width: 0;
+}
+
+.page {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding: 1.25rem 1.5rem 2rem;
+  margin: 0 auto;
+  max-width: 1440px;
+  width: 100%;
 }
 
 .topbar {
-  align-items: flex-start;
+  align-items: center;
   display: flex;
+  gap: 1rem;
   justify-content: space-between;
+}
+
+.topbar-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .eyebrow {
@@ -355,12 +369,28 @@ main {
   font-weight: 500;
 }
 
-/* Panels ---------------------------------------------------------------- */
-.workspace-grid {
+/* Layout grids ---------------------------------------------------------- */
+.grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
 }
+
+.grid.even {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.grid.split {
+  align-items: start;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+@media (max-width: 1024px) {
+  .grid.split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Panels ---------------------------------------------------------------- */
 
 .panel {
   background: var(--surface);
@@ -564,6 +594,11 @@ td small {
 .health-list {
   display: flex;
   flex-direction: column;
+}
+
+.activity {
+  max-height: 460px;
+  overflow-y: auto;
 }
 
 .activity-row {

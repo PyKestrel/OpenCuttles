@@ -37,6 +37,7 @@ describe("Deploy flow", () => {
     });
 
     render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Instances" }));
     await screen.findByText("Deploy Android instance");
     await waitFor(() => expect(screen.getByRole("option", { name: "Android 14 (GSI)" })).toBeInTheDocument());
 
@@ -69,6 +70,7 @@ describe("Deploy flow", () => {
     });
 
     render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Instances" }));
     const frame = await screen.findByTitle("android-01 console");
     expect(frame).toHaveAttribute("src", "/api/v1/instances/cvd_1/console/devices/cvd_1-1-1/files/client.html");
   });
