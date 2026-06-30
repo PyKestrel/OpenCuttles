@@ -22,6 +22,10 @@ func (f fakeRunner) Run(ctx context.Context, command string, args ...string) (Co
 	return CommandResult{Command: command, Args: args}, f.err
 }
 
+func (f fakeRunner) RunInDir(ctx context.Context, _ string, command string, args ...string) (CommandResult, error) {
+	return CommandResult{Command: command, Args: args}, f.err
+}
+
 func (f fakeRunner) LookPath(command string) (string, error) {
 	if path, ok := f.paths[command]; ok {
 		return path, nil

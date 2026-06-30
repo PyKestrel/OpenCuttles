@@ -35,6 +35,10 @@ func (r *recordingRunner) Run(_ context.Context, command string, args ...string)
 	return result, nil
 }
 
+func (r *recordingRunner) RunInDir(ctx context.Context, _ string, command string, args ...string) (CommandResult, error) {
+	return r.Run(ctx, command, args...)
+}
+
 func (r *recordingRunner) LookPath(command string) (string, error) {
 	if path, ok := r.paths[command]; ok {
 		return path, nil

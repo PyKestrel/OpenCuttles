@@ -19,6 +19,11 @@ type CommandResult struct {
 
 type Runner interface {
 	Run(ctx context.Context, command string, args ...string) (CommandResult, error)
+	// RunInDir runs a command with its working directory set to dir. Cuttlefish's
+	// "cvd create" opens the current working directory and fails if the service
+	// user cannot access it (e.g. the systemd WorkingDirectory or an admin's
+	// home). Running from an instance directory the service owns avoids that.
+	RunInDir(ctx context.Context, dir, command string, args ...string) (CommandResult, error)
 	LookPath(command string) (string, error)
 }
 
@@ -31,8 +36,15 @@ func NewExecRunner(logger *slog.Logger) ExecRunner {
 }
 
 func (r ExecRunner) Run(ctx context.Context, command string, args ...string) (CommandResult, error) {
+	return r.RunInDir(ctx, "", command, args...)
+}
+
+func (r ExecRunner) RunInDir(ctx context.Context, dir, command string, args ...string) (CommandResult, error) {
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, command, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	output, err := cmd.CombinedOutput()
 	result := CommandResult{
 		Command:  command,
@@ -41,7 +53,7 @@ func (r ExecRunner) Run(ctx context.Context, command string, args ...string) (Co
 		Duration: time.Since(start),
 	}
 	if r.logger != nil {
-		r.logger.Info("command finished", "command", command, "args", args, "duration", result.Duration, "error", err)
+		r.logger.Info("command finished", "command", command, "args", args, "dir", dir, "duration", result.Duration, "error", err)
 	}
 	return result, err
 }

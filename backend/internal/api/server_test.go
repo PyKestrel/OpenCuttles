@@ -23,6 +23,10 @@ func (noopRunner) Run(ctx context.Context, command string, args ...string) (orch
 	return orchestrator.CommandResult{Command: command, Args: args}, nil
 }
 
+func (noopRunner) RunInDir(ctx context.Context, _ string, command string, args ...string) (orchestrator.CommandResult, error) {
+	return orchestrator.CommandResult{Command: command, Args: args}, nil
+}
+
 func (noopRunner) LookPath(command string) (string, error) {
 	return "/usr/bin/" + command, nil
 }

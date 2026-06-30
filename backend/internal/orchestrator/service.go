@@ -419,7 +419,10 @@ func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
 		args = append(args, fmt.Sprintf("--dpi=%d", instance.DPI))
 	}
 	command, commandArgs := s.startCommand(args, image.Path, instanceDir)
-	result, err := s.runner.Run(ctx, command, commandArgs...)
+	// Run from the instance directory (owned by the service user). cvd opens the
+	// cwd; inheriting the systemd WorkingDirectory or an admin home would fail
+	// with PERMISSION_DENIED.
+	result, err := s.runner.RunInDir(ctx, instanceDir, command, commandArgs...)
 	if err != nil {
 		return fmt.Errorf("%s failed: %w: %s", command, err, result.Output)
 	}
@@ -456,7 +459,8 @@ func (s *Service) stop(ctx context.Context, instance domain.Instance) error {
 	}
 	instanceNumber := instance.ADBPort - 6520 + 1
 	command, args := s.stopCommand(instanceNumber)
-	result, err := s.runner.Run(ctx, command, args...)
+	instanceDir := filepath.Join(instanceRoot(), instance.ID)
+	result, err := s.runner.RunInDir(ctx, instanceDir, command, args...)
 	if err != nil {
 		return fmt.Errorf("%s failed: %w: %s", command, err, result.Output)
 	}
