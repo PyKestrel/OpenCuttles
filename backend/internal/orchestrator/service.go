@@ -410,8 +410,6 @@ func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
 		"--start_webrtc=true",
 		fmt.Sprintf("--cpus=%d", instance.CPUCores),
 		fmt.Sprintf("--memory_mb=%d", instance.MemoryMB),
-		fmt.Sprintf("--system_image_dir=%s", image.Path),
-		fmt.Sprintf("--instance_dir=%s", instanceDir),
 		fmt.Sprintf("--adb_port=%d", instance.ADBPort),
 	}
 	if instance.DisplayWidth > 0 && instance.DisplayHeight > 0 {
@@ -420,7 +418,7 @@ func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
 	if instance.DPI > 0 {
 		args = append(args, fmt.Sprintf("--dpi=%d", instance.DPI))
 	}
-	command, commandArgs := s.startCommand(args)
+	command, commandArgs := s.startCommand(args, image.Path, instanceDir)
 	result, err := s.runner.Run(ctx, command, commandArgs...)
 	if err != nil {
 		return fmt.Errorf("%s failed: %w: %s", command, err, result.Output)
@@ -428,14 +426,19 @@ func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
 	return nil
 }
 
-func (s *Service) startCommand(launchArgs []string) (string, []string) {
+func (s *Service) startCommand(launchArgs []string, imagePath, instanceDir string) (string, []string) {
 	if _, err := s.runner.LookPath("launch_cvd"); err == nil {
-		return "launch_cvd", launchArgs
+		args := append([]string{}, launchArgs...)
+		args = append(args, "--system_image_dir="+imagePath, "--instance_dir="+instanceDir)
+		return "launch_cvd", args
 	}
 	// Modern cvd: "create" provisions a new instance group from the images and
-	// starts it. "cvd start" only resumes an already-created group and fails with
-	// "no devices present" on a first launch.
-	return "cvd", append([]string{"create"}, launchArgs...)
+	// starts it ("cvd start" only resumes an already-created group). cvd locates
+	// the fetched host tools + images via --host_path/--product_path, both of
+	// which "cvd fetch" populated under the image directory.
+	args := append([]string{"create"}, launchArgs...)
+	args = append(args, "--host_path="+imagePath, "--product_path="+imagePath)
+	return "cvd", args
 }
 
 func (s *Service) isADBReachable(ctx context.Context, instance domain.Instance) bool {
