@@ -111,8 +111,8 @@ func TestHostPrerequisites(t *testing.T) {
 	if host.ID != "local" {
 		t.Fatalf("host id = %q", host.ID)
 	}
-	if len(host.Prerequisites) != 4 {
-		t.Fatalf("prerequisites = %d, want 4", len(host.Prerequisites))
+	if len(host.Prerequisites) != 5 {
+		t.Fatalf("prerequisites = %d, want 5", len(host.Prerequisites))
 	}
 	if !host.Prerequisites[0].OK {
 		t.Fatalf("first prerequisite should pass: %+v", host.Prerequisites[0])

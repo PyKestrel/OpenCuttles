@@ -30,6 +30,17 @@ has_nested_virt_hint() {
   grep -E -q '(vmx|svm)' /proc/cpuinfo
 }
 
+# crosvm's minijail sandbox needs unprivileged user namespaces. Ubuntu 23.10+
+# restricts these by default, which makes the guest fail to boot.
+allows_user_namespaces() {
+  local f
+  f=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+  [[ -r "$f" && "$(cat "$f" 2>/dev/null)" == "1" ]] && return 1
+  f=/proc/sys/kernel/unprivileged_userns_clone
+  [[ -r "$f" && "$(cat "$f" 2>/dev/null)" == "0" ]] && return 1
+  return 0
+}
+
 has_memory() {
   local mem_kb
   mem_kb=$(awk '/MemTotal/ { print $2 }' /proc/meminfo)
@@ -49,6 +60,7 @@ check "Cuttlefish lifecycle command found" has_cuttlefish_lifecycle
 check "adb command found" has_command adb
 check "/dev/kvm is accessible" has_kvm
 check "CPU exposes virtualization flags" has_nested_virt_hint
+check "unprivileged user namespaces allowed (crosvm)" allows_user_namespaces
 check "host has at least 8 GB RAM" has_memory
 check "/var/lib has at least 50 GB free" has_disk
 

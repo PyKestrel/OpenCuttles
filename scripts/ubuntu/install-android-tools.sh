@@ -165,6 +165,18 @@ sudo usermod -aG kvm opencuttles 2>/dev/null || true
 sudo usermod -aG render opencuttles 2>/dev/null || true
 sudo usermod -aG cvdnetwork opencuttles 2>/dev/null || true
 
+# crosvm sandboxes its virtio device processes with minijail, which creates user
+# and mount namespaces. Ubuntu 23.10+/24.04 restrict unprivileged user
+# namespaces by default (kernel.apparmor_restrict_unprivileged_userns=1), which
+# makes crosvm fail with "unshare(CLONE_NEWNS): Operation not permitted" and the
+# guest never boots (VIRTUAL_DEVICE_BOOT_FAILED). Relax both knobs persistently.
+sudo tee /etc/sysctl.d/60-cuttlefish-userns.conf >/dev/null <<'EOF'
+# Required by Cuttlefish/crosvm device sandboxing (minijail user namespaces).
+kernel.apparmor_restrict_unprivileged_userns=0
+kernel.unprivileged_userns_clone=1
+EOF
+sudo sysctl --system >/dev/null 2>&1 || true
+
 # The interactive WebRTC console is served by the host-wide cuttlefish-operator
 # on :1443 (older builds :8443). Make sure the service (shipped with cuttlefish-base/user) is running
 # so OpenCuttles can proxy device consoles.

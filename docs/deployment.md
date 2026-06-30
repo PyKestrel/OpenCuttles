@@ -58,6 +58,18 @@ sudo usermod -aG kvm opencuttles
 sudo install -d -o opencuttles -g opencuttles /var/lib/opencuttles /var/log/opencuttles /opt/opencuttles/bin
 ```
 
+> **Ubuntu 23.10+/24.04:** crosvm sandboxes its device processes with minijail,
+> which needs unprivileged user namespaces. These distros restrict them by
+> default, causing `VIRTUAL_DEVICE_BOOT_FAILED` with
+> `unshare(CLONE_NEWNS): Operation not permitted` in the launcher log.
+> `install-android-tools.sh` sets the required sysctls; to apply manually:
+>
+> ```bash
+> echo 'kernel.apparmor_restrict_unprivileged_userns=0' | sudo tee /etc/sysctl.d/60-cuttlefish-userns.conf
+> echo 'kernel.unprivileged_userns_clone=1' | sudo tee /etc/sysctl.d/61-cuttlefish-userns.conf
+> sudo sysctl --system
+> ```
+
 Run the readiness check:
 
 ```bash

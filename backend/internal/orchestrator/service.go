@@ -41,6 +41,7 @@ func (s *Service) Host(ctx context.Context) domain.Host {
 			s.pathCheck("adb", "Install Android platform tools."),
 			s.kvmCheck(),
 			s.virtualizationCheck(),
+			s.userNamespaceCheck(),
 		},
 		UpdatedAt: time.Now().UTC(),
 	}
@@ -582,6 +583,25 @@ func (s *Service) virtualizationCheck() domain.Prerequisite {
 		return domain.Prerequisite{Name: "cpu-virtualization", OK: true, Detail: "hardware virtualization (vmx/svm) available"}
 	}
 	return domain.Prerequisite{Name: "cpu-virtualization", OK: false, Detail: "vmx/svm flag not present", Remedy: "Enable nested virtualization for this VM/host."}
+}
+
+// userNamespaceCheck verifies the host allows the unprivileged user namespaces
+// that crosvm's minijail sandbox requires. Ubuntu 23.10+/24.04 default this to
+// restricted, which makes crosvm fail ("unshare(CLONE_NEWNS): Operation not
+// permitted") and the guest never boots.
+func (s *Service) userNamespaceCheck() domain.Prerequisite {
+	const remedy = "Set kernel.apparmor_restrict_unprivileged_userns=0 (and kernel.unprivileged_userns_clone=1) via /etc/sysctl.d, then `sudo sysctl --system`."
+	if data, err := os.ReadFile("/proc/sys/kernel/apparmor_restrict_unprivileged_userns"); err == nil {
+		if strings.TrimSpace(string(data)) == "1" {
+			return domain.Prerequisite{Name: "user-namespaces", OK: false, Detail: "apparmor_restrict_unprivileged_userns=1 blocks crosvm sandbox", Remedy: remedy}
+		}
+	}
+	if data, err := os.ReadFile("/proc/sys/kernel/unprivileged_userns_clone"); err == nil {
+		if strings.TrimSpace(string(data)) == "0" {
+			return domain.Prerequisite{Name: "user-namespaces", OK: false, Detail: "unprivileged_userns_clone=0 blocks crosvm sandbox", Remedy: remedy}
+		}
+	}
+	return domain.Prerequisite{Name: "user-namespaces", OK: true, Detail: "unprivileged user namespaces permitted"}
 }
 
 func memoryBytes() uint64 {
