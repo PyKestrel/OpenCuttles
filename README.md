@@ -101,7 +101,9 @@ dashboard/API in dry-run mode.
 Set `OPENCUTTLES_PREPARE_DEFAULT_IMAGE=1` to fetch and unpack a default
 Cuttlefish image into `/var/lib/opencuttles/images/default` using `cvd fetch`.
 Override the build with `OPENCUTTLES_CVD_BUILD`, for example
-`aosp-main/aosp_cf_x86_64_phone-userdebug`.
+`aosp-android-latest-release/aosp_cf_x86_64_only_phone-userdebug` (the default).
+Build-target names differ by branch: `aosp-main` uses `aosp_cf_x86_64_phone`,
+while release/GSI branches use `aosp_cf_x86_64_only_phone`.
 
 ## Local Development
 

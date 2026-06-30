@@ -28,9 +28,11 @@ Set `OPENCUTTLES_SKIP_CUTTLEFISH_INSTALL=1` to skip Cuttlefish entirely and run
 only the dashboard/API in dry-run mode.
 Set `OPENCUTTLES_PREPARE_DEFAULT_IMAGE=1` to download and unpack the default
 Cuttlefish image under `/var/lib/opencuttles/images/default`. By default this
-uses `cvd fetch --default_build=aosp-main/aosp_cf_x86_64_phone-userdebug`, which
-matches the Android Cuttlefish docs requirement to use device images and host
-packages from the same build.
+uses `cvd fetch --default_build=aosp-android-latest-release/aosp_cf_x86_64_only_phone-userdebug`.
+The stable release branch is used because the `aosp-main` tip can transiently
+lack the device `-img-` artifact on its newest build. Note the build-target name
+differs by branch: `aosp-main` uses `aosp_cf_x86_64_phone`, while the release and
+GSI branches use `aosp_cf_x86_64_only_phone`.
 Single-label hostnames and IP addresses default to HTTP, for example
 `OPENCUTTLES_HOSTNAME=opencuttles`. Fully qualified domains default to HTTPS.
 Set `OPENCUTTLES_ALLOWED_ORIGIN=https://your.domain.example` to force the exact

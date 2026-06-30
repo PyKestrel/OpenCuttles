@@ -2,7 +2,7 @@
 set -euo pipefail
 
 image_dir="${OPENCUTTLES_DEFAULT_IMAGE_PATH:-/var/lib/opencuttles/images/default}"
-build="${OPENCUTTLES_CVD_BUILD:-aosp-main/aosp_cf_x86_64_phone-userdebug}"
+build="${OPENCUTTLES_CVD_BUILD:-aosp-android-latest-release/aosp_cf_x86_64_only_phone-userdebug}"
 image_url="${OPENCUTTLES_CVD_IMAGE_URL:-}"
 host_package_url="${OPENCUTTLES_CVD_HOST_PACKAGE_URL:-}"
 keep_archives="${OPENCUTTLES_KEEP_IMAGE_ARCHIVES:-0}"

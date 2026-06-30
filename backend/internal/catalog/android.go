@@ -13,18 +13,18 @@ import "github.com/opencuttles/opencuttles/backend/internal/domain"
 // "cvd fetch" (no Google credentials required).
 var androidVersions = []domain.AndroidVersion{
 	{
-		ID:          "aosp-main",
-		Label:       "Android (latest, aosp-main)",
-		Branch:      "aosp-main",
-		BuildTarget: "aosp_cf_x86_64_phone-userdebug",
-		Description: "Latest AOSP trunk build. Recommended default.",
-	},
-	{
 		ID:          "latest-release",
 		Label:       "Android (latest stable release)",
 		Branch:      "aosp-android-latest-release",
 		BuildTarget: "aosp_cf_x86_64_only_phone-userdebug",
-		Description: "Latest stable AOSP release build.",
+		Description: "Latest stable AOSP release build. Recommended default.",
+	},
+	{
+		ID:          "aosp-main",
+		Label:       "Android (latest, aosp-main trunk)",
+		Branch:      "aosp-main",
+		BuildTarget: "aosp_cf_x86_64_phone-userdebug",
+		Description: "Bleeding-edge AOSP trunk; the newest build may occasionally lack artifacts.",
 	},
 	{
 		ID:          "android15",
