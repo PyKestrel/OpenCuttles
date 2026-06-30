@@ -223,17 +223,26 @@ func (s *Service) runDeploy(id, operationID string) {
 }
 
 // ensureImage downloads the backing image with cvd fetch when it is not already
-// marked ready. In dry-run mode it simply marks the image ready.
+// present on disk. In dry-run mode it simply marks the image ready.
 func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
-	if image.Status == domain.ImageStatusReady {
-		return nil
-	}
 	if !realCuttlefishExecutionEnabled() {
-		return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+		if image.Status != domain.ImageStatusReady {
+			return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+		}
+		return nil
 	}
 	// A custom registered image with no build target is expected to exist on disk already.
 	if strings.TrimSpace(image.BuildTarget) == "" {
-		return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+		if image.Status != domain.ImageStatusReady {
+			return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+		}
+		return nil
+	}
+	// Trust a "ready" record only if the files are actually present. A ready
+	// status can be left over from a dry-run deploy that never fetched anything,
+	// or from a manually cleaned image directory; in those cases we re-fetch.
+	if image.Status == domain.ImageStatusReady && imagePopulated(image.Path) {
+		return nil
 	}
 
 	if err := s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusFetching, 0, ""); err != nil {
@@ -253,6 +262,18 @@ func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
 		return fmt.Errorf("%s", msg)
 	}
 	return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+}
+
+// imagePopulated reports whether an image directory exists and contains files.
+func imagePopulated(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	return len(entries) > 0
 }
 
 func (s *Service) StopInstance(ctx context.Context, id string) (domain.Instance, domain.Operation, error) {
