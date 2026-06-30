@@ -1,4 +1,7 @@
-opencuttles.example.com {
+# Default: serve over HTTP on every host/IP on port 80 so the dashboard is
+# reachable by IP or hostname with zero DNS/TLS setup. quickstart.sh rewrites
+# this first line to "https://your.domain" when you deploy with a real FQDN.
+:80 {
 	encode gzip zstd
 	request_body {
 		max_size 100MB

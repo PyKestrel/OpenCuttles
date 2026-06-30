@@ -19,10 +19,15 @@ else
   origin="https://${hostname}"
 fi
 
-site_address="$origin"
-secure_cookies="1"
+# For HTTP (local hostnames / IP addresses) bind Caddy to all hosts on :80 so
+# the dashboard is reachable by hostname OR by the machine's IP. For a real
+# HTTPS domain, keep a host-specific block so automatic TLS works.
 if [[ "$origin" == http://* ]]; then
+  site_address=":80"
   secure_cookies="0"
+else
+  site_address="$origin"
+  secure_cookies="1"
 fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
