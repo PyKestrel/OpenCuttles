@@ -27,5 +27,5 @@ sudo ufw status verbose
 echo "Firewall configured."
 echo "  - 80/443 open for the OpenCuttles dashboard."
 echo "  - WebRTC media ports 15550-15599 (TCP/UDP) open for the device console."
-echo "  - The :8443 operator and ADB ports stay host-local (proxied via OpenCuttles)."
+echo "  - The operator (:1443) and ADB ports stay host-local (proxied via OpenCuttles)."
 echo "  - Set OPENCUTTLES_OPEN_WEBRTC=0 to skip opening the media port range."

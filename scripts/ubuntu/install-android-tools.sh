@@ -166,7 +166,7 @@ sudo usermod -aG render opencuttles 2>/dev/null || true
 sudo usermod -aG cvdnetwork opencuttles 2>/dev/null || true
 
 # The interactive WebRTC console is served by the host-wide cuttlefish-operator
-# on :8443. Make sure the service (shipped with cuttlefish-base/user) is running
+# on :1443 (older builds :8443). Make sure the service (shipped with cuttlefish-base/user) is running
 # so OpenCuttles can proxy device consoles.
 for svc in cuttlefish-operator cuttlefish-host-resources; do
   if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}\b"; then

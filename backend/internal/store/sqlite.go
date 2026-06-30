@@ -578,7 +578,10 @@ const basePort = 6520
 
 // webrtcOperatorPort is the host-wide port served by cuttlefish-operator; the
 // interactive console for every device is multiplexed through it by deviceId.
-const webrtcOperatorPort = 8443
+// Current Cuttlefish serves on 1443 (older builds used 8443). The API resolves
+// the live port from OPENCUTTLES_OPERATOR_PORT at proxy time, so this is just the
+// recorded default for new instances.
+const webrtcOperatorPort = 1443
 
 func nextPortsTx(ctx context.Context, q queryer) (int, int, error) {
 	var maxADB sql.NullInt64

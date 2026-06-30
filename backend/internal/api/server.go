@@ -42,6 +42,19 @@ type Server struct {
 	allowedOrigin string
 	authLimiter   *rateLimiter
 	webAssets     fs.FS
+	operatorPort  int
+}
+
+// operatorPortFromEnv resolves the host-wide cuttlefish-operator HTTPS port.
+// Newer Cuttlefish (>=1.x) serves on 1443; older builds used 8443. Override with
+// OPENCUTTLES_OPERATOR_PORT.
+func operatorPortFromEnv() int {
+	if v := os.Getenv("OPENCUTTLES_OPERATOR_PORT"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			return p
+		}
+	}
+	return 1443
 }
 
 func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *auth.Service, logger *slog.Logger, secureCookies bool, allowedOrigin string) http.Handler {
@@ -58,6 +71,7 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	if assets, ok := web.Assets(); ok {
 		server.webAssets = assets
 	}
+	server.operatorPort = operatorPortFromEnv()
 	server.routes()
 	return server.withMiddleware(server.mux)
 }
@@ -400,9 +414,10 @@ func (s *Server) consoleProxy(w http.ResponseWriter, r *http.Request, instanceID
 		return
 	}
 	// The interactive console is served by the host-wide cuttlefish-operator on
-	// HTTPS :8443 (self-signed), multiplexed per device via deviceId. We reverse
-	// proxy it under this instance's console prefix and reuse OpenCuttles auth.
-	target, err := url.Parse("https://127.0.0.1:" + strconv.Itoa(instance.WebRTCPort))
+	// an HTTPS port (self-signed; 1443 on current Cuttlefish), multiplexed per
+	// device via deviceId. We reverse proxy it under this instance's console
+	// prefix and reuse OpenCuttles auth.
+	target, err := url.Parse("https://127.0.0.1:" + strconv.Itoa(s.operatorPort))
 	if err != nil {
 		writeError(w, err)
 		return

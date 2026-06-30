@@ -424,7 +424,7 @@ func (s *Service) waitReady(ctx context.Context, instance domain.Instance) error
 	for time.Now().Before(deadline) {
 		result, err := s.runner.Run(ctx, "adb", "-s", adbTarget, "shell", "getprop", "sys.boot_completed")
 		if err == nil && strings.TrimSpace(result.Output) == "1" {
-			return s.waitWebRTC(ctx, instance.WebRTCPort)
+			return s.waitWebRTC(ctx, operatorPort())
 		}
 		select {
 		case <-ctx.Done():

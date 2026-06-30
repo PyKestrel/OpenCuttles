@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,4 +52,16 @@ func (r ExecRunner) LookPath(command string) (string, error) {
 
 func realCuttlefishExecutionEnabled() bool {
 	return os.Getenv("OPENCUTTLES_EXECUTE_CVD") == "1"
+}
+
+// operatorPort is the host-wide cuttlefish-operator HTTPS port that serves the
+// WebRTC console. Current Cuttlefish uses 1443; older builds used 8443. Override
+// with OPENCUTTLES_OPERATOR_PORT.
+func operatorPort() int {
+	if v := os.Getenv("OPENCUTTLES_OPERATOR_PORT"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			return p
+		}
+	}
+	return 1443
 }
