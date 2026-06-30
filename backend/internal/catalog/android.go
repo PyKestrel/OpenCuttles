@@ -7,10 +7,14 @@ import "github.com/opencuttles/opencuttles/backend/internal/domain"
 
 // androidVersions is the ordered catalog surfaced in the deploy dropdown. The
 // first entry is treated as the default when a request omits a version.
-// Build target names differ by branch family: aosp-main builds
-// "aosp_cf_x86_64_phone", while the release and GSI branches build
-// "aosp_cf_x86_64_only_phone". These combinations are fetchable anonymously via
-// "cvd fetch" (no Google credentials required).
+//
+// All entries fetch the "aosp_cf_x86_64_only_phone-userdebug" Cuttlefish target,
+// which is the device build the Android CI publishes for both the release branch
+// (aosp-android-latest-release) and the per-version GSI branches
+// (aosp-androidNN-gsi). These combinations are fetchable anonymously via
+// "cvd fetch" (no Google credentials required). The older non-"only" target name
+// (aosp_cf_x86_64_phone) is no longer produced for these branches and returns
+// HTTP 400/404 from the build API, so it must not be used here.
 var androidVersions = []domain.AndroidVersion{
 	{
 		ID:          "latest-release",
@@ -23,7 +27,7 @@ var androidVersions = []domain.AndroidVersion{
 		ID:          "aosp-main",
 		Label:       "Android (latest, aosp-main trunk)",
 		Branch:      "aosp-main",
-		BuildTarget: "aosp_cf_x86_64_phone-userdebug",
+		BuildTarget: "aosp_cf_x86_64_only_phone-userdebug",
 		Description: "Bleeding-edge AOSP trunk; the newest build may occasionally lack artifacts.",
 	},
 	{

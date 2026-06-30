@@ -274,6 +274,22 @@ func (s *SQLite) GetOrCreateVersionImage(ctx context.Context, versionID, label, 
 	row := s.db.QueryRowContext(ctx, `SELECT `+imageColumns+` FROM images WHERE version_id = ? ORDER BY created_at LIMIT 1`, versionID)
 	image, err := scanImage(row)
 	if err == nil {
+		// Self-heal rows created by an older catalog: if the build target the
+		// catalog now resolves to differs from what we stored, the previously
+		// fetched artifacts (if any) are for the wrong target. Refresh the
+		// target and force a re-fetch so "cvd fetch" gets the correct
+		// "branch/build_target" instead of falling back to its default target.
+		if image.BuildTarget != buildTarget {
+			if _, err := s.db.ExecContext(ctx,
+				`UPDATE images SET build_target = ?, name = ?, status = ?, last_error = '' WHERE id = ?`,
+				buildTarget, label, domain.ImageStatusPending, image.ID); err != nil {
+				return domain.Image{}, err
+			}
+			image.BuildTarget = buildTarget
+			image.Name = label
+			image.Status = domain.ImageStatusPending
+			image.LastError = ""
+		}
 		return image, nil
 	}
 	if !IsNotFound(err) {

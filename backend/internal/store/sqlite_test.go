@@ -137,6 +137,47 @@ func TestGetOrCreateVersionImage(t *testing.T) {
 	}
 }
 
+func TestGetOrCreateVersionImageRefreshesBuildTarget(t *testing.T) {
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	t.Setenv("OPENCUTTLES_IMAGE_ROOT", filepath.Join(tempDir, "images"))
+
+	db, err := OpenSQLite(filepath.Join(tempDir, "opencuttles.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	// Simulate a stale row from an older catalog that stored only the branch.
+	stale, err := db.GetOrCreateVersionImage(ctx, "android15", "Android 15 (GSI)", "aosp-android15-gsi")
+	if err != nil {
+		t.Fatalf("seed stale image: %v", err)
+	}
+	if err := db.UpdateImageStatus(ctx, stale.ID, domain.ImageStatusReady, 999, "stale"); err != nil {
+		t.Fatalf("mark stale ready: %v", err)
+	}
+
+	// A later deploy resolves the corrected "branch/build_target" from the
+	// catalog; the same row must be reused but refreshed and reset to pending.
+	want := "aosp-android15-gsi/aosp_cf_x86_64_only_phone-userdebug"
+	healed, err := db.GetOrCreateVersionImage(ctx, "android15", "Android 15 (GSI)", want)
+	if err != nil {
+		t.Fatalf("heal image: %v", err)
+	}
+	if healed.ID != stale.ID {
+		t.Fatalf("expected same row, got %q and %q", stale.ID, healed.ID)
+	}
+	if healed.BuildTarget != want {
+		t.Fatalf("build target = %q, want %q", healed.BuildTarget, want)
+	}
+	if healed.Status != domain.ImageStatusPending {
+		t.Fatalf("status = %q, want pending so it re-fetches", healed.Status)
+	}
+	if healed.LastError != "" {
+		t.Fatalf("last error = %q, want cleared", healed.LastError)
+	}
+}
+
 func TestCreateInstanceDeployFields(t *testing.T) {
 	ctx := context.Background()
 	tempDir := t.TempDir()
