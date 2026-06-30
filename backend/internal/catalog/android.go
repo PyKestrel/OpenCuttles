@@ -7,41 +7,45 @@ import "github.com/opencuttles/opencuttles/backend/internal/domain"
 
 // androidVersions is the ordered catalog surfaced in the deploy dropdown. The
 // first entry is treated as the default when a request omits a version.
+// Build target names differ by branch family: aosp-main builds
+// "aosp_cf_x86_64_phone", while the release and GSI branches build
+// "aosp_cf_x86_64_only_phone". These combinations are fetchable anonymously via
+// "cvd fetch" (no Google credentials required).
 var androidVersions = []domain.AndroidVersion{
 	{
 		ID:          "aosp-main",
-		Label:       "Android (aosp-main, latest)",
+		Label:       "Android (latest, aosp-main)",
 		Branch:      "aosp-main",
-		BuildTarget: "aosp_cf_x86_64_phone-trunk_staging-userdebug",
-		Description: "Latest AOSP trunk build.",
+		BuildTarget: "aosp_cf_x86_64_phone-userdebug",
+		Description: "Latest AOSP trunk build. Recommended default.",
+	},
+	{
+		ID:          "latest-release",
+		Label:       "Android (latest stable release)",
+		Branch:      "aosp-android-latest-release",
+		BuildTarget: "aosp_cf_x86_64_only_phone-userdebug",
+		Description: "Latest stable AOSP release build.",
 	},
 	{
 		ID:          "android15",
 		Label:       "Android 15 (GSI)",
 		Branch:      "aosp-android15-gsi",
-		BuildTarget: "aosp_cf_x86_64_phone-userdebug",
+		BuildTarget: "aosp_cf_x86_64_only_phone-userdebug",
 		Description: "Android 15 generic system image.",
 	},
 	{
 		ID:          "android14",
 		Label:       "Android 14 (GSI)",
 		Branch:      "aosp-android14-gsi",
-		BuildTarget: "aosp_cf_x86_64_phone-userdebug",
+		BuildTarget: "aosp_cf_x86_64_only_phone-userdebug",
 		Description: "Android 14 generic system image.",
 	},
 	{
 		ID:          "android13",
 		Label:       "Android 13 (GSI)",
 		Branch:      "aosp-android13-gsi",
-		BuildTarget: "aosp_cf_x86_64_phone-userdebug",
+		BuildTarget: "aosp_cf_x86_64_only_phone-userdebug",
 		Description: "Android 13 generic system image.",
-	},
-	{
-		ID:          "android12",
-		Label:       "Android 12 (GSI)",
-		Branch:      "aosp-android12-gsi",
-		BuildTarget: "aosp_cf_x86_64_phone-userdebug",
-		Description: "Android 12 generic system image.",
 	},
 }
 
