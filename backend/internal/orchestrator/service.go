@@ -412,13 +412,15 @@ func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
 	if err := os.MkdirAll(instanceDir, 0750); err != nil {
 		return fmt.Errorf("create instance dir: %w", err)
 	}
+	// cvd derives the host ADB port from the instance number (6520 +
+	// base_instance_num - 1); there is no --adb_port flag. base_instance_num is
+	// chosen so the derived port equals instance.ADBPort.
 	args := []string{
 		"--num_instances=1",
 		fmt.Sprintf("--base_instance_num=%d", instanceNumber),
 		"--start_webrtc=true",
 		fmt.Sprintf("--cpus=%d", instance.CPUCores),
 		fmt.Sprintf("--memory_mb=%d", instance.MemoryMB),
-		fmt.Sprintf("--adb_port=%d", instance.ADBPort),
 	}
 	if instance.DisplayWidth > 0 && instance.DisplayHeight > 0 {
 		args = append(args, fmt.Sprintf("--x_res=%d", instance.DisplayWidth), fmt.Sprintf("--y_res=%d", instance.DisplayHeight))
