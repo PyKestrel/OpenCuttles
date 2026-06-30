@@ -22,9 +22,10 @@ test-frontend:
 build: build-backend
 
 build-frontend:
-	# Prefer a clean, reproducible install; fall back to npm install when the
-	# lockfile is missing or out of sync so a fresh clone builds without extra steps.
-	cd frontend && { npm ci || npm install; } && npm run build
+	# Use a clean reproducible install when a lockfile exists (falling back to
+	# npm install if it is out of sync), otherwise install fresh. This keeps a
+	# fresh clone building without the noisy "npm ci needs a lockfile" error.
+	cd frontend && { [ -f package-lock.json ] && npm ci || npm install; } && npm run build
 
 # Stage the built SPA into the embed directory consumed by //go:embed.
 embed-frontend: build-frontend
