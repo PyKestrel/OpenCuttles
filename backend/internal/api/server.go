@@ -96,9 +96,41 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/v1/instances/", s.require(domain.PermissionOperate, s.instanceRoute))
 	s.mux.HandleFunc("GET /api/v1/operations", s.require(domain.PermissionView, s.listOperations))
 	s.mux.HandleFunc("GET /api/v1/audit", s.require(domain.PermissionAdmin, s.listAudit))
+	// Cuttlefish-operator WebRTC signaling endpoints. The operator's client
+	// (client.html) builds these as root-absolute URLs against the page origin
+	// (see server_connector.js: httpUrl() and the wss .../devices/<id>/connect),
+	// so they land on OpenCuttles rather than the operator. Reverse-proxy them to
+	// the operator (WebSocket-aware) so the embedded console can connect.
+	s.mux.HandleFunc("/infra_config", s.require(domain.PermissionOpenConsole, s.operatorProxy))
+	s.mux.HandleFunc("/polled_connections", s.require(domain.PermissionOpenConsole, s.operatorProxy))
+	s.mux.HandleFunc("/polled_connections/", s.require(domain.PermissionOpenConsole, s.operatorProxy))
+	s.mux.HandleFunc("/devices/", s.require(domain.PermissionOpenConsole, s.operatorProxy))
 	// SPA + static assets (embedded). Least-specific pattern, so it only
 	// catches paths not handled by the /api routes above.
 	s.mux.HandleFunc("/", s.serveStatic)
+}
+
+// operatorProxy reverse-proxies a request to the host-wide cuttlefish-operator,
+// preserving the path. Used for the WebRTC signaling endpoints the operator's
+// client references at the origin root (/infra_config, /polled_connections,
+// /devices/<id>/connect). WebSocket upgrades are handled by ReverseProxy.
+func (s *Server) operatorProxy(w http.ResponseWriter, r *http.Request) {
+	target, err := url.Parse("https://127.0.0.1:" + strconv.Itoa(s.operatorPort))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		req.Host = target.Host
+	}
+	proxy.ErrorHandler = func(rw http.ResponseWriter, _ *http.Request, perr error) {
+		writeError(rw, clientError{status: http.StatusBadGateway, message: "operator unavailable: " + perr.Error()})
+	}
+	proxy.ServeHTTP(w, r)
 }
 
 // serveStatic serves the embedded single-page app. Unknown non-API paths fall
