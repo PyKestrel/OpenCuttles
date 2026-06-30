@@ -252,6 +252,14 @@ func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
 		_ = s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusError, 0, err.Error())
 		return fmt.Errorf("create image dir: %w", err)
 	}
+	// cvd downloads artifacts to a cache and then hardlinks them into the target
+	// directory. If the cache (default /var/tmp) and the image volume are on
+	// different filesystems, the hardlink fails with EXDEV. Pin cvd's temp/cache
+	// onto the same filesystem as the image root so the hardlink stays in-device.
+	cacheDir := filepath.Join(imageRoot(), ".cvd-cache")
+	if mkErr := os.MkdirAll(cacheDir, 0o750); mkErr == nil {
+		_ = os.Setenv("TMPDIR", cacheDir)
+	}
 	result, err := s.runner.Run(ctx, "cvd", "fetch",
 		"--default_build="+image.BuildTarget,
 		"--target_directory="+image.Path,
