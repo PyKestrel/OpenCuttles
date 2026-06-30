@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -150,6 +151,7 @@ func (s *Service) runStart(id, operationID string) {
 		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
 		return
 	}
+	s.finalizeConsole(ctx, instance)
 	_, _ = s.store.FinishOperation(ctx, operationID, "succeeded", "instance is running")
 }
 
@@ -220,7 +222,58 @@ func (s *Service) runDeploy(id, operationID string) {
 		fail(err)
 		return
 	}
+	s.finalizeConsole(ctx, instance)
 	_, _ = s.store.FinishOperation(ctx, operationID, "succeeded", "instance is running")
+}
+
+// finalizeConsole asks the cuttlefish-operator for the device id it assigned to
+// this instance (matched by ADB port) and records the console URL derived from
+// it. Best-effort: the console simply stays on its provisional id if discovery
+// fails.
+func (s *Service) finalizeConsole(ctx context.Context, instance domain.Instance) {
+	if !realCuttlefishExecutionEnabled() {
+		return
+	}
+	deviceID, ok := s.discoverDeviceID(instance)
+	if !ok {
+		return
+	}
+	_, _ = s.store.UpdateInstanceConsole(ctx, instance.ID, deviceID, store.ConsoleClientURL(instance.ID, deviceID))
+}
+
+// discoverDeviceID resolves the operator's device id for this instance via the
+// operator's /devices endpoint, matching on ADB port (falling back to the group
+// name). Returns false when the operator is unreachable or the device is absent.
+func (s *Service) discoverDeviceID(instance domain.Instance) (string, bool) {
+	client := http.Client{
+		Timeout:   3 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}},
+	}
+	resp, err := client.Get(fmt.Sprintf("https://127.0.0.1:%d/devices", operatorPort()))
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	var devices []struct {
+		DeviceID  string `json:"device_id"`
+		GroupName string `json:"group_name"`
+		ADBPort   int    `json:"adb_port"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&devices); err != nil {
+		return "", false
+	}
+	for _, d := range devices {
+		if d.ADBPort == instance.ADBPort && d.DeviceID != "" {
+			return d.DeviceID, true
+		}
+	}
+	group := groupName(instance.ADBPort - 6520 + 1)
+	for _, d := range devices {
+		if d.GroupName == group && d.DeviceID != "" {
+			return d.DeviceID, true
+		}
+	}
+	return "", false
 }
 
 // ensureImage downloads the backing image with cvd fetch when it is not already

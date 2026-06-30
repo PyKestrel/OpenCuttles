@@ -463,11 +463,11 @@ func rewriteConsoleHTML(resp *http.Response, prefix string) error {
 	}
 	_ = resp.Body.Close()
 
+	// The operator serves the client page at /devices/<id>/files/client.html and
+	// references its assets relatively, so they resolve correctly against the
+	// proxied document URL without a <base> tag (injecting one would break them).
+	// Only root-absolute references need rewriting to stay under this prefix.
 	html := string(body)
-	if idx := strings.Index(html, "<head>"); idx >= 0 {
-		base := `<base href="` + prefix + `/">`
-		html = html[:idx+len("<head>")] + base + html[idx+len("<head>"):]
-	}
 	replacer := strings.NewReplacer(
 		`src="/`, `src="`+prefix+`/`,
 		`href="/`, `href="`+prefix+`/`,

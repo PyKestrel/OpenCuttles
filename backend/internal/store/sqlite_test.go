@@ -41,12 +41,12 @@ func TestStoreAuthAuditAndInstancePersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create instance: %v", err)
 	}
-	wantConsole := "/api/v1/instances/" + instance.ID + "/console/client.html?deviceId=" + instance.DeviceID
+	wantConsole := "/api/v1/instances/" + instance.ID + "/console/devices/" + instance.DeviceID + "/files/client.html"
 	if instance.ConsoleURL != wantConsole {
 		t.Fatalf("console url = %q, want %q", instance.ConsoleURL, wantConsole)
 	}
-	if instance.DeviceID != "cvd-1" {
-		t.Fatalf("device id = %q, want cvd-1", instance.DeviceID)
+	if instance.DeviceID != "cvd_1-1-1" {
+		t.Fatalf("device id = %q, want cvd_1-1-1", instance.DeviceID)
 	}
 	if instance.WebRTCPort != webrtcOperatorPort {
 		t.Fatalf("webrtc port = %d, want %d", instance.WebRTCPort, webrtcOperatorPort)
@@ -169,8 +169,8 @@ func TestCreateInstanceDeployFields(t *testing.T) {
 	if instance.DisplayWidth != 1080 || instance.DisplayHeight != 1920 || instance.DPI != 440 {
 		t.Fatalf("display options not persisted: %+v", instance)
 	}
-	if instance.DeviceID != "cvd-1" {
-		t.Fatalf("device id = %q, want cvd-1", instance.DeviceID)
+	if instance.DeviceID != "cvd_1-1-1" {
+		t.Fatalf("device id = %q, want cvd_1-1-1", instance.DeviceID)
 	}
 
 	// Round-trip through the store to confirm scanning of the new columns.
@@ -178,7 +178,7 @@ func TestCreateInstanceDeployFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get instance: %v", err)
 	}
-	if loaded.DisplayWidth != 1080 || loaded.DeviceID != "cvd-1" || loaded.AndroidVersion != "android14" {
+	if loaded.DisplayWidth != 1080 || loaded.DeviceID != "cvd_1-1-1" || loaded.AndroidVersion != "android14" {
 		t.Fatalf("loaded instance mismatch: %+v", loaded)
 	}
 }

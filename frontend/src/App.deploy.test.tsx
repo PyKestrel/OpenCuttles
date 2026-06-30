@@ -70,7 +70,7 @@ describe("Deploy flow", () => {
 
     render(<App />);
     const frame = await screen.findByTitle("android-01 console");
-    expect(frame).toHaveAttribute("src", "/api/v1/instances/cvd_1/console/client.html?deviceId=cvd-1");
+    expect(frame).toHaveAttribute("src", "/api/v1/instances/cvd_1/console/devices/cvd_1-1-1/files/client.html");
   });
 });
 
@@ -96,9 +96,9 @@ function runningInstance(): Instance {
     dpi: 320,
     adbPort: 6520,
     webrtcPort: 8443,
-    deviceId: "cvd-1",
+    deviceId: "cvd_1-1-1",
     consoleProvider: "cuttlefish-webrtc",
-    consoleUrl: "/api/v1/instances/cvd_1/console/client.html?deviceId=cvd-1",
+    consoleUrl: "/api/v1/instances/cvd_1/console/devices/cvd_1-1-1/files/client.html",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

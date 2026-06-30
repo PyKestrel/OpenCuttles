@@ -382,7 +382,9 @@ func (s *SQLite) CreateInstance(ctx context.Context, req domain.CreateInstanceRe
 	}
 	instanceID := newID("cvd")
 	instanceNumber := adbPort - basePort + 1
-	deviceID := fmt.Sprintf("cvd-%d", instanceNumber)
+	// Provisional device id; the orchestrator overwrites it with the operator's
+	// real id (e.g. "cvd_1-1-1") once the device registers after launch.
+	deviceID := fmt.Sprintf("cvd_%d-%d-1", instanceNumber, instanceNumber)
 
 	instance := domain.Instance{
 		ID:              instanceID,
@@ -400,7 +402,7 @@ func (s *SQLite) CreateInstance(ctx context.Context, req domain.CreateInstanceRe
 		WebRTCPort:      webrtcPort,
 		DeviceID:        deviceID,
 		ConsoleProvider: domain.ConsoleProviderCuttlefishWebRTC,
-		ConsoleURL:      fmt.Sprintf("/api/v1/instances/%s/console/client.html?deviceId=%s", instanceID, deviceID),
+		ConsoleURL:      ConsoleClientURL(instanceID, deviceID),
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
@@ -490,6 +492,25 @@ func (s *SQLite) ListInstances(ctx context.Context) ([]domain.Instance, error) {
 func (s *SQLite) GetInstance(ctx context.Context, id string) (domain.Instance, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+instanceColumns+` FROM instances WHERE id = ?`, id)
 	return scanInstance(row)
+}
+
+// ConsoleClientURL builds the per-instance console path that the API reverse
+// proxies to the cuttlefish-operator's per-device WebRTC client page
+// (/devices/<deviceID>/files/client.html on the operator).
+func ConsoleClientURL(instanceID, deviceID string) string {
+	return fmt.Sprintf("/api/v1/instances/%s/console/devices/%s/files/client.html", instanceID, deviceID)
+}
+
+// UpdateInstanceConsole records the operator-assigned device id and the console
+// URL derived from it, after the device registers post-launch.
+func (s *SQLite) UpdateInstanceConsole(ctx context.Context, id, deviceID, consoleURL string) (domain.Instance, error) {
+	now := time.Now().UTC()
+	_, err := s.db.ExecContext(ctx, `UPDATE instances SET device_id = ?, console_url = ?, updated_at = ? WHERE id = ?`,
+		deviceID, consoleURL, formatTime(now), id)
+	if err != nil {
+		return domain.Instance{}, err
+	}
+	return s.GetInstance(ctx, id)
 }
 
 func (s *SQLite) UpdateInstanceState(ctx context.Context, id, state, lastError string) (domain.Instance, error) {
