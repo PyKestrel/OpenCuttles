@@ -256,7 +256,7 @@ func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
 	// hardlinks them into the target directory. If that cache and the image
 	// volume are on different filesystems, the hardlink fails with EXDEV. Keep
 	// the cache on the image filesystem so the hardlink stays in-device.
-	ensureCvdCacheColocated(imageRoot())
+	ensureCvdCacheColocated(image.Path)
 	result, err := s.runner.Run(ctx, "cvd", "fetch",
 		"--default_build="+image.BuildTarget,
 		"--target_directory="+image.Path,
@@ -270,12 +270,13 @@ func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
 }
 
 // ensureCvdCacheColocated makes cvd's download cache (/var/tmp/cvd) live on the
-// same filesystem as the image root, so cvd can hardlink fetched artifacts into
-// the target directory instead of failing with EXDEV across mounts. It only
+// same filesystem as the image target, so cvd can hardlink fetched artifacts
+// into the target directory instead of failing with EXDEV across mounts. The
+// cache is placed beside the image root (the parent of imagePath). It only
 // creates a symlink when /var/tmp/cvd is absent or already our symlink; it never
 // clobbers an existing real directory (which may belong to another cvd user).
-func ensureCvdCacheColocated(root string) {
-	cache := filepath.Join(root, ".cvd-cache")
+func ensureCvdCacheColocated(imagePath string) {
+	cache := filepath.Join(filepath.Dir(imagePath), ".cvd-cache")
 	if err := os.MkdirAll(cache, 0o750); err != nil {
 		return
 	}
