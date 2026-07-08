@@ -28,6 +28,7 @@ import (
 	"github.com/opencuttles/opencuttles/backend/internal/catalog"
 	"github.com/opencuttles/opencuttles/backend/internal/devicecontrol"
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
+	mcpserver "github.com/opencuttles/opencuttles/backend/internal/mcp"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
 	"github.com/opencuttles/opencuttles/backend/internal/web"
@@ -45,6 +46,8 @@ type Server struct {
 	authLimiter   *rateLimiter
 	webAssets     fs.FS
 	operatorPort  int
+	mcpHandler    http.Handler
+	mcpToken      string
 }
 
 // operatorPortFromEnv resolves the host-wide cuttlefish-operator HTTPS port.
@@ -75,6 +78,8 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 		server.webAssets = assets
 	}
 	server.operatorPort = operatorPortFromEnv()
+	server.mcpHandler = mcpserver.New(devices, store, logger).Handler()
+	server.mcpToken = os.Getenv("OPENCUTTLES_MCP_TOKEN")
 	server.routes()
 	return server.withMiddleware(server.mux)
 }
@@ -100,6 +105,11 @@ func (s *Server) routes() {
 	// Interactive device control (input, screenshot, apps, shell) nested under
 	// an instance; guarded by PermissionControl.
 	s.registerControlRoutes()
+	// MCP endpoint: device tools for the local agent. Authenticated by the
+	// service token (OPENCUTTLES_MCP_TOKEN) or a session with the control
+	// permission. The streamable handler owns method routing under this path.
+	s.mux.Handle("/api/v1/mcp", s.mcpAuth(s.mcpHandler))
+	s.mux.Handle("/api/v1/mcp/", s.mcpAuth(s.mcpHandler))
 	s.mux.HandleFunc("GET /api/v1/operations", s.require(domain.PermissionView, s.listOperations))
 	s.mux.HandleFunc("GET /api/v1/audit", s.require(domain.PermissionAdmin, s.listAudit))
 	// Cuttlefish-operator WebRTC signaling endpoints. The operator's client
@@ -546,6 +556,36 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 			s.logger.Info("request", "method", r.Method, "path", r.URL.Path, "request_id", requestID, "duration", time.Since(start))
 		}
 	})
+}
+
+// mcpAuth guards the MCP endpoint. It accepts the service token (bearer or
+// X-MCP-Token header) when OPENCUTTLES_MCP_TOKEN is configured, otherwise it
+// falls back to a session with the control permission. This lets the headless
+// Flue sidecar authenticate with a token while browser sessions still work.
+func (s *Server) mcpAuth(next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.mcpToken != "" && mcpTokenFromRequest(r) != "" &&
+			subtle.ConstantTimeCompare([]byte(mcpTokenFromRequest(r)), []byte(s.mcpToken)) == 1 {
+			next.ServeHTTP(w, r)
+			return
+		}
+		principal, _, err := s.auth.AuthenticateRequest(r.Context(), r)
+		if err == nil && auth.HasPermission(principal, domain.PermissionControl) {
+			ctx := context.WithValue(r.Context(), principalKey{}, principal)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		writeError(w, clientError{status: http.StatusUnauthorized, message: "unauthorized"})
+	}
+}
+
+// mcpTokenFromRequest reads the MCP service token from an Authorization bearer
+// header or the X-MCP-Token header.
+func mcpTokenFromRequest(r *http.Request) string {
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+	}
+	return strings.TrimSpace(r.Header.Get("X-MCP-Token"))
 }
 
 func (s *Server) require(permission string, next http.HandlerFunc) http.HandlerFunc {
