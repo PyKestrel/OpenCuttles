@@ -11,6 +11,7 @@ import (
 
 	"github.com/opencuttles/opencuttles/backend/internal/api"
 	"github.com/opencuttles/opencuttles/backend/internal/auth"
+	"github.com/opencuttles/opencuttles/backend/internal/devicecontrol"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
 )
@@ -32,6 +33,7 @@ func main() {
 
 	authService := auth.NewService(db)
 	service := orchestrator.NewService(db, orchestrator.NewExecRunner(logger), logger)
+	devices := devicecontrol.NewService(db, nil, logger)
 	if err := db.PruneExpiredSessions(context.Background()); err != nil {
 		logger.Error("prune sessions failed", "error", err)
 		os.Exit(1)
@@ -42,7 +44,7 @@ func main() {
 	}
 	server := &http.Server{
 		Addr:              listenAddr,
-		Handler:           api.NewServer(db, service, authService, logger, secureCookies, allowedOrigin),
+		Handler:           api.NewServer(db, service, authService, devices, logger, secureCookies, allowedOrigin),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

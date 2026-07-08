@@ -26,6 +26,7 @@ import (
 
 	"github.com/opencuttles/opencuttles/backend/internal/auth"
 	"github.com/opencuttles/opencuttles/backend/internal/catalog"
+	"github.com/opencuttles/opencuttles/backend/internal/devicecontrol"
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
@@ -36,6 +37,7 @@ type Server struct {
 	store         *store.SQLite
 	orch          *orchestrator.Service
 	auth          *auth.Service
+	devices       *devicecontrol.Service
 	logger        *slog.Logger
 	mux           *http.ServeMux
 	secureCookies bool
@@ -57,11 +59,12 @@ func operatorPortFromEnv() int {
 	return 1443
 }
 
-func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *auth.Service, logger *slog.Logger, secureCookies bool, allowedOrigin string) http.Handler {
+func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *auth.Service, devices *devicecontrol.Service, logger *slog.Logger, secureCookies bool, allowedOrigin string) http.Handler {
 	server := &Server{
 		store:         store,
 		orch:          orch,
 		auth:          authService,
+		devices:       devices,
 		logger:        logger,
 		mux:           http.NewServeMux(),
 		secureCookies: secureCookies,
@@ -94,6 +97,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/instances/", s.require(domain.PermissionView, s.instanceRoute))
 	s.mux.HandleFunc("POST /api/v1/instances/", s.require(domain.PermissionOperate, s.instanceRoute))
 	s.mux.HandleFunc("DELETE /api/v1/instances/", s.require(domain.PermissionOperate, s.instanceRoute))
+	// Interactive device control (input, screenshot, apps, shell) nested under
+	// an instance; guarded by PermissionControl.
+	s.registerControlRoutes()
 	s.mux.HandleFunc("GET /api/v1/operations", s.require(domain.PermissionView, s.listOperations))
 	s.mux.HandleFunc("GET /api/v1/audit", s.require(domain.PermissionAdmin, s.listAudit))
 	// Cuttlefish-operator WebRTC signaling endpoints. The operator's client

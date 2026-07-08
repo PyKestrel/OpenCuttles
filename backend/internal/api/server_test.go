@@ -13,6 +13,7 @@ import (
 	"testing/fstest"
 
 	"github.com/opencuttles/opencuttles/backend/internal/auth"
+	"github.com/opencuttles/opencuttles/backend/internal/devicecontrol"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
 )
@@ -179,5 +180,6 @@ func testServer(t *testing.T) http.Handler {
 	})
 	authService := auth.NewService(db)
 	orch := orchestrator.NewService(db, noopRunner{}, slog.Default())
-	return NewServer(db, orch, authService, slog.Default(), false, "")
+	devices := devicecontrol.NewService(db, nil, slog.Default())
+	return NewServer(db, orch, authService, devices, slog.Default(), false, "")
 }

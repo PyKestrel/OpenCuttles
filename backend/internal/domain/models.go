@@ -27,6 +27,9 @@ const (
 	PermissionOperate   = "operate"
 	PermissionView      = "view"
 	PermissionOpenConsole = "console"
+	// PermissionControl guards interactive device control (input injection,
+	// screenshots, shell, app install) via the devicecontrol service.
+	PermissionControl = "control"
 )
 
 type Host struct {
