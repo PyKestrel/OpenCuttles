@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import type {
   AndroidVersion,
@@ -144,6 +144,7 @@ export default function App() {
   }
 
   const canOperate = hasPermission(principal, "operate");
+  const canControl = hasPermission(principal, "control");
   const canAdmin = hasPermission(principal, "admin");
   const runningCount = data.instances.filter((instance) => instance.state === "running").length;
   const okPrereqs = data.host?.prerequisites.filter((item) => item.ok).length ?? 0;
@@ -280,6 +281,8 @@ export default function App() {
                 </section>
               </>
             )}
+
+            {view === "control" && (canControl ? <DeviceControlPanel instance={selectedInstance} /> : <ReadOnlyNotice />)}
 
             {view === "images" && (
               <ImagesPanel images={data.images} busy={busy} canOperate={canOperate} onAction={runAction} />
@@ -959,6 +962,308 @@ function ConsolePanel({ instance }: { instance?: Instance }) {
   );
 }
 
+const CONTROL_KEYS: [string, string][] = [
+  ["Back", "BACK"],
+  ["Home", "HOME"],
+  ["Recents", "APP_SWITCH"],
+  ["Enter", "ENTER"],
+  ["Vol +", "VOLUME_UP"],
+  ["Vol −", "VOLUME_DOWN"],
+  ["Power", "POWER"],
+];
+
+type ControlTab = "screen" | "apps" | "logcat" | "shell";
+
+function DeviceControlPanel({ instance }: { instance?: Instance }) {
+  const id = instance?.id;
+  const running = instance?.state === "running";
+  const [tab, setTab] = useState<ControlTab>("screen");
+  const [token, setToken] = useState(() => Date.now());
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [rotation, setRotation] = useState(0);
+  const [typeValue, setTypeValue] = useState("");
+  const [apps, setApps] = useState<string[]>([]);
+  const [thirdPartyOnly, setThirdPartyOnly] = useState(true);
+  const [installStatus, setInstallStatus] = useState("");
+  const [logcat, setLogcat] = useState("");
+  const [shellCmd, setShellCmd] = useState("");
+  const [shellOut, setShellOut] = useState("");
+  const imgRef = useRef<HTMLImageElement>(null);
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const refreshTimer = useRef<number | undefined>(undefined);
+
+  const refreshShot = useCallback(() => setToken(Date.now()), []);
+
+  // Load-driven refresh: schedule the next capture only after the current image
+  // finishes loading, so a slow screenshot never piles up into overlapping
+  // requests (which the browser aborts, and which would otherwise fire onError).
+  function scheduleNextShot(delay: number) {
+    window.clearTimeout(refreshTimer.current);
+    if (autoRefresh && tab === "screen" && !document.hidden) {
+      refreshTimer.current = window.setTimeout(() => setToken(Date.now()), delay);
+    }
+  }
+
+  useEffect(() => () => window.clearTimeout(refreshTimer.current), []);
+
+  // Kick (or stop) the refresh loop when auto-refresh or the tab changes.
+  useEffect(() => {
+    if (autoRefresh && tab === "screen") {
+      setToken(Date.now());
+    } else {
+      window.clearTimeout(refreshTimer.current);
+    }
+  }, [autoRefresh, tab]);
+
+  // Clear transient state when switching devices.
+  useEffect(() => {
+    setError("");
+    setApps([]);
+    setLogcat("");
+    setShellOut("");
+    setInstallStatus("");
+  }, [id]);
+
+  async function run(action: () => Promise<unknown>, refresh = true) {
+    if (!id) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+      if (refresh) {
+        refreshShot();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function deviceCoords(event: MouseEvent<HTMLImageElement>) {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) {
+      return null;
+    }
+    const rect = img.getBoundingClientRect();
+    const x = Math.round(((event.clientX - rect.left) / rect.width) * img.naturalWidth);
+    const y = Math.round(((event.clientY - rect.top) / rect.height) * img.naturalHeight);
+    return { x, y };
+  }
+
+  function onScreenDown(event: MouseEvent<HTMLImageElement>) {
+    pointerStart.current = deviceCoords(event);
+  }
+
+  function onScreenUp(event: MouseEvent<HTMLImageElement>) {
+    const start = pointerStart.current;
+    pointerStart.current = null;
+    const end = deviceCoords(event);
+    if (!id || !start || !end) {
+      return;
+    }
+    // A near-stationary press is a tap; a drag becomes a swipe.
+    if (Math.abs(end.x - start.x) < 12 && Math.abs(end.y - start.y) < 12) {
+      run(() => api.controlTap(id, end.x, end.y));
+    } else {
+      run(() => api.controlSwipe(id, start.x, start.y, end.x, end.y, 250));
+    }
+  }
+
+  function rotate() {
+    const next = (rotation + 1) % 4;
+    setRotation(next);
+    run(() => api.controlRotate(id!, next));
+  }
+
+  function sendText(event: FormEvent) {
+    event.preventDefault();
+    if (!typeValue) {
+      return;
+    }
+    run(() => api.controlText(id!, typeValue)).then(() => setTypeValue(""));
+  }
+
+  function loadApps() {
+    run(async () => {
+      const result = await api.controlListApps(id!, thirdPartyOnly);
+      setApps(result.packages ?? []);
+    }, false);
+  }
+
+  function onApkSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !id) {
+      return;
+    }
+    setInstallStatus(`Installing ${file.name}…`);
+    run(async () => {
+      const result = await api.controlInstallApp(id, file);
+      setInstallStatus(`Installed ${result.file}`);
+    }, false).catch(() => setInstallStatus(""));
+  }
+
+  function loadLogcat() {
+    run(async () => {
+      const result = await api.controlLogcat(id!, 400);
+      setLogcat(result.logcat || "(empty)");
+    }, false);
+  }
+
+  function runShell(event: FormEvent) {
+    event.preventDefault();
+    if (!shellCmd) {
+      return;
+    }
+    run(async () => {
+      const result = await api.controlShell(id!, shellCmd);
+      setShellOut(result.output || "(no output)");
+    }, false);
+  }
+
+  if (!instance) {
+    return (
+      <div className="panel">
+        <div className="empty">Select an instance from the sidebar to control it.</div>
+      </div>
+    );
+  }
+
+  if (!running) {
+    return (
+      <div className="panel">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">Device control</span>
+            <h2>{instance.name}</h2>
+          </div>
+          <span className={`state state-${instance.state}`}>{instance.state}</span>
+        </div>
+        <div className="empty">
+          Device control is available only while the instance is running. Start it from the Instances page.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel control-panel">
+      <div className="panel-title">
+        <div>
+          <span className="eyebrow">Device control</span>
+          <h2>{instance.name} · {instance.deviceId || "device"}</h2>
+        </div>
+        <div className="control-tabs">
+          {(["screen", "apps", "logcat", "shell"] as ControlTab[]).map((name) => (
+            <button key={name} className={tab === name ? "active" : ""} onClick={() => setTab(name)}>
+              {name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && <div className="alert">{error}</div>}
+
+      {tab === "screen" && (
+        <div className="control-screen">
+          <div className="device-frame">
+            <img
+              ref={imgRef}
+              className="device-shot"
+              src={api.controlScreenshotSrc(id!, token)}
+              alt={`${instance.name} screen`}
+              draggable={false}
+              onMouseDown={onScreenDown}
+              onMouseUp={onScreenUp}
+              onLoad={() => scheduleNextShot(700)}
+              onError={() => scheduleNextShot(1500)}
+            />
+          </div>
+          <div className="control-side">
+            <p className="form-help">Click to tap, drag to swipe.</p>
+            <div className="control-keys">
+              {CONTROL_KEYS.map(([label, code]) => (
+                <button key={code} disabled={busy} onClick={() => run(() => api.controlKey(id!, code))}>
+                  {label}
+                </button>
+              ))}
+              <button disabled={busy} onClick={rotate}>Rotate</button>
+            </div>
+            <form className="control-type" onSubmit={sendText}>
+              <input
+                value={typeValue}
+                onChange={(event) => setTypeValue(event.target.value)}
+                placeholder="Type text into focused field"
+              />
+              <button className="primary" disabled={busy || !typeValue}>Send</button>
+            </form>
+            <label className="control-toggle">
+              <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
+              Auto-refresh
+            </label>
+            <button disabled={busy} onClick={refreshShot}>Refresh screen</button>
+          </div>
+        </div>
+      )}
+
+      {tab === "apps" && (
+        <div className="control-apps">
+          <div className="control-apps-actions">
+            <label className="control-toggle">
+              <input type="checkbox" checked={thirdPartyOnly} onChange={(event) => setThirdPartyOnly(event.target.checked)} />
+              Third-party only
+            </label>
+            <button disabled={busy} onClick={loadApps}>Load apps</button>
+            <label className="apk-upload">
+              Install APK
+              <input type="file" accept=".apk" onChange={onApkSelected} disabled={busy} hidden />
+            </label>
+            {installStatus && <span className="muted">{installStatus}</span>}
+          </div>
+          {apps.length === 0 ? (
+            <div className="empty">No apps loaded. Click “Load apps”.</div>
+          ) : (
+            <ul className="app-list">
+              {apps.map((pkg) => (
+                <li key={pkg}>
+                  <code>{pkg}</code>
+                  <button disabled={busy} onClick={() => run(() => api.controlLaunchApp(id!, pkg), false)}>Launch</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {tab === "logcat" && (
+        <div className="control-logcat">
+          <button disabled={busy} onClick={loadLogcat}>Fetch recent logcat</button>
+          <pre className="log-view">{logcat || "Click “Fetch recent logcat” to load the last 400 lines."}</pre>
+        </div>
+      )}
+
+      {tab === "shell" && (
+        <div className="control-shell">
+          <form className="control-type" onSubmit={runShell}>
+            <input
+              value={shellCmd}
+              onChange={(event) => setShellCmd(event.target.value)}
+              placeholder="e.g. getprop ro.build.version.release"
+            />
+            <button className="primary" disabled={busy || !shellCmd}>Run</button>
+          </form>
+          <pre className="log-view">{shellOut || "Command output appears here."}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function hasPermission(principal: Principal, permission: string) {
   return principal.permissions.includes("admin") || principal.permissions.includes(permission);
 }
@@ -966,6 +1271,7 @@ function hasPermission(principal: Principal, permission: string) {
 const NAV_LABELS: Record<string, string> = {
   dashboard: "Overview",
   instances: "Instances",
+  control: "Control",
   images: "Images",
   operations: "Activity",
   host: "Host",
@@ -976,6 +1282,7 @@ const NAV_LABELS: Record<string, string> = {
 const PAGE_TITLES: Record<string, string> = {
   dashboard: "Overview",
   instances: "Android instances",
+  control: "Device control",
   images: "Images",
   operations: "Activity log",
   host: "Host health",
@@ -984,7 +1291,7 @@ const PAGE_TITLES: Record<string, string> = {
 };
 
 const NAV_GROUP_DEFS: { title: string; items: string[] }[] = [
-  { title: "System", items: ["dashboard", "instances", "images", "operations"] },
+  { title: "System", items: ["dashboard", "instances", "control", "images", "operations"] },
   { title: "Tools", items: ["host", "audit", "settings"] },
 ];
 
@@ -998,6 +1305,9 @@ function navGroups(principal: Principal) {
 
 function visibleViews(principal: Principal) {
   const base = ["dashboard", "host", "images", "instances", "operations", "settings"];
+  if (hasPermission(principal, "control")) {
+    base.push("control");
+  }
   if (hasPermission(principal, "admin")) {
     return [...base, "audit"];
   }

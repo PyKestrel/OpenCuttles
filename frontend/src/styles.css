@@ -770,3 +770,140 @@ td small {
 .auth-brand {
   margin-bottom: 0.5rem;
 }
+
+/* Device control -------------------------------------------------------- */
+.control-tabs {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.control-tabs button {
+  text-transform: capitalize;
+}
+
+.control-tabs button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.control-screen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.device-frame {
+  align-items: center;
+  background: #1b1d21;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  max-width: 360px;
+  padding: 0.5rem;
+}
+
+.device-shot {
+  cursor: crosshair;
+  max-height: 620px;
+  max-width: 100%;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.control-side {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.control-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.control-type {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.control-type input {
+  flex: 1;
+}
+
+.control-toggle {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 0.85rem;
+  gap: 0.4rem;
+}
+
+.control-apps-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.apk-upload {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+}
+
+.apk-upload:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.app-list {
+  list-style: none;
+  margin: 0;
+  max-height: 460px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.app-list li {
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+}
+
+.app-list code {
+  overflow-wrap: anywhere;
+}
+
+.control-logcat,
+.control-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.log-view {
+  background: #1b1d21;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: #e8eaed;
+  font-size: 0.78rem;
+  margin: 0;
+  max-height: 520px;
+  overflow: auto;
+  padding: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

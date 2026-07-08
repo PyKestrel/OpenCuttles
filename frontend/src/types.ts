@@ -119,6 +119,26 @@ export type HealthReport = {
   generatedAt: string;
 };
 
+export type UINode = {
+  text?: string;
+  resourceId?: string;
+  class?: string;
+  contentDesc?: string;
+  package?: string;
+  clickable?: boolean;
+  scrollable?: boolean;
+  focused?: boolean;
+  bounds?: string;
+  center?: { x: number; y: number };
+  children?: UINode[];
+};
+
+export type PerfSnapshot = {
+  package?: string;
+  batteryLevel: number;
+  totalPssKb?: number;
+};
+
 export type CreateImagePayload = {
   name: string;
   path: string;
