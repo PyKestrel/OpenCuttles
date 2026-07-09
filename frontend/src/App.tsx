@@ -269,7 +269,7 @@ export default function App() {
                 <section className="grid split console-row">
                   <ConsolePanel instance={selectedInstance} />
                   {canControl ? (
-                    <DeviceControlPanel instance={selectedInstance} />
+                    <DeviceSidePanel instance={selectedInstance} />
                   ) : (
                     <InstanceDetails instance={selectedInstance} />
                   )}
@@ -288,8 +288,6 @@ export default function App() {
                 </section>
               </>
             )}
-
-            {view === "agent" && (canControl ? <AgentPanel instance={selectedInstance} /> : <ReadOnlyNotice />)}
 
             {view === "images" && (
               <ImagesPanel images={data.images} busy={busy} canOperate={canOperate} onAction={runAction} />
@@ -1280,6 +1278,25 @@ function AgentPanel({ instance }: { instance?: Instance }) {
   );
 }
 
+// DeviceSidePanel sits next to the live console and lets the operator switch
+// between the manual device controls and the natural-language agent chat.
+function DeviceSidePanel({ instance }: { instance?: Instance }) {
+  const [pane, setPane] = useState<"controls" | "agent">("controls");
+  return (
+    <div className="side-panel">
+      <div className="side-switch">
+        <button className={pane === "controls" ? "active" : ""} onClick={() => setPane("controls")}>
+          Controls
+        </button>
+        <button className={pane === "agent" ? "active" : ""} onClick={() => setPane("agent")}>
+          Agent
+        </button>
+      </div>
+      {pane === "controls" ? <DeviceControlPanel instance={instance} /> : <AgentPanel instance={instance} />}
+    </div>
+  );
+}
+
 function hasPermission(principal: Principal, permission: string) {
   return principal.permissions.includes("admin") || principal.permissions.includes(permission);
 }
@@ -1287,7 +1304,6 @@ function hasPermission(principal: Principal, permission: string) {
 const NAV_LABELS: Record<string, string> = {
   dashboard: "Overview",
   instances: "Instances",
-  agent: "Agent",
   images: "Images",
   operations: "Activity",
   host: "Host",
@@ -1298,7 +1314,6 @@ const NAV_LABELS: Record<string, string> = {
 const PAGE_TITLES: Record<string, string> = {
   dashboard: "Overview",
   instances: "Android instances",
-  agent: "Natural-language agent",
   images: "Images",
   operations: "Activity log",
   host: "Host health",
@@ -1307,7 +1322,7 @@ const PAGE_TITLES: Record<string, string> = {
 };
 
 const NAV_GROUP_DEFS: { title: string; items: string[] }[] = [
-  { title: "System", items: ["dashboard", "instances", "agent", "images", "operations"] },
+  { title: "System", items: ["dashboard", "instances", "images", "operations"] },
   { title: "Tools", items: ["host", "audit", "settings"] },
 ];
 
@@ -1321,9 +1336,6 @@ function navGroups(principal: Principal) {
 
 function visibleViews(principal: Principal) {
   const base = ["dashboard", "host", "images", "instances", "operations", "settings"];
-  if (hasPermission(principal, "control")) {
-    base.push("agent");
-  }
   if (hasPermission(principal, "admin")) {
     return [...base, "audit"];
   }

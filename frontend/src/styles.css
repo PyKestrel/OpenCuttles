@@ -787,6 +787,29 @@ td small {
   color: #fff;
 }
 
+/* Side panel beside the console: switch between controls and the agent. */
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.side-switch {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.side-switch button {
+  flex: 1;
+  font-weight: 600;
+}
+
+.side-switch button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 /* Compact control panel that sits beside the live console. */
 .control-panel .control-type {
   margin: 0.6rem 0;
