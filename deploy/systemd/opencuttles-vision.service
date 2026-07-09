@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenCuttles vision sidecar (Moondream VLM for grounding + assertions)
+Description=OpenCuttles vision sidecar (Florence-2 VLM for grounding + assertions)
 After=network.target
 
 [Service]
@@ -7,8 +7,8 @@ Type=simple
 # Adjust User/WorkingDirectory to where the vision project is checked out.
 User=atorres
 WorkingDirectory=/home/atorres/opencuttles/vision
-# Path to the downloaded Moondream weight (.mf.gz). Swap to the 2B for accuracy.
-Environment=OPENCUTTLES_VISION_MODEL=/home/atorres/opencuttles/vision/moondream-0_5b-int4.mf.gz
+# HuggingFace model id. Swap to microsoft/Florence-2-large for more accuracy.
+Environment=OPENCUTTLES_VISION_MODEL=microsoft/Florence-2-base
 ExecStart=/home/atorres/opencuttles/vision/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8791
 Restart=on-failure
 RestartSec=5
