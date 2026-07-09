@@ -1,4 +1,12 @@
 import { connectMcpServer, defineAgent, registerProvider } from "@flue/runtime";
+import type { AgentRouteHandler } from "@flue/runtime";
+
+// Exposing the agent over HTTP requires an exported route handler. The
+// OpenCuttles API already authenticates and reverse-proxies /agents/* (control
+// permission), so this is a pass-through.
+export const route: AgentRouteHandler = async (_c, next) => {
+  await next();
+};
 
 // Register the local Ollama endpoint as an OpenAI-compatible provider so model
 // specifiers like "ollama/openbmb/minicpm5" resolve to the on-device MiniCPM5.
@@ -14,11 +22,6 @@ registerProvider("ollama", {
 const MCP_URL = process.env.OPENCUTTLES_MCP_URL ?? "http://127.0.0.1:8080/api/v1/mcp";
 const MCP_TOKEN = process.env.OPENCUTTLES_MCP_TOKEN ?? "";
 const MODEL = process.env.OPENCUTTLES_AGENT_MODEL ?? "ollama/openbmb/minicpm5";
-
-const oc = await connectMcpServer("oc", {
-  url: MCP_URL,
-  ...(MCP_TOKEN ? { headers: { Authorization: `Bearer ${MCP_TOKEN}` } } : {}),
-});
 
 const instructions = `You are OpenCuttles' device agent. You drive a real Android device (a Google Cuttlefish VM) to carry out the user's task by calling tools. You ACT — you never ask the user for confirmation or for information you can obtain with a tool.
 
@@ -37,8 +40,17 @@ Rules:
 - If a target isn't visible, swipe to scroll and look again.
 - When finished, state in one or two sentences what you did and what is now on screen.`;
 
-export default defineAgent(() => ({
-  model: MODEL,
-  instructions,
-  tools: oc.tools,
-}));
+// Connect to MCP inside the (async) initializer rather than at module top level:
+// a top-level await makes this an async module that the served app does not await
+// when registering agents, so the agent would silently fail to register for HTTP.
+export default defineAgent(async () => {
+  const oc = await connectMcpServer("oc", {
+    url: MCP_URL,
+    ...(MCP_TOKEN ? { headers: { Authorization: `Bearer ${MCP_TOKEN}` } } : {}),
+  });
+  return {
+    model: MODEL,
+    instructions,
+    tools: oc.tools,
+  };
+});
