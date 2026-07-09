@@ -31,6 +31,7 @@ import (
 	mcpserver "github.com/opencuttles/opencuttles/backend/internal/mcp"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
+	"github.com/opencuttles/opencuttles/backend/internal/vision"
 	"github.com/opencuttles/opencuttles/backend/internal/web"
 )
 
@@ -79,7 +80,7 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 		server.webAssets = assets
 	}
 	server.operatorPort = operatorPortFromEnv()
-	server.mcpHandler = mcpserver.New(devices, store, logger).Handler()
+	server.mcpHandler = mcpserver.New(devices, store, vision.NewFromEnv(), logger).Handler()
 	server.mcpToken = os.Getenv("OPENCUTTLES_MCP_TOKEN")
 	server.agentTarget = os.Getenv("OPENCUTTLES_AGENT_URL")
 	if server.agentTarget == "" {

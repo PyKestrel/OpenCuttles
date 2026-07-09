@@ -12,9 +12,11 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	png2 "image/png"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -24,6 +26,7 @@ import (
 
 	"github.com/opencuttles/opencuttles/backend/internal/devicecontrol"
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
+	"github.com/opencuttles/opencuttles/backend/internal/vision"
 )
 
 // InstanceStore is the store subset the MCP tools need to enumerate and resolve
@@ -38,6 +41,7 @@ type InstanceStore interface {
 type Service struct {
 	devices *devicecontrol.Service
 	store   InstanceStore
+	vision  *vision.Client
 	logger  *slog.Logger
 	server  *mcpsdk.Server
 
@@ -45,11 +49,13 @@ type Service struct {
 	active string
 }
 
-// New builds the MCP service and registers all device tools.
-func New(devices *devicecontrol.Service, store InstanceStore, logger *slog.Logger) *Service {
+// New builds the MCP service and registers all device tools. vision may be nil,
+// in which case the vision-backed tools return a clear "not configured" error.
+func New(devices *devicecontrol.Service, store InstanceStore, vis *vision.Client, logger *slog.Logger) *Service {
 	s := &Service{
 		devices: devices,
 		store:   store,
+		vision:  vis,
 		logger:  logger,
 		server:  mcpsdk.NewServer(&mcpsdk.Implementation{Name: "opencuttles", Version: "0.1.0"}, nil),
 	}
@@ -361,4 +367,117 @@ func (s *Service) registerTools() {
 		}
 		return nil, statusOut{Status: "ok"}, nil
 	})
+
+	// --- vision tools: the agent's "eyes" (Moondream) --------------------------
+
+	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+		Name:        "tap_element",
+		Description: "Tap the on-screen element that best matches a natural-language description (e.g. 'the Settings gear icon', 'the blue Sign in button', 'the search field'). Vision locates it and taps — you do NOT need coordinates. Prefer this over tap+coordinates for anything you can describe.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
+		deviceRef
+		Description string `json:"description" jsonschema:"what to tap, described in plain language"`
+	}) (*mcpsdk.CallToolResult, statusOut, error) {
+		id, err := s.resolveDevice(ctx, in.DeviceID)
+		if err != nil {
+			return nil, statusOut{}, err
+		}
+		x, y, found, err := s.locate(ctx, id, in.Description)
+		if err != nil {
+			return nil, statusOut{}, err
+		}
+		if !found {
+			return nil, statusOut{}, fmt.Errorf("could not find %q on screen; try describing it differently, scroll to reveal it, or use get_ui_tree", in.Description)
+		}
+		if err := s.devices.Tap(ctx, id, x, y); err != nil {
+			return nil, statusOut{}, err
+		}
+		return nil, statusOut{Status: "ok", Device: id}, nil
+	})
+
+	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+		Name:        "find_element",
+		Description: "Locate an on-screen element by description without tapping it. Returns whether it was found and its screen coordinates (useful as a swipe endpoint or to check that something is present).",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
+		deviceRef
+		Description string `json:"description"`
+	}) (*mcpsdk.CallToolResult, struct {
+		Found bool `json:"found"`
+		X     int  `json:"x"`
+		Y     int  `json:"y"`
+	}, error) {
+		var out struct {
+			Found bool `json:"found"`
+			X     int  `json:"x"`
+			Y     int  `json:"y"`
+		}
+		id, err := s.resolveDevice(ctx, in.DeviceID)
+		if err != nil {
+			return nil, out, err
+		}
+		x, y, found, err := s.locate(ctx, id, in.Description)
+		if err != nil {
+			return nil, out, err
+		}
+		out.Found, out.X, out.Y = found, x, y
+		return nil, out, nil
+	})
+
+	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+		Name:        "ask_screen",
+		Description: "Ask a question about what is currently visible on the screen (e.g. 'Is Airplane mode on?', 'What screen am I on?', 'Is there an error message?'). Uses vision to answer.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
+		deviceRef
+		Question string `json:"question"`
+	}) (*mcpsdk.CallToolResult, struct {
+		Answer string `json:"answer"`
+	}, error) {
+		var out struct {
+			Answer string `json:"answer"`
+		}
+		id, err := s.resolveDevice(ctx, in.DeviceID)
+		if err != nil {
+			return nil, out, err
+		}
+		if s.vision == nil {
+			return nil, out, errVisionUnavailable
+		}
+		png, err := s.devices.Screenshot(ctx, id)
+		if err != nil {
+			return nil, out, err
+		}
+		answer, err := s.vision.Query(ctx, png, in.Question)
+		if err != nil {
+			return nil, out, err
+		}
+		out.Answer = answer
+		return nil, out, nil
+	})
+}
+
+var errVisionUnavailable = fmt.Errorf("vision is not configured; set OPENCUTTLES_VISION_URL and run the vision sidecar")
+
+// locate screenshots the device, asks the vision model to point at the
+// description, and scales the first result to device pixels. found is false when
+// the model returns no match.
+func (s *Service) locate(ctx context.Context, id, description string) (x, y int, found bool, err error) {
+	if s.vision == nil {
+		return 0, 0, false, errVisionUnavailable
+	}
+	png, err := s.devices.Screenshot(ctx, id)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	cfg, err := png2.DecodeConfig(bytes.NewReader(png))
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("decode screenshot: %w", err)
+	}
+	points, err := s.vision.Point(ctx, png, description)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	if len(points) == 0 {
+		return 0, 0, false, nil
+	}
+	x, y = points[0].Pixels(cfg.Width, cfg.Height)
+	return x, y, true, nil
 }

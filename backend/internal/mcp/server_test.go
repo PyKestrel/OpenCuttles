@@ -45,7 +45,7 @@ func TestMCPToolsAndDeviceSelection(t *testing.T) {
 		{ID: "cvd_b", Name: "Beta", State: domain.StateStopped, DeviceID: "cvd_2-2-2"},
 	}}
 	devices := devicecontrol.NewService(store, nil, slog.Default())
-	svc := New(devices, store, slog.Default())
+	svc := New(devices, store, nil, slog.Default())
 
 	ts := httptest.NewServer(svc.Handler())
 	defer ts.Close()
@@ -67,7 +67,7 @@ func TestMCPToolsAndDeviceSelection(t *testing.T) {
 	for _, tool := range tools.Tools {
 		got[tool.Name] = true
 	}
-	for _, want := range []string{"list_devices", "select_device", "get_active_device", "get_ui_tree", "tap", "swipe", "type_text", "press_key", "launch_app", "screenshot"} {
+	for _, want := range []string{"list_devices", "select_device", "get_active_device", "get_ui_tree", "tap", "swipe", "type_text", "press_key", "launch_app", "screenshot", "tap_element", "find_element", "ask_screen"} {
 		if !got[want] {
 			t.Errorf("missing tool %q", want)
 		}
