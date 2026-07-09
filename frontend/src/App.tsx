@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useFlueAgent } from "@flue/react";
 import type { FlueConversationPart } from "@flue/react";
 import { api } from "./api";
@@ -265,6 +265,15 @@ export default function App() {
 
             {view === "instances" && (
               <>
+                {/* Live console + its controls, side by side, front and center. */}
+                <section className="grid split console-row">
+                  <ConsolePanel instance={selectedInstance} />
+                  {canControl ? (
+                    <DeviceControlPanel instance={selectedInstance} />
+                  ) : (
+                    <InstanceDetails instance={selectedInstance} />
+                  )}
+                </section>
                 <section className="grid split">
                   {instancesPanel}
                   <div className="panel">
@@ -277,14 +286,8 @@ export default function App() {
                     <CreateForms images={data.images} androidVersions={data.androidVersions} busy={busy} canOperate={canOperate} onAction={runAction} />
                   </div>
                 </section>
-                <section className="grid split">
-                  <ConsolePanel instance={selectedInstance} />
-                  <InstanceDetails instance={selectedInstance} />
-                </section>
               </>
             )}
-
-            {view === "control" && (canControl ? <DeviceControlPanel instance={selectedInstance} /> : <ReadOnlyNotice />)}
 
             {view === "agent" && (canControl ? <AgentPanel instance={selectedInstance} /> : <ReadOnlyNotice />)}
 
@@ -976,14 +979,16 @@ const CONTROL_KEYS: [string, string][] = [
   ["Power", "POWER"],
 ];
 
-type ControlTab = "screen" | "apps" | "logcat" | "shell";
+type ControlTab = "apps" | "logcat" | "shell";
 
+// DeviceControlPanel sits beside the live WebRTC console and provides the
+// controls the console doesn't: hardware keys, text entry, rotation, app
+// management, logcat, and a shell. Screen viewing and touch input are handled
+// by the console itself, so there is no screenshot surface here.
 function DeviceControlPanel({ instance }: { instance?: Instance }) {
   const id = instance?.id;
   const running = instance?.state === "running";
-  const [tab, setTab] = useState<ControlTab>("screen");
-  const [token, setToken] = useState(() => Date.now());
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [tab, setTab] = useState<ControlTab>("apps");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [rotation, setRotation] = useState(0);
@@ -994,32 +999,6 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
   const [logcat, setLogcat] = useState("");
   const [shellCmd, setShellCmd] = useState("");
   const [shellOut, setShellOut] = useState("");
-  const imgRef = useRef<HTMLImageElement>(null);
-  const pointerStart = useRef<{ x: number; y: number } | null>(null);
-  const refreshTimer = useRef<number | undefined>(undefined);
-
-  const refreshShot = useCallback(() => setToken(Date.now()), []);
-
-  // Load-driven refresh: schedule the next capture only after the current image
-  // finishes loading, so a slow screenshot never piles up into overlapping
-  // requests (which the browser aborts, and which would otherwise fire onError).
-  function scheduleNextShot(delay: number) {
-    window.clearTimeout(refreshTimer.current);
-    if (autoRefresh && tab === "screen" && !document.hidden) {
-      refreshTimer.current = window.setTimeout(() => setToken(Date.now()), delay);
-    }
-  }
-
-  useEffect(() => () => window.clearTimeout(refreshTimer.current), []);
-
-  // Kick (or stop) the refresh loop when auto-refresh or the tab changes.
-  useEffect(() => {
-    if (autoRefresh && tab === "screen") {
-      setToken(Date.now());
-    } else {
-      window.clearTimeout(refreshTimer.current);
-    }
-  }, [autoRefresh, tab]);
 
   // Clear transient state when switching devices.
   useEffect(() => {
@@ -1030,7 +1009,7 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
     setInstallStatus("");
   }, [id]);
 
-  async function run(action: () => Promise<unknown>, refresh = true) {
+  async function run(action: () => Promise<unknown>) {
     if (!id) {
       return;
     }
@@ -1038,43 +1017,10 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
     setError("");
     try {
       await action();
-      if (refresh) {
-        refreshShot();
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");
     } finally {
       setBusy(false);
-    }
-  }
-
-  function deviceCoords(event: MouseEvent<HTMLImageElement>) {
-    const img = imgRef.current;
-    if (!img || !img.naturalWidth) {
-      return null;
-    }
-    const rect = img.getBoundingClientRect();
-    const x = Math.round(((event.clientX - rect.left) / rect.width) * img.naturalWidth);
-    const y = Math.round(((event.clientY - rect.top) / rect.height) * img.naturalHeight);
-    return { x, y };
-  }
-
-  function onScreenDown(event: MouseEvent<HTMLImageElement>) {
-    pointerStart.current = deviceCoords(event);
-  }
-
-  function onScreenUp(event: MouseEvent<HTMLImageElement>) {
-    const start = pointerStart.current;
-    pointerStart.current = null;
-    const end = deviceCoords(event);
-    if (!id || !start || !end) {
-      return;
-    }
-    // A near-stationary press is a tap; a drag becomes a swipe.
-    if (Math.abs(end.x - start.x) < 12 && Math.abs(end.y - start.y) < 12) {
-      run(() => api.controlTap(id, end.x, end.y));
-    } else {
-      run(() => api.controlSwipe(id, start.x, start.y, end.x, end.y, 250));
     }
   }
 
@@ -1096,7 +1042,7 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
     run(async () => {
       const result = await api.controlListApps(id!, thirdPartyOnly);
       setApps(result.packages ?? []);
-    }, false);
+    });
   }
 
   function onApkSelected(event: ChangeEvent<HTMLInputElement>) {
@@ -1109,14 +1055,14 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
     run(async () => {
       const result = await api.controlInstallApp(id, file);
       setInstallStatus(`Installed ${result.file}`);
-    }, false).catch(() => setInstallStatus(""));
+    }).catch(() => setInstallStatus(""));
   }
 
   function loadLogcat() {
     run(async () => {
       const result = await api.controlLogcat(id!, 400);
       setLogcat(result.logcat || "(empty)");
-    }, false);
+    });
   }
 
   function runShell(event: FormEvent) {
@@ -1127,7 +1073,7 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
     run(async () => {
       const result = await api.controlShell(id!, shellCmd);
       setShellOut(result.output || "(no output)");
-    }, false);
+    });
   }
 
   if (!instance) {
@@ -1143,14 +1089,12 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
       <div className="panel">
         <div className="panel-title">
           <div>
-            <span className="eyebrow">Device control</span>
+            <span className="eyebrow">Controls</span>
             <h2>{instance.name}</h2>
           </div>
           <span className={`state state-${instance.state}`}>{instance.state}</span>
         </div>
-        <div className="empty">
-          Device control is available only while the instance is running. Start it from the Instances page.
-        </div>
+        <div className="empty">Controls become available once the device is running.</div>
       </div>
     );
   }
@@ -1159,61 +1103,37 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
     <div className="panel control-panel">
       <div className="panel-title">
         <div>
-          <span className="eyebrow">Device control</span>
-          <h2>{instance.name} · {instance.deviceId || "device"}</h2>
-        </div>
-        <div className="control-tabs">
-          {(["screen", "apps", "logcat", "shell"] as ControlTab[]).map((name) => (
-            <button key={name} className={tab === name ? "active" : ""} onClick={() => setTab(name)}>
-              {name}
-            </button>
-          ))}
+          <span className="eyebrow">Controls</span>
+          <h2>{instance.deviceId || "device"}</h2>
         </div>
       </div>
 
       {error && <div className="alert">{error}</div>}
 
-      {tab === "screen" && (
-        <div className="control-screen">
-          <div className="device-frame">
-            <img
-              ref={imgRef}
-              className="device-shot"
-              src={api.controlScreenshotSrc(id!, token)}
-              alt={`${instance.name} screen`}
-              draggable={false}
-              onMouseDown={onScreenDown}
-              onMouseUp={onScreenUp}
-              onLoad={() => scheduleNextShot(700)}
-              onError={() => scheduleNextShot(1500)}
-            />
-          </div>
-          <div className="control-side">
-            <p className="form-help">Click to tap, drag to swipe.</p>
-            <div className="control-keys">
-              {CONTROL_KEYS.map(([label, code]) => (
-                <button key={code} disabled={busy} onClick={() => run(() => api.controlKey(id!, code))}>
-                  {label}
-                </button>
-              ))}
-              <button disabled={busy} onClick={rotate}>Rotate</button>
-            </div>
-            <form className="control-type" onSubmit={sendText}>
-              <input
-                value={typeValue}
-                onChange={(event) => setTypeValue(event.target.value)}
-                placeholder="Type text into focused field"
-              />
-              <button className="primary" disabled={busy || !typeValue}>Send</button>
-            </form>
-            <label className="control-toggle">
-              <input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)} />
-              Auto-refresh
-            </label>
-            <button disabled={busy} onClick={refreshShot}>Refresh screen</button>
-          </div>
-        </div>
-      )}
+      <div className="control-keys">
+        {CONTROL_KEYS.map(([label, code]) => (
+          <button key={code} disabled={busy} onClick={() => run(() => api.controlKey(id!, code))}>
+            {label}
+          </button>
+        ))}
+        <button disabled={busy} onClick={rotate}>Rotate</button>
+      </div>
+      <form className="control-type" onSubmit={sendText}>
+        <input
+          value={typeValue}
+          onChange={(event) => setTypeValue(event.target.value)}
+          placeholder="Type text into focused field"
+        />
+        <button className="primary" disabled={busy || !typeValue}>Send</button>
+      </form>
+
+      <div className="control-tabs control-tabs-row">
+        {(["apps", "logcat", "shell"] as ControlTab[]).map((name) => (
+          <button key={name} className={tab === name ? "active" : ""} onClick={() => setTab(name)}>
+            {name}
+          </button>
+        ))}
+      </div>
 
       {tab === "apps" && (
         <div className="control-apps">
@@ -1236,7 +1156,7 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
               {apps.map((pkg) => (
                 <li key={pkg}>
                   <code>{pkg}</code>
-                  <button disabled={busy} onClick={() => run(() => api.controlLaunchApp(id!, pkg), false)}>Launch</button>
+                  <button disabled={busy} onClick={() => run(() => api.controlLaunchApp(id!, pkg))}>Launch</button>
                 </li>
               ))}
             </ul>
@@ -1367,7 +1287,6 @@ function hasPermission(principal: Principal, permission: string) {
 const NAV_LABELS: Record<string, string> = {
   dashboard: "Overview",
   instances: "Instances",
-  control: "Control",
   agent: "Agent",
   images: "Images",
   operations: "Activity",
@@ -1379,7 +1298,6 @@ const NAV_LABELS: Record<string, string> = {
 const PAGE_TITLES: Record<string, string> = {
   dashboard: "Overview",
   instances: "Android instances",
-  control: "Device control",
   agent: "Natural-language agent",
   images: "Images",
   operations: "Activity log",
@@ -1389,7 +1307,7 @@ const PAGE_TITLES: Record<string, string> = {
 };
 
 const NAV_GROUP_DEFS: { title: string; items: string[] }[] = [
-  { title: "System", items: ["dashboard", "instances", "control", "agent", "images", "operations"] },
+  { title: "System", items: ["dashboard", "instances", "agent", "images", "operations"] },
   { title: "Tools", items: ["host", "audit", "settings"] },
 ];
 
@@ -1404,7 +1322,7 @@ function navGroups(principal: Principal) {
 function visibleViews(principal: Principal) {
   const base = ["dashboard", "host", "images", "instances", "operations", "settings"];
   if (hasPermission(principal, "control")) {
-    base.push("control", "agent");
+    base.push("agent");
   }
   if (hasPermission(principal, "admin")) {
     return [...base, "audit"];

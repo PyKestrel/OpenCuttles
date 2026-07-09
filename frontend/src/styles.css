@@ -787,6 +787,17 @@ td small {
   color: #fff;
 }
 
+/* Compact control panel that sits beside the live console. */
+.control-panel .control-type {
+  margin: 0.6rem 0;
+}
+
+.control-tabs-row {
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+}
+
 .control-screen {
   display: flex;
   flex-wrap: wrap;
