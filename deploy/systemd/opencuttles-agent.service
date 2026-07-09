@@ -1,0 +1,20 @@
+[Unit]
+Description=OpenCuttles agent sidecar (Flue harness + local MiniCPM5 cognitive core)
+After=network.target opencuttles-api.service ollama.service
+Wants=opencuttles-api.service
+
+[Service]
+Type=simple
+# Adjust User/WorkingDirectory to where the agent project is checked out and built.
+User=atorres
+WorkingDirectory=/home/atorres/opencuttles/agent
+EnvironmentFile=/home/atorres/opencuttles/agent/.env
+# The OpenCuttles API reverse-proxies /agents/* to this port.
+Environment=PORT=8790
+# Build first with `npx flue build --target node` (produces dist/server.mjs).
+ExecStart=/usr/bin/node dist/server.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

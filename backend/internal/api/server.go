@@ -48,6 +48,7 @@ type Server struct {
 	operatorPort  int
 	mcpHandler    http.Handler
 	mcpToken      string
+	agentTarget   string
 }
 
 // operatorPortFromEnv resolves the host-wide cuttlefish-operator HTTPS port.
@@ -80,6 +81,10 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	server.operatorPort = operatorPortFromEnv()
 	server.mcpHandler = mcpserver.New(devices, store, logger).Handler()
 	server.mcpToken = os.Getenv("OPENCUTTLES_MCP_TOKEN")
+	server.agentTarget = os.Getenv("OPENCUTTLES_AGENT_URL")
+	if server.agentTarget == "" {
+		server.agentTarget = "http://127.0.0.1:8790"
+	}
 	server.routes()
 	return server.withMiddleware(server.mux)
 }
@@ -110,6 +115,10 @@ func (s *Server) routes() {
 	// permission. The streamable handler owns method routing under this path.
 	s.mux.Handle("/api/v1/mcp", s.mcpAuth(s.mcpHandler))
 	s.mux.Handle("/api/v1/mcp/", s.mcpAuth(s.mcpHandler))
+	// Flue agent sidecar: reverse-proxy its HTTP endpoints (POST invoke + GET
+	// event stream at /agents/<name>/<id>) so the SPA reaches it same-origin.
+	// Guarded by the control permission; SSE streaming is flushed immediately.
+	s.mux.HandleFunc("/agents/", s.require(domain.PermissionControl, s.agentProxy))
 	s.mux.HandleFunc("GET /api/v1/operations", s.require(domain.PermissionView, s.listOperations))
 	s.mux.HandleFunc("GET /api/v1/audit", s.require(domain.PermissionAdmin, s.listAudit))
 	// Cuttlefish-operator WebRTC signaling endpoints. The operator's client
@@ -145,6 +154,28 @@ func (s *Server) operatorProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	proxy.ErrorHandler = func(rw http.ResponseWriter, _ *http.Request, perr error) {
 		writeError(rw, clientError{status: http.StatusBadGateway, message: "operator unavailable: " + perr.Error()})
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+// agentProxy reverse-proxies the Flue agent sidecar, preserving the /agents/...
+// path. The sidecar streams agent events over SSE, so response buffering is
+// disabled (FlushInterval -1) to forward tokens as they arrive.
+func (s *Server) agentProxy(w http.ResponseWriter, r *http.Request) {
+	target, err := url.Parse(s.agentTarget)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.FlushInterval = -1
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		req.Host = target.Host
+	}
+	proxy.ErrorHandler = func(rw http.ResponseWriter, _ *http.Request, perr error) {
+		writeError(rw, clientError{status: http.StatusBadGateway, message: "agent sidecar unavailable: " + perr.Error()})
 	}
 	proxy.ServeHTTP(w, r)
 }

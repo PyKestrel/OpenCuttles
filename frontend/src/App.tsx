@@ -1,4 +1,6 @@
 import { ChangeEvent, FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFlueAgent } from "@flue/react";
+import type { FlueConversationPart } from "@flue/react";
 import { api } from "./api";
 import type {
   AndroidVersion,
@@ -283,6 +285,8 @@ export default function App() {
             )}
 
             {view === "control" && (canControl ? <DeviceControlPanel instance={selectedInstance} /> : <ReadOnlyNotice />)}
+
+            {view === "agent" && (canControl ? <AgentPanel instance={selectedInstance} /> : <ReadOnlyNotice />)}
 
             {view === "images" && (
               <ImagesPanel images={data.images} busy={busy} canOperate={canOperate} onAction={runAction} />
@@ -1264,6 +1268,98 @@ function DeviceControlPanel({ instance }: { instance?: Instance }) {
   );
 }
 
+function renderAgentPart(part: FlueConversationPart, index: number) {
+  if (part.type === "text") {
+    return part.text ? <p className="part-text" key={index}>{part.text}</p> : null;
+  }
+  if (part.type === "reasoning") {
+    return part.text ? <p className="part-reasoning" key={index}>{part.text}</p> : null;
+  }
+  if (part.type === "file") {
+    return <em className="part-file" key={index}>[attachment]</em>;
+  }
+  // Tool-call parts (e.g. "dynamic-tool"): show which device action ran.
+  const anyPart = part as { type: string; toolName?: string; name?: string; state?: string };
+  if (anyPart.type && anyPart.type.includes("tool")) {
+    const name = (anyPart.toolName ?? anyPart.name ?? "tool").replace(/^mcp__oc__/, "");
+    return (
+      <div className="part-tool" key={index}>
+        <span className="tool-badge">tool</span> {name}
+        {anyPart.state ? <span className="muted"> · {anyPart.state}</span> : null}
+      </div>
+    );
+  }
+  return null;
+}
+
+function AgentPanel({ instance }: { instance?: Instance }) {
+  // One conversation thread per device, so switching devices keeps threads separate.
+  const conversationId = `oc-${instance?.id ?? "none"}`;
+  const agent = useFlueAgent({ name: "opencuttles", id: conversationId });
+  const [input, setInput] = useState("");
+  const logRef = useRef<HTMLDivElement>(null);
+
+  const busy = agent.status === "submitted" || agent.status === "streaming";
+
+  // Keep the transcript scrolled to the latest message.
+  useEffect(() => {
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
+  }, [agent.messages]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const message = input.trim();
+    if (!message) {
+      return;
+    }
+    setInput("");
+    try {
+      await agent.sendMessage(message);
+    } catch {
+      // Error surfaces via agent.error / failedSends.
+    }
+  }
+
+  return (
+    <div className="panel agent-panel">
+      <div className="panel-title">
+        <div>
+          <span className="eyebrow">Cognitive core · MiniCPM5</span>
+          <h2>Agent{instance ? ` · ${instance.name}` : ""}</h2>
+        </div>
+        <span className={`state state-${agent.status === "error" ? "error" : busy ? "provisioning" : "running"}`}>
+          {agent.status}
+        </span>
+      </div>
+      {agent.error && <div className="alert">{agent.error.message}</div>}
+      <div className="chat-log" ref={logRef}>
+        {agent.messages.length === 0 && (
+          <div className="empty">
+            Ask the agent to operate the device in natural language — e.g. “open Settings and turn on Airplane mode”, or “what apps are installed?”.
+          </div>
+        )}
+        {agent.messages.map((message) => (
+          <div className={`chat-msg chat-${message.role}`} key={message.id}>
+            <span className="chat-role">{message.role}</span>
+            <div className="chat-parts">{message.parts.map(renderAgentPart)}</div>
+          </div>
+        ))}
+      </div>
+      <form className="chat-input" onSubmit={submit}>
+        <input
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder={instance ? "Tell the agent what to do…" : "Select a device first"}
+          disabled={!instance}
+        />
+        <button className="primary" disabled={busy || !input.trim() || !instance}>
+          {busy ? "Working…" : "Send"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function hasPermission(principal: Principal, permission: string) {
   return principal.permissions.includes("admin") || principal.permissions.includes(permission);
 }
@@ -1272,6 +1368,7 @@ const NAV_LABELS: Record<string, string> = {
   dashboard: "Overview",
   instances: "Instances",
   control: "Control",
+  agent: "Agent",
   images: "Images",
   operations: "Activity",
   host: "Host",
@@ -1283,6 +1380,7 @@ const PAGE_TITLES: Record<string, string> = {
   dashboard: "Overview",
   instances: "Android instances",
   control: "Device control",
+  agent: "Natural-language agent",
   images: "Images",
   operations: "Activity log",
   host: "Host health",
@@ -1291,7 +1389,7 @@ const PAGE_TITLES: Record<string, string> = {
 };
 
 const NAV_GROUP_DEFS: { title: string; items: string[] }[] = [
-  { title: "System", items: ["dashboard", "instances", "control", "images", "operations"] },
+  { title: "System", items: ["dashboard", "instances", "control", "agent", "images", "operations"] },
   { title: "Tools", items: ["host", "audit", "settings"] },
 ];
 
@@ -1306,7 +1404,7 @@ function navGroups(principal: Principal) {
 function visibleViews(principal: Principal) {
   const base = ["dashboard", "host", "images", "instances", "operations", "settings"];
   if (hasPermission(principal, "control")) {
-    base.push("control");
+    base.push("control", "agent");
   }
   if (hasPermission(principal, "admin")) {
     return [...base, "audit"];

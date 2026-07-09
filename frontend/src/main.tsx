@@ -1,5 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { FlueProvider } from "@flue/react";
+import { createFlueClient } from "@flue/sdk";
 import App from "./App";
 import "./styles.css";
 
@@ -10,8 +12,13 @@ if (!root) {
   document.body.appendChild(root);
 }
 
+// Same-origin: the Go backend reverse-proxies /agents/* to the Flue sidecar.
+const flueClient = createFlueClient({ baseUrl: "/" });
+
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <App />
+    <FlueProvider client={flueClient}>
+      <App />
+    </FlueProvider>
   </React.StrictMode>,
 );

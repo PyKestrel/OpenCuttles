@@ -1,0 +1,15 @@
+{
+  "providers": {
+    "ollama": {
+      "type": "openai",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "apiKey": "ollama"
+    }
+  },
+  "models": {
+    "ollama/minicpm5": {
+      "provider": "ollama",
+      "model": "openbmb/minicpm5"
+    }
+  }
+}
