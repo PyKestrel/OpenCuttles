@@ -30,6 +30,8 @@ const (
 	// PermissionControl guards interactive device control (input injection,
 	// screenshots, shell, app install) via the devicecontrol service.
 	PermissionControl = "control"
+	// PermissionTest guards authoring and running vision-grounded device tests.
+	PermissionTest = "test"
 )
 
 type Host struct {
@@ -209,6 +211,54 @@ type CreateImageRequest struct {
 	Path        string `json:"path"`
 	AndroidAPI  string `json:"androidApi,omitempty"`
 	Description string `json:"description,omitempty"`
+}
+
+// Test is a write-once natural-language device test: an ordered list of atomic
+// steps ("tap X", "type Y into Z", "assert W is visible") grounded per run by
+// the vision sidecar.
+type Test struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Steps     []string  `json:"steps"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// StepResult is the outcome of one executed test step, with its evidence.
+type StepResult struct {
+	Index      int     `json:"index"`
+	Text       string  `json:"text"`
+	Verb       string  `json:"verb"`
+	Target     string  `json:"target,omitempty"`
+	Value      string  `json:"value,omitempty"`
+	X          int     `json:"x,omitempty"`
+	Y          int     `json:"y,omitempty"`
+	ModelOut   string  `json:"modelOutput,omitempty"`
+	Pass       bool    `json:"pass"`
+	Detail     string  `json:"detail,omitempty"`
+	DurationMs int64   `json:"durationMs"`
+	Screenshot string  `json:"screenshot,omitempty"`
+	Battery    int     `json:"battery,omitempty"`
+}
+
+// TestRun is one execution of a Test against a device, with per-step results
+// and artifact references (per-step screenshots + a session video).
+type TestRun struct {
+	ID         string       `json:"id"`
+	TestID     string       `json:"testId"`
+	TestName   string       `json:"testName,omitempty"`
+	InstanceID string       `json:"instanceId"`
+	Status     string       `json:"status"`
+	Passed     bool         `json:"passed"`
+	Steps      []StepResult `json:"steps"`
+	Video      string       `json:"video,omitempty"`
+	Error      string       `json:"error,omitempty"`
+	StartedAt  time.Time    `json:"startedAt"`
+	FinishedAt *time.Time   `json:"finishedAt,omitempty"`
+}
+
+type CreateTestRequest struct {
+	Name  string   `json:"name"`
+	Steps []string `json:"steps"`
 }
 
 type CreateInstanceRequest struct {

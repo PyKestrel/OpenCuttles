@@ -160,6 +160,26 @@ func (s *SQLite) migrate(ctx context.Context) error {
 			UNIQUE(provider_id, group_name),
 			FOREIGN KEY(provider_id) REFERENCES identity_providers(id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS tests (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			steps TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS test_runs (
+			id TEXT PRIMARY KEY,
+			test_id TEXT NOT NULL,
+			instance_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			passed INTEGER NOT NULL DEFAULT 0,
+			steps TEXT NOT NULL DEFAULT '[]',
+			video TEXT NOT NULL DEFAULT '',
+			error TEXT NOT NULL DEFAULT '',
+			started_at TEXT NOT NULL,
+			finished_at TEXT,
+			FOREIGN KEY(test_id) REFERENCES tests(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_test_runs_started_at ON test_runs(started_at DESC)`,
 	}
 
 	for _, statement := range statements {

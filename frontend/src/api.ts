@@ -4,6 +4,7 @@ import type {
   BootstrapStatus,
   CreateImagePayload,
   CreateInstancePayload,
+  DeviceTest,
   HealthReport,
   Host,
   Image,
@@ -12,6 +13,7 @@ import type {
   Operation,
   PerfSnapshot,
   Principal,
+  TestRun,
   UINode,
 } from "./types";
 
@@ -142,4 +144,25 @@ export const api = {
       headers: jsonHeaders,
       body: JSON.stringify({ command }),
     }),
+
+  // Vision-grounded device tests (guarded by the "test" permission).
+  tests: () => request<DeviceTest[]>("/api/v1/tests"),
+  createTest: (name: string, steps: string[]) =>
+    request<DeviceTest>("/api/v1/tests", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ name, steps }),
+    }),
+  deleteTest: (id: string) =>
+    request<{ status: string }>(`/api/v1/tests/${id}`, { method: "DELETE" }),
+  runTest: (id: string, instanceId: string) =>
+    request<TestRun>(`/api/v1/tests/${id}/run`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ instanceId }),
+    }),
+  testRuns: () => request<TestRun[]>("/api/v1/tests/runs"),
+  testRun: (id: string) => request<TestRun>(`/api/v1/tests/runs/${id}`),
+  testArtifactUrl: (runId: string, name: string) =>
+    `/api/v1/tests/runs/${runId}/artifacts/${encodeURIComponent(name)}`,
 };

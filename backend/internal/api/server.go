@@ -30,6 +30,7 @@ import (
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	mcpserver "github.com/opencuttles/opencuttles/backend/internal/mcp"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
+	"github.com/opencuttles/opencuttles/backend/internal/scenario"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
 	"github.com/opencuttles/opencuttles/backend/internal/vision"
 	"github.com/opencuttles/opencuttles/backend/internal/web"
@@ -50,6 +51,7 @@ type Server struct {
 	mcpHandler    http.Handler
 	mcpToken      string
 	agentTarget   string
+	tests         *scenario.Runner
 }
 
 // operatorPortFromEnv resolves the host-wide cuttlefish-operator HTTPS port.
@@ -80,7 +82,9 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 		server.webAssets = assets
 	}
 	server.operatorPort = operatorPortFromEnv()
-	server.mcpHandler = mcpserver.New(devices, store, vision.NewFromEnv(), logger).Handler()
+	visionClient := vision.NewFromEnv()
+	server.mcpHandler = mcpserver.New(devices, store, visionClient, logger).Handler()
+	server.tests = scenario.New(store, devices, visionClient, logger)
 	server.mcpToken = os.Getenv("OPENCUTTLES_MCP_TOKEN")
 	server.agentTarget = os.Getenv("OPENCUTTLES_AGENT_URL")
 	if server.agentTarget == "" {
@@ -111,6 +115,8 @@ func (s *Server) routes() {
 	// Interactive device control (input, screenshot, apps, shell) nested under
 	// an instance; guarded by PermissionControl.
 	s.registerControlRoutes()
+	// Vision-grounded test authoring/execution/reports; guarded by PermissionTest.
+	s.registerTestRoutes()
 	// MCP endpoint: device tools for the local agent. Authenticated by the
 	// service token (OPENCUTTLES_MCP_TOKEN) or a session with the control
 	// permission. The streamable handler owns method routing under this path.

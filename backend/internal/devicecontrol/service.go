@@ -19,6 +19,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
 )
@@ -281,6 +282,48 @@ func (s *Service) Logcat(ctx context.Context, id string, lines int) (string, err
 		lines = 500
 	}
 	return s.adbShell(ctx, instance, "logcat", "-d", "-t", strconv.Itoa(lines))
+}
+
+// recordPath is where screenrecord writes on the device before being pulled.
+const recordPath = "/sdcard/opencuttles-rec.mp4"
+
+// StartRecording begins an on-device screen recording in the background. The
+// adb process is started detached (shell nohup) so the API call returns
+// immediately; StopRecording signals it and pulls the file.
+func (s *Service) StartRecording(ctx context.Context, id string) error {
+	instance, err := s.resolve(ctx, id)
+	if err != nil {
+		return err
+	}
+	// Kill any stale recorder, then start a fresh one detached. --time-limit
+	// caps a runaway recording at screenrecord's 3-minute maximum.
+	_, _ = s.adbShell(ctx, instance, "pkill", "-INT", "screenrecord")
+	_, err = s.adbShell(ctx, instance, "nohup", "screenrecord", "--time-limit", "180", recordPath, ">/dev/null", "2>&1", "&")
+	return err
+}
+
+// StopRecording ends the recording and returns the MP4 bytes. screenrecord
+// finalizes the file on SIGINT, so a short settle follows the signal.
+func (s *Service) StopRecording(ctx context.Context, id string) ([]byte, error) {
+	instance, err := s.resolve(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	_, _ = s.adbShell(ctx, instance, "pkill", "-INT", "screenrecord")
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(2 * time.Second):
+	}
+	video, err := s.adb(ctx, instance, "exec-out", "cat", recordPath)
+	if err != nil {
+		return nil, err
+	}
+	_, _ = s.adbShell(ctx, instance, "rm", "-f", recordPath)
+	if len(video) < 1024 {
+		return nil, fmt.Errorf("recording too small (%d bytes); screenrecord may not have started", len(video))
+	}
+	return video, nil
 }
 
 // Perf collects a lightweight performance snapshot. When pkg is empty, only

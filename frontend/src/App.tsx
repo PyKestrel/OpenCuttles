@@ -1,16 +1,19 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFlueAgent } from "@flue/react";
 import type { FlueConversationPart } from "@flue/react";
 import { api } from "./api";
 import type {
   AndroidVersion,
   AuditEvent,
+  DeviceTest,
   HealthReport,
   Host,
   Image,
   Instance,
   Operation,
   Principal,
+  StepResult,
+  TestRun,
 } from "./types";
 
 type LoadState = {
@@ -147,6 +150,7 @@ export default function App() {
 
   const canOperate = hasPermission(principal, "operate");
   const canControl = hasPermission(principal, "control");
+  const canTest = hasPermission(principal, "test");
   const canAdmin = hasPermission(principal, "admin");
   const runningCount = data.instances.filter((instance) => instance.state === "running").length;
   const okPrereqs = data.host?.prerequisites.filter((item) => item.ok).length ?? 0;
@@ -288,6 +292,8 @@ export default function App() {
                 </section>
               </>
             )}
+
+            {view === "tests" && (canTest ? <TestsView instance={selectedInstance} instances={data.instances} /> : <ReadOnlyNotice />)}
 
             {view === "images" && (
               <ImagesPanel images={data.images} busy={busy} canOperate={canOperate} onAction={runAction} />
@@ -1297,6 +1303,291 @@ function DeviceSidePanel({ instance }: { instance?: Instance }) {
   );
 }
 
+// TestsView: author natural-language tests, run them against the selected
+// device, and open replayable run reports (video + step timeline).
+function TestsView({ instance, instances }: { instance?: Instance; instances: Instance[] }) {
+  const [tests, setTests] = useState<DeviceTest[]>([]);
+  const [runs, setRuns] = useState<TestRun[]>([]);
+  const [name, setName] = useState("");
+  const [stepsText, setStepsText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [selectedRunId, setSelectedRunId] = useState<string>(() =>
+    window.location.hash.startsWith("#run-") ? window.location.hash.slice(5) : "",
+  );
+
+  const selectedRun = runs.find((run) => run.id === selectedRunId);
+  const hasActiveRun = runs.some((run) => run.status === "running");
+
+  const refresh = useCallback(async () => {
+    try {
+      const [testList, runList] = await Promise.all([api.tests(), api.testRuns()]);
+      setTests(testList ?? []);
+      setRuns(runList ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load tests");
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  // Poll while a run is in flight so the report fills in step by step.
+  useEffect(() => {
+    if (!hasActiveRun) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (!document.hidden) {
+        refresh();
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [hasActiveRun, refresh]);
+
+  async function act(action: () => Promise<unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function submitTest(event: FormEvent) {
+    event.preventDefault();
+    const steps = stepsText.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (!name.trim() || steps.length === 0) {
+      return;
+    }
+    act(async () => {
+      await api.createTest(name.trim(), steps);
+      setName("");
+      setStepsText("");
+    });
+  }
+
+  function runTest(testId: string) {
+    if (!instance) {
+      setError("Select a running device in the sidebar first.");
+      return;
+    }
+    act(async () => {
+      const run = await api.runTest(testId, instance.id);
+      setSelectedRunId(run.id);
+      window.location.hash = `run-${run.id}`;
+    });
+  }
+
+  function openRun(id: string) {
+    setSelectedRunId(id);
+    window.location.hash = `run-${id}`;
+  }
+
+  return (
+    <>
+      {error && <div className="alert">{error}</div>}
+      <section className="grid split">
+        <div className="panel">
+          <div className="panel-title">
+            <div>
+              <span className="eyebrow">Library</span>
+              <h2>Tests</h2>
+            </div>
+            <span className="muted">{tests.length} total</span>
+          </div>
+          {tests.length === 0 ? (
+            <div className="empty">No tests yet. Write one on the right — one step per line.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Steps</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tests.map((test) => (
+                  <tr key={test.id}>
+                    <td><strong>{test.name}</strong></td>
+                    <td><small>{test.steps.join(" → ")}</small></td>
+                    <td className="actions">
+                      <button disabled={busy || instance?.state !== "running"} onClick={() => runTest(test.id)}>
+                        Run{instance ? ` on ${instance.name}` : ""}
+                      </button>
+                      <button disabled={busy} onClick={() => act(() => api.deleteTest(test.id))}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="panel">
+          <div className="panel-title">
+            <div>
+              <span className="eyebrow">Author</span>
+              <h2>New test</h2>
+            </div>
+          </div>
+          <form className="forms" onSubmit={submitTest}>
+            <p className="form-help">
+              One step per line, in plain language. Steps are grounded visually at run time, so tests
+              self-heal across layout changes. Verbs: open / tap / type … into … / swipe / wait /
+              assert … is visible.
+            </p>
+            <label>
+              Name
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Wi-Fi settings smoke test" />
+            </label>
+            <label>
+              Steps
+              <textarea
+                rows={7}
+                value={stepsText}
+                onChange={(event) => setStepsText(event.target.value)}
+                placeholder={"open Settings\ntap Network & internet\nassert Airplane mode is visible"}
+              />
+            </label>
+            <button className="primary" disabled={busy || !name.trim() || !stepsText.trim()}>Save test</button>
+          </form>
+        </div>
+      </section>
+
+      <section className="grid split">
+        <div className="panel">
+          <div className="panel-title">
+            <div>
+              <span className="eyebrow">History</span>
+              <h2>Runs</h2>
+            </div>
+          </div>
+          {runs.length === 0 ? (
+            <div className="empty">No runs yet.</div>
+          ) : (
+            <div className="activity">
+              {runs.map((run) => (
+                <button className={`run-row ${selectedRunId === run.id ? "selected" : ""}`} key={run.id} onClick={() => openRun(run.id)}>
+                  <span className={`dot dot-${run.status === "passed" ? "succeeded" : run.status === "running" ? "running" : "failed"}`} />
+                  <div>
+                    <strong>{run.testName || run.testId}</strong>
+                    <small>
+                      {run.status} · {run.steps.filter((s) => s.pass).length}/{run.steps.length} steps ·{" "}
+                      {instances.find((i) => i.id === run.instanceId)?.name ?? run.instanceId}
+                    </small>
+                  </div>
+                  <time>{new Date(run.startedAt).toLocaleTimeString()}</time>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {selectedRun ? <TestReportPanel run={selectedRun} /> : (
+          <div className="panel"><div className="empty">Select a run to open its report.</div></div>
+        )}
+      </section>
+    </>
+  );
+}
+
+function TestReportPanel({ run }: { run: TestRun }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  function copyLink() {
+    const url = `${window.location.origin}${window.location.pathname}#run-${run.id}`;
+    void navigator.clipboard?.writeText(url);
+  }
+
+  // Rough per-step video positions: steps are evenly spread across the session.
+  function seekToStep(index: number) {
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(video.duration) || run.steps.length === 0) {
+      return;
+    }
+    video.currentTime = (index / run.steps.length) * video.duration;
+    void video.play().catch(() => undefined);
+  }
+
+  return (
+    <div className="panel report-panel">
+      <div className="panel-title">
+        <div>
+          <span className="eyebrow">Report</span>
+          <h2>{run.testName || run.testId}</h2>
+        </div>
+        <div className="report-meta">
+          <span className={`state state-${run.status === "passed" ? "running" : run.status === "running" ? "provisioning" : "error"}`}>
+            {run.status}
+          </span>
+          <button onClick={copyLink}>Copy link</button>
+        </div>
+      </div>
+      {run.error && <div className="alert">{run.error}</div>}
+      {run.video && (
+        <video
+          ref={videoRef}
+          className="report-video"
+          src={api.testArtifactUrl(run.id, run.video)}
+          controls
+          muted
+        />
+      )}
+      <div className="step-timeline">
+        {run.steps.map((step) => (
+          <StepCard key={step.index} run={run} step={step} onSeek={() => seekToStep(step.index)} />
+        ))}
+        {run.status === "running" && <div className="empty">Running…</div>}
+      </div>
+    </div>
+  );
+}
+
+function StepCard({ run, step, onSeek }: { run: TestRun; step: StepResult; onSeek: () => void }) {
+  // Natural screenshot dimensions, captured on load, place the grounding dot
+  // with percentage offsets so it scales with the rendered image.
+  const [dims, setDims] = useState<{ w: number; h: number }>();
+  return (
+    <div className={`step-card ${step.pass ? "step-pass" : "step-fail"}`}>
+      {step.screenshot && (
+        <div className="step-shot-wrap" onClick={onSeek} title="Jump to this step in the video">
+          <img
+            className="step-shot"
+            src={api.testArtifactUrl(run.id, step.screenshot)}
+            alt={`step ${step.index + 1}`}
+            loading="lazy"
+            onLoad={(event) => setDims({ w: event.currentTarget.naturalWidth, h: event.currentTarget.naturalHeight })}
+          />
+          {dims && step.x !== undefined && step.x > 0 && (
+            <span
+              className="ground-dot"
+              style={{ left: `${(step.x / dims.w) * 100}%`, top: `${((step.y ?? 0) / dims.h) * 100}%` }}
+            />
+          )}
+        </div>
+      )}
+      <div className="step-info">
+        <strong>
+          {step.index + 1}. {step.text}
+        </strong>
+        <small>
+          {step.verb}
+          {step.target ? ` · ${step.target}` : ""} · {step.durationMs} ms
+          {step.battery ? ` · 🔋${step.battery}%` : ""}
+        </small>
+        {step.detail && <small className="step-detail">{step.detail}</small>}
+        {step.modelOutput && <small className="step-model">{step.modelOutput.slice(0, 220)}</small>}
+        <span className={`state state-${step.pass ? "running" : "error"}`}>{step.pass ? "pass" : "fail"}</span>
+      </div>
+    </div>
+  );
+}
+
 function hasPermission(principal: Principal, permission: string) {
   return principal.permissions.includes("admin") || principal.permissions.includes(permission);
 }
@@ -1304,6 +1595,7 @@ function hasPermission(principal: Principal, permission: string) {
 const NAV_LABELS: Record<string, string> = {
   dashboard: "Overview",
   instances: "Instances",
+  tests: "Tests",
   images: "Images",
   operations: "Activity",
   host: "Host",
@@ -1314,6 +1606,7 @@ const NAV_LABELS: Record<string, string> = {
 const PAGE_TITLES: Record<string, string> = {
   dashboard: "Overview",
   instances: "Android instances",
+  tests: "Automated tests",
   images: "Images",
   operations: "Activity log",
   host: "Host health",
@@ -1322,7 +1615,7 @@ const PAGE_TITLES: Record<string, string> = {
 };
 
 const NAV_GROUP_DEFS: { title: string; items: string[] }[] = [
-  { title: "System", items: ["dashboard", "instances", "images", "operations"] },
+  { title: "System", items: ["dashboard", "instances", "tests", "images", "operations"] },
   { title: "Tools", items: ["host", "audit", "settings"] },
 ];
 
@@ -1336,6 +1629,9 @@ function navGroups(principal: Principal) {
 
 function visibleViews(principal: Principal) {
   const base = ["dashboard", "host", "images", "instances", "operations", "settings"];
+  if (hasPermission(principal, "test")) {
+    base.push("tests");
+  }
   if (hasPermission(principal, "admin")) {
     return [...base, "audit"];
   }

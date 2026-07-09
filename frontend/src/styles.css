@@ -1015,3 +1015,132 @@ td small {
 .chat-input input {
   flex: 1;
 }
+
+/* Tests + run reports ---------------------------------------------------- */
+textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  padding: 0.5rem 0.65rem;
+  resize: vertical;
+}
+
+.run-row {
+  align-items: center;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.5rem 0.25rem;
+  text-align: left;
+  width: 100%;
+}
+
+.run-row:hover {
+  background: var(--surface-2);
+}
+
+.run-row.selected {
+  background: var(--accent-weak);
+}
+
+.run-row div {
+  flex: 1;
+}
+
+.run-row strong {
+  display: block;
+}
+
+.run-row small,
+.run-row time {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.report-meta {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.report-video {
+  background: #1b1d21;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+  max-height: 420px;
+  width: 100%;
+}
+
+.step-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 640px;
+  overflow-y: auto;
+}
+
+.step-card {
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--success);
+  border-radius: 4px;
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.6rem;
+}
+
+.step-card.step-fail {
+  border-left-color: var(--danger);
+}
+
+.step-shot-wrap {
+  cursor: pointer;
+  flex: 0 0 auto;
+  position: relative;
+}
+
+.step-shot {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  display: block;
+  width: 110px;
+}
+
+.ground-dot {
+  background: rgba(201, 25, 11, 0.85);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(201, 25, 11, 0.4);
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  position: absolute;
+  width: 14px;
+}
+
+.step-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.step-info small {
+  color: var(--muted);
+}
+
+.step-info .state {
+  align-self: flex-start;
+}
+
+.step-detail {
+  color: var(--danger);
+}
+
+.step-model {
+  font-style: italic;
+  overflow-wrap: anywhere;
+}

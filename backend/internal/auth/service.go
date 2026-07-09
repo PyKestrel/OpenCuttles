@@ -119,9 +119,9 @@ func PrincipalForUser(user domain.User) domain.Principal {
 func PermissionsForRole(role string) []string {
 	switch role {
 	case domain.RoleAdmin:
-		return []string{domain.PermissionAdmin, domain.PermissionOperate, domain.PermissionOpenConsole, domain.PermissionControl, domain.PermissionView}
+		return []string{domain.PermissionAdmin, domain.PermissionOperate, domain.PermissionOpenConsole, domain.PermissionControl, domain.PermissionTest, domain.PermissionView}
 	case domain.RoleOperator:
-		return []string{domain.PermissionOperate, domain.PermissionOpenConsole, domain.PermissionControl, domain.PermissionView}
+		return []string{domain.PermissionOperate, domain.PermissionOpenConsole, domain.PermissionControl, domain.PermissionTest, domain.PermissionView}
 	default:
 		return []string{domain.PermissionView}
 	}

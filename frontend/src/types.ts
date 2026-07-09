@@ -139,6 +139,43 @@ export type PerfSnapshot = {
   totalPssKb?: number;
 };
 
+export type DeviceTest = {
+  id: string;
+  name: string;
+  steps: string[];
+  createdAt: string;
+};
+
+export type StepResult = {
+  index: number;
+  text: string;
+  verb: string;
+  target?: string;
+  value?: string;
+  x?: number;
+  y?: number;
+  modelOutput?: string;
+  pass: boolean;
+  detail?: string;
+  durationMs: number;
+  screenshot?: string;
+  battery?: number;
+};
+
+export type TestRun = {
+  id: string;
+  testId: string;
+  testName?: string;
+  instanceId: string;
+  status: "running" | "passed" | "failed";
+  passed: boolean;
+  steps: StepResult[];
+  video?: string;
+  error?: string;
+  startedAt: string;
+  finishedAt?: string;
+};
+
 export type CreateImagePayload = {
   name: string;
   path: string;
