@@ -207,13 +207,28 @@ func (r *Runner) runStep(ctx context.Context, instanceID string, index int, text
 		return pass(result, start)
 
 	case VerbAssert:
-		answer, err := r.vision.Query(ctx, shot, "Describe the screen and all visible text.")
-		if err != nil {
-			return fail(result, start, fmt.Sprintf("vision query: %v", err))
-		}
-		result.ModelOut = answer
-		if containsLoosely(answer, result.Target) {
-			return pass(result, start)
+		// Retry like grounding: the asserted content may still be rendering
+		// after a preceding navigation when this step begins.
+		for attempt := 0; attempt < 3; attempt++ {
+			answer, err := r.vision.Query(ctx, shot, "Describe the screen and all visible text.")
+			if err != nil {
+				return fail(result, start, fmt.Sprintf("vision query: %v", err))
+			}
+			result.ModelOut = answer
+			if containsLoosely(answer, result.Target) {
+				return pass(result, start)
+			}
+			select {
+			case <-ctx.Done():
+				return fail(result, start, "cancelled")
+			case <-time.After(1500 * time.Millisecond):
+			}
+			if fresh, err := r.devices.Screenshot(ctx, instanceID); err == nil {
+				shot = fresh
+				if result.Screenshot != "" {
+					_ = os.WriteFile(filepath.Join(runDir, result.Screenshot), shot, 0o644)
+				}
+			}
 		}
 		return fail(result, start, fmt.Sprintf("expected %q on screen", result.Target))
 

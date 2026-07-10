@@ -82,7 +82,11 @@ def _run(image: Image.Image, task: str, text: str = "") -> dict:
             input_ids=inputs["input_ids"],
             pixel_values=inputs["pixel_values"],
             max_new_tokens=512,
-            num_beams=3,
+            # Greedy decode: Florence-2's structured skills don't need beam
+            # search, and on a CPU host shared with the emulator, halving the
+            # compute both speeds grounding and eases contention that would
+            # otherwise leave the device unresponsive to injected taps.
+            num_beams=1,
             do_sample=False,
         )
     decoded = _processor.batch_decode(generated, skip_special_tokens=False)[0]
