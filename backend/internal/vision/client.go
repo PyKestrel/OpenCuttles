@@ -65,6 +65,49 @@ func (c *Client) Point(ctx context.Context, png []byte, target string) ([]Point,
 	return out.Points, nil
 }
 
+// Locate grounds a described element robustly for tapping. Florence-2's
+// open-vocabulary detection is unreliable on short/terse text labels, so this
+// normalizes the phrase (e.g. "&" → "and") and, when the bare target yields no
+// hit, cascades through enriched phrasings ("<t> button", "<t> menu item", …).
+// Returns the first non-empty result, or an empty slice if nothing grounds.
+func (c *Client) Locate(ctx context.Context, png []byte, target string) ([]Point, error) {
+	for _, phrase := range LocateVariants(target) {
+		points, err := c.Point(ctx, png, phrase)
+		if err != nil {
+			return nil, err
+		}
+		if len(points) > 0 {
+			return points, nil
+		}
+	}
+	return nil, nil
+}
+
+// LocateVariants returns the ordered phrasings Locate tries for a target.
+func LocateVariants(target string) []string {
+	base := strings.TrimSpace(target)
+	normalized := strings.ReplaceAll(base, "&", "and")
+	seen := map[string]bool{}
+	var variants []string
+	for _, phrase := range []string{
+		base,
+		normalized,
+		normalized + " button",
+		normalized + " menu item",
+		normalized + " option",
+		normalized + " setting",
+		normalized + " icon",
+		normalized + " text",
+	} {
+		phrase = strings.Join(strings.Fields(phrase), " ")
+		if phrase != "" && !seen[phrase] {
+			seen[phrase] = true
+			variants = append(variants, phrase)
+		}
+	}
+	return variants
+}
+
 // Query answers a visual question about the PNG screenshot.
 func (c *Client) Query(ctx context.Context, png []byte, question string) (string, error) {
 	var out struct {

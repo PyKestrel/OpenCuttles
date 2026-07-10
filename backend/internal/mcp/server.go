@@ -471,7 +471,7 @@ func (s *Service) locate(ctx context.Context, id, description string) (x, y int,
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("decode screenshot: %w", err)
 	}
-	points, err := s.vision.Point(ctx, png, description)
+	points, err := s.vision.Locate(ctx, png, description)
 	if err != nil {
 		return 0, 0, false, err
 	}

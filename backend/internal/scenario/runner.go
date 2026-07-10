@@ -227,7 +227,7 @@ func (r *Runner) groundAndTap(ctx context.Context, instanceID string, result dom
 	if err != nil {
 		return fail(result, start, fmt.Sprintf("decode screenshot: %v", err))
 	}
-	points, err := r.vision.Point(ctx, shot, result.Target)
+	points, err := r.vision.Locate(ctx, shot, result.Target)
 	if err != nil {
 		return fail(result, start, fmt.Sprintf("vision point: %v", err))
 	}
