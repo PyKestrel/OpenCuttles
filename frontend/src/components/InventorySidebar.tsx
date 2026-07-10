@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, ChevronDown, ChevronRight, FlaskConical, Folder, ImageIcon, MonitorSmartphone, Server, Smartphone } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, FlaskConical, Folder, ImageIcon, MonitorSmartphone, Plus, Server, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusDot } from "@/components/StatusDot";
 import type { Host, Instance } from "@/types";
@@ -20,6 +20,7 @@ export function InventorySidebar({
   view,
   onView,
   onSelect,
+  onNewDevice,
 }: {
   host?: Host;
   instances: Instance[];
@@ -27,6 +28,7 @@ export function InventorySidebar({
   view: InventoryView;
   onView: (v: InventoryView) => void;
   onSelect: (id: string) => void;
+  onNewDevice: () => void;
 }) {
   const [openHost, setOpenHost] = useState(true);
   const [openDevices, setOpenDevices] = useState(true);
@@ -50,7 +52,16 @@ export function InventorySidebar({
         ))}
       </div>
 
-      <div className="px-3.5 pb-1.5 pt-3 text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80">Inventory</div>
+      <div className="flex items-center px-3.5 pb-1.5 pt-3">
+        <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80">Inventory</span>
+        <button
+          onClick={onNewDevice}
+          title="Deploy new device"
+          className="ml-auto grid size-5 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-primary"
+        >
+          <Plus className="size-3.5" />
+        </button>
+      </div>
 
       <nav className="flex-1 overflow-auto px-1.5 pb-3 text-[13px]">
         <TreeRow depth={0} chevron={openHost} onChevron={() => setOpenHost((v) => !v)} icon={<Server className="size-[15px]" />} label={host?.name || "local host"} count={instances.length} />

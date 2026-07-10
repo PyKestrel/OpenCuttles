@@ -5,7 +5,11 @@ import { AuthGate } from "@/components/AuthGate";
 import { TopBar } from "@/components/TopBar";
 import { InventorySidebar, type InventoryView } from "@/components/InventorySidebar";
 import { CommandPalette } from "@/components/CommandPalette";
+import { CreateDeviceDialog } from "@/components/CreateDeviceDialog";
 import { DeviceWorkspace } from "@/components/device/DeviceWorkspace";
+import { ImagesView } from "@/components/views/ImagesView";
+import { ActivityView } from "@/components/views/ActivityView";
+import { TestsPanel } from "@/components/tests/TestsPanel";
 
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
@@ -17,6 +21,7 @@ export default function App() {
   const [view, setView] = useState<InventoryView>("devices");
   const [showSidebar, setShowSidebar] = useState(true);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -50,13 +55,9 @@ export default function App() {
 
   // Resource-conscious polling: skip while the tab is hidden.
   useEffect(() => {
-    if (!principal) {
-      return;
-    }
+    if (!principal) return;
     const tick = () => {
-      if (!document.hidden) {
-        refresh().catch(() => undefined);
-      }
+      if (!document.hidden) refresh().catch(() => undefined);
     };
     const id = window.setInterval(tick, 5000);
     const onVis = () => tick();
@@ -83,6 +84,11 @@ export default function App() {
   function selectDevice(id: string) {
     setSelectedId(id);
     setView("devices");
+  }
+
+  async function deleteDevice(id: string) {
+    await act(() => api.deleteInstance(id));
+    if (selectedId === id) setSelectedId("");
   }
 
   if (!authChecked) {
@@ -113,6 +119,7 @@ export default function App() {
             view={view}
             onView={setView}
             onSelect={selectDevice}
+            onNewDevice={() => setCreateOpen(true)}
           />
         )}
         <main className="flex min-w-0 flex-col overflow-hidden">
@@ -121,34 +128,95 @@ export default function App() {
               {error}
             </div>
           )}
-          {view === "devices" ? (
-            selected ? (
-              <DeviceWorkspace
-                instance={selected}
-                busy={busy}
-                onStart={(id) => act(() => api.startInstance(id))}
-                onStop={(id) => act(() => api.stopInstance(id))}
-              />
-            ) : (
-              <CenterEmpty>No devices yet. Create one from the Devices view.</CenterEmpty>
-            )
-          ) : (
-            <CenterEmpty>
-              The <span className="font-medium capitalize text-foreground">{view}</span> view is being rebuilt in the next phase.
-            </CenterEmpty>
-          )}
+          <MainContent
+            view={view}
+            selected={selected}
+            instances={instances}
+            principal={principal}
+            host={host}
+            busy={busy}
+            onStart={(id) => act(() => api.startInstance(id))}
+            onStop={(id) => act(() => api.stopInstance(id))}
+            onDelete={deleteDevice}
+            onNewDevice={() => setCreateOpen(true)}
+          />
         </main>
       </div>
 
-      <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} instances={instances} onSelectDevice={selectDevice} onView={setView} />
+      <CommandPalette
+        open={cmdOpen}
+        onOpenChange={setCmdOpen}
+        instances={instances}
+        onSelectDevice={selectDevice}
+        onView={setView}
+        onNewDevice={() => setCreateOpen(true)}
+      />
+      <CreateDeviceDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={(instance) => {
+          refresh();
+          selectDevice(instance.id);
+        }}
+      />
     </div>
   );
 }
 
-function CenterEmpty({ children }: { children: React.ReactNode }) {
+function MainContent({
+  view,
+  selected,
+  instances,
+  principal,
+  host,
+  busy,
+  onStart,
+  onStop,
+  onDelete,
+  onNewDevice,
+}: {
+  view: InventoryView;
+  selected?: Instance;
+  instances: Instance[];
+  principal: Principal;
+  host?: Host;
+  busy: boolean;
+  onStart: (id: string) => void;
+  onStop: (id: string) => void;
+  onDelete: (id: string) => void;
+  onNewDevice: () => void;
+}) {
+  if (view === "images") return <ImagesView principal={principal} />;
+  if (view === "activity") return <ActivityView principal={principal} host={host} />;
+  if (view === "tests")
+    return (
+      <div className="mx-auto w-full max-w-6xl p-5">
+        <TestsPanel instance={selected} instances={instances} />
+      </div>
+    );
+
+  // devices
+  if (!selected) {
+    return (
+      <div className="grid flex-1 place-items-center p-8 text-center">
+        <div className="max-w-sm">
+          <p className="text-[14px] text-muted-foreground">No devices yet.</p>
+          <button onClick={onNewDevice} className="mt-3 rounded-lg px-4 py-2 text-[13px] font-medium text-primary-foreground" style={{ background: "var(--primary)" }}>
+            Deploy your first device
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div className="grid flex-1 place-items-center p-8 text-center text-[14px] text-muted-foreground">
-      <p className="max-w-md">{children}</p>
-    </div>
+    <DeviceWorkspace
+      instance={selected}
+      instances={instances}
+      principal={principal}
+      busy={busy}
+      onStart={onStart}
+      onStop={onStop}
+      onDelete={onDelete}
+    />
   );
 }

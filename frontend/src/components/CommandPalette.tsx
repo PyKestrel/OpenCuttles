@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Command } from "cmdk";
-import { Activity, FlaskConical, ImageIcon, Moon, MonitorSmartphone, Sun } from "lucide-react";
+import { Activity, FlaskConical, ImageIcon, Moon, MonitorSmartphone, Plus, Sun } from "lucide-react";
 import { StatusDot } from "@/components/StatusDot";
 import { useTheme } from "@/theme";
 import type { Instance } from "@/types";
@@ -12,12 +12,14 @@ export function CommandPalette({
   instances,
   onSelectDevice,
   onView,
+  onNewDevice,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   instances: Instance[];
   onSelectDevice: (id: string) => void;
   onView: (v: InventoryView) => void;
+  onNewDevice: () => void;
 }) {
   const { theme, toggle } = useTheme();
 
@@ -73,6 +75,7 @@ export function CommandPalette({
         </Command.Group>
 
         <Command.Group heading="Actions" className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-muted-foreground/70">
+          <Item onSelect={() => run(onNewDevice)}><Plus className="size-4 text-muted-foreground" />Deploy new device</Item>
           <Item onSelect={() => run(toggle)}>
             {theme === "dark" ? <Sun className="size-4 text-muted-foreground" /> : <Moon className="size-4 text-muted-foreground" />}
             Switch to {theme === "dark" ? "light" : "dark"} theme
