@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useFlueAgent } from "@flue/react";
+import { useFlueAgent, useFlueClient } from "@flue/react";
 import type { FlueConversationPart } from "@flue/react";
-import { Send, Sparkles, Wrench } from "lucide-react";
+import { Send, Sparkles, Square, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Instance } from "@/types";
+
+const AGENT_NAME = "opencuttles";
 
 function AgentPart({ part }: { part: FlueConversationPart }) {
   if (part.type === "text") {
@@ -31,11 +33,28 @@ function AgentPart({ part }: { part: FlueConversationPart }) {
 
 // Natural-language device driver: one Flue conversation thread per device.
 export function AgentTab({ instance }: { instance: Instance }) {
-  const agent = useFlueAgent({ name: "opencuttles", id: `oc-${instance.id}` });
+  const conversationId = `oc-${instance.id}`;
+  const agent = useFlueAgent({ name: AGENT_NAME, id: conversationId });
+  const client = useFlueClient();
   const [input, setInput] = useState("");
+  const [stopping, setStopping] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
 
   const busy = agent.status === "submitted" || agent.status === "streaming";
+
+  // Interrupt the in-flight run so the operator can revise the prompt. The Flue
+  // client aborts the agent instance's current (and any queued) durable work;
+  // the live conversation stream settles it to the aborted outcome.
+  async function stop() {
+    setStopping(true);
+    try {
+      await client.agents.abort(AGENT_NAME, conversationId);
+    } catch {
+      // Surfaced via agent.error.
+    } finally {
+      setStopping(false);
+    }
+  }
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -103,16 +122,28 @@ export function AgentTab({ instance }: { instance: Instance }) {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Tell the agent what to do…"
+          placeholder={busy ? "Stop to revise the prompt…" : "Tell the agent what to do…"}
           className="min-w-0 flex-1 rounded-lg border bg-secondary px-3.5 py-2.5 text-[13.5px] outline-none focus:border-[var(--ring)]"
         />
-        <button
-          disabled={busy || !input.trim()}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2.5 text-[13px] font-medium text-primary-foreground disabled:opacity-50"
-          style={{ background: "var(--primary-strong)" }}
-        >
-          <Send className="size-3.5" /> {busy ? "Working…" : "Send"}
-        </button>
+        {busy ? (
+          <button
+            type="button"
+            onClick={stop}
+            disabled={stopping}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2.5 text-[13px] font-medium text-white disabled:opacity-50"
+            style={{ background: "var(--destructive)" }}
+          >
+            <Square className="size-3.5" fill="currentColor" stroke="none" /> {stopping ? "Stopping…" : "Stop"}
+          </button>
+        ) : (
+          <button
+            disabled={!input.trim()}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2.5 text-[13px] font-medium text-primary-foreground disabled:opacity-50"
+            style={{ background: "var(--primary-strong)" }}
+          >
+            <Send className="size-3.5" /> Send
+          </button>
+        )}
       </form>
     </div>
   );
