@@ -8,20 +8,55 @@ export const route: AgentRouteHandler = async (_c, next) => {
   await next();
 };
 
-// Register the local Ollama endpoint as an OpenAI-compatible provider so model
-// specifiers like "ollama/openbmb/minicpm5" resolve to the on-device MiniCPM5.
-registerProvider("ollama", {
-  api: "openai-completions",
-  baseUrl: process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434/v1",
-  apiKey: "ollama",
-});
-
 // The agent's tools come from the OpenCuttles MCP endpoint (Phase 2). Flue
 // prefixes each tool's model-facing name with the connection name, so e.g.
 // get_ui_tree becomes mcp__oc__get_ui_tree.
 const MCP_URL = process.env.OPENCUTTLES_MCP_URL ?? "http://127.0.0.1:8080/api/v1/mcp";
 const MCP_TOKEN = process.env.OPENCUTTLES_MCP_TOKEN ?? "";
-const MODEL = process.env.OPENCUTTLES_AGENT_MODEL ?? "ollama/openbmb/minicpm5";
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434/v1";
+const FALLBACK_MODEL = process.env.OPENCUTTLES_AGENT_MODEL ?? "ollama/openbmb/minicpm5";
+
+// The backend serves the admin-configured provider + model (with the decrypted
+// API key) at /api/v1/agent/runtime, guarded by the MCP service token. Derive
+// it from the MCP URL unless overridden.
+const RUNTIME_URL =
+  process.env.OPENCUTTLES_RUNTIME_URL ?? MCP_URL.replace(/\/mcp\/?$/, "/agent/runtime");
+
+type RuntimeConfig = {
+  configured?: boolean;
+  providerId?: string;
+  api?: string;
+  baseUrl?: string;
+  model?: string;
+  headers?: Record<string, string>;
+  apiKey?: string;
+};
+
+// resolveModel registers the effective provider and returns its model specifier.
+// It always registers the local Ollama default (so a fetch failure still yields
+// a working model), then layers the admin-configured provider on top. The
+// initializer runs per harness init, so new conversations pick up config changes
+// without a sidecar restart.
+async function resolveModel(): Promise<string> {
+  registerProvider("ollama", { api: "openai-completions", baseUrl: OLLAMA_BASE_URL, apiKey: "ollama" });
+  try {
+    const res = await fetch(RUNTIME_URL, {
+      headers: MCP_TOKEN ? { Authorization: `Bearer ${MCP_TOKEN}` } : {},
+    });
+    if (!res.ok) return FALLBACK_MODEL;
+    const cfg = (await res.json()) as RuntimeConfig;
+    if (!cfg.configured || !cfg.providerId || !cfg.model) return FALLBACK_MODEL;
+    registerProvider(cfg.providerId, {
+      ...(cfg.api ? { api: cfg.api as never } : {}),
+      ...(cfg.baseUrl ? { baseUrl: cfg.baseUrl } : {}),
+      ...(cfg.apiKey ? { apiKey: cfg.apiKey } : {}),
+      ...(cfg.headers ? { headers: cfg.headers } : {}),
+    });
+    return `${cfg.providerId}/${cfg.model}`;
+  } catch {
+    return FALLBACK_MODEL;
+  }
+}
 
 const instructions = `You are OpenCuttles' device agent. You drive ONE real Android device (a Google Cuttlefish VM) to carry out the user's task by calling tools. You ACT — never ask the user for confirmation or for anything a tool can tell you.
 
@@ -74,8 +109,9 @@ export default defineAgent(async () => {
     url: MCP_URL,
     ...(MCP_TOKEN ? { headers: { Authorization: `Bearer ${MCP_TOKEN}` } } : {}),
   });
+  const model = await resolveModel();
   return {
-    model: MODEL,
+    model,
     instructions,
     tools: oc.tools,
   };

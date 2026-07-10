@@ -31,6 +31,7 @@ import (
 	mcpserver "github.com/opencuttles/opencuttles/backend/internal/mcp"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/scenario"
+	"github.com/opencuttles/opencuttles/backend/internal/secretbox"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
 	"github.com/opencuttles/opencuttles/backend/internal/vision"
 	"github.com/opencuttles/opencuttles/backend/internal/web"
@@ -52,6 +53,7 @@ type Server struct {
 	mcpToken      string
 	agentTarget   string
 	tests         *scenario.Runner
+	secrets       *secretbox.Box
 }
 
 // operatorPortFromEnv resolves the host-wide cuttlefish-operator HTTPS port.
@@ -86,6 +88,13 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	server.mcpHandler = mcpserver.New(devices, store, visionClient, logger).Handler()
 	server.tests = scenario.New(store, devices, visionClient, logger)
 	server.mcpToken = os.Getenv("OPENCUTTLES_MCP_TOKEN")
+	// Optional at-rest encryption for stored secrets (agent provider API keys).
+	// Absent key → secret storage stays disabled; keyless providers still work.
+	if box, err := secretbox.New(os.Getenv("OPENCUTTLES_SECRET_KEY")); err == nil {
+		server.secrets = box
+	} else if !errors.Is(err, secretbox.ErrNoKey) && logger != nil {
+		logger.Warn("OPENCUTTLES_SECRET_KEY invalid; agent API-key storage disabled", "error", err)
+	}
 	server.agentTarget = os.Getenv("OPENCUTTLES_AGENT_URL")
 	if server.agentTarget == "" {
 		server.agentTarget = "http://127.0.0.1:8790"
@@ -126,6 +135,14 @@ func (s *Server) routes() {
 	// event stream at /agents/<name>/<id>) so the SPA reaches it same-origin.
 	// Guarded by the control permission; SSE streaming is flushed immediately.
 	s.mux.HandleFunc("/agents/", s.require(domain.PermissionControl, s.agentProxy))
+	// Agent model configuration. Admin-only read/write (API keys are write-only
+	// and never returned). The runtime endpoint returns the effective config
+	// including the decrypted key and is guarded by the service token ONLY (no
+	// browser session), so keys never reach a user agent.
+	s.mux.HandleFunc("GET /api/v1/agent/model", s.require(domain.PermissionAdmin, s.getAgentModel))
+	s.mux.HandleFunc("POST /api/v1/agent/model", s.require(domain.PermissionAdmin, s.putAgentModel))
+	s.mux.HandleFunc("POST /api/v1/agent/model/test", s.require(domain.PermissionAdmin, s.testAgentModel))
+	s.mux.HandleFunc("GET /api/v1/agent/runtime", s.serviceTokenOnly(s.getAgentRuntime))
 	s.mux.HandleFunc("GET /api/v1/operations", s.require(domain.PermissionView, s.listOperations))
 	s.mux.HandleFunc("GET /api/v1/audit", s.require(domain.PermissionAdmin, s.listAudit))
 	// Cuttlefish-operator WebRTC signaling endpoints. The operator's client
@@ -614,6 +631,21 @@ func (s *Server) mcpAuth(next http.Handler) http.HandlerFunc {
 			return
 		}
 		writeError(w, clientError{status: http.StatusUnauthorized, message: "unauthorized"})
+	}
+}
+
+// serviceTokenOnly guards endpoints that only the local sidecar may call —
+// notably the agent runtime config, which returns a decrypted API key. Unlike
+// mcpAuth it does NOT fall back to a browser session, so no user agent can pull
+// the plaintext secret. Requires OPENCUTTLES_MCP_TOKEN to be configured.
+func (s *Server) serviceTokenOnly(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.mcpToken != "" && mcpTokenFromRequest(r) != "" &&
+			subtle.ConstantTimeCompare([]byte(mcpTokenFromRequest(r)), []byte(s.mcpToken)) == 1 {
+			next(w, r)
+			return
+		}
+		writeError(w, clientError{status: http.StatusUnauthorized, message: "service token required"})
 	}
 }
 

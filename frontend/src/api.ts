@@ -1,4 +1,6 @@
 import type {
+  AgentModelConfig,
+  AgentModelUpdate,
   AndroidVersion,
   AuditEvent,
   BootstrapStatus,
@@ -165,4 +167,20 @@ export const api = {
   testRun: (id: string) => request<TestRun>(`/api/v1/tests/runs/${id}`),
   testArtifactUrl: (runId: string, name: string) =>
     `/api/v1/tests/runs/${runId}/artifacts/${encodeURIComponent(name)}`,
+
+  // Agent model configuration (admin only). The API key is write-only: it is
+  // never returned by GET; POST with apiFieldset omitted keeps the stored key.
+  agentModel: () => request<AgentModelConfig>("/api/v1/agent/model"),
+  saveAgentModel: (payload: AgentModelUpdate) =>
+    request<AgentModelConfig>("/api/v1/agent/model", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+  testAgentModel: (payload: AgentModelUpdate) =>
+    request<{ ok: boolean; message: string }>("/api/v1/agent/model/test", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
 };

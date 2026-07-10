@@ -176,6 +176,38 @@ export type TestRun = {
   finishedAt?: string;
 };
 
+export type AgentModelPreset = {
+  label: string;
+  providerId: string;
+  api: string;
+  baseUrl: string;
+  model: string;
+  needsKey: boolean;
+};
+
+export type AgentModelConfig = {
+  providerId: string;
+  api: string;
+  baseUrl: string;
+  model: string;
+  headers?: Record<string, string>;
+  keySet: boolean;
+  secretStorageEnabled: boolean;
+  supportedApis: string[];
+  presets: AgentModelPreset[];
+};
+
+// apiKey is tri-state on the wire: omit to keep the stored key, "" to clear it,
+// a value to set it.
+export type AgentModelUpdate = {
+  providerId: string;
+  api: string;
+  baseUrl: string;
+  model: string;
+  headers?: Record<string, string>;
+  apiKey?: string;
+};
+
 export type CreateImagePayload = {
   name: string;
   path: string;
