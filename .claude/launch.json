@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend-appliance",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--host", "127.0.0.1"],
+      "cwd": "frontend",
+      "env": {
+        "OC_API_TARGET": "http://10.1.0.104"
+      },
+      "port": 5173
+    }
+  ]
+}

@@ -1,0 +1,137 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Theme is driven by an explicit data-theme attribute set by ThemeProvider, so
+   the dark variant keys off it (no reliance on the .dark class). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ---- Light (default) ---- */
+:root,
+:root[data-theme="light"] {
+  --background: #eef1f4;
+  --foreground: #1a222a;
+  --surface: #ffffff;          /* raised chrome: top bar, headers */
+  --card: #ffffff;
+  --card-foreground: #1a222a;
+  --popover: #ffffff;
+  --popover-foreground: #1a222a;
+  --primary: #12a594;          /* brand teal */
+  --primary-foreground: #ffffff;
+  --secondary: #f5f7f9;
+  --secondary-foreground: #1a222a;
+  --muted: #f2f5f7;
+  --muted-foreground: #5c6975;
+  --accent: #eef2f4;           /* subtle hover surface (shadcn semantics) */
+  --accent-foreground: #1a222a;
+  --brand-weak: rgba(18, 165, 148, 0.1);
+  --border: #e3e7eb;
+  --border-strong: #d3d9de;
+  --hairline: #edf0f3;
+  --input: #e3e7eb;
+  --ring: #12a594;
+  --sidebar: #f8fafb;
+  --sidebar-foreground: #1a222a;
+  --sidebar-border: #e3e7eb;
+  /* semantic — separate from the brand accent */
+  --running: #2f9e44;
+  --stopped: #8a96a0;
+  --warn: #b7791f;
+  --destructive: #e03131;
+  --dot-tex: rgba(20, 30, 45, 0.045);
+  --card-shadow: 0 1px 2px rgba(25, 35, 50, 0.06);
+  --radius: 0.75rem;
+}
+
+/* ---- Dark ---- */
+:root[data-theme="dark"] {
+  --background: #0e1216;
+  --foreground: #dee6ec;
+  --surface: #101519;
+  --card: #12171c;
+  --card-foreground: #dee6ec;
+  --popover: #12171c;
+  --popover-foreground: #dee6ec;
+  --primary: #2fd3b8;
+  --primary-foreground: #04211c;
+  --secondary: #151b21;
+  --secondary-foreground: #dee6ec;
+  --muted: #151b21;
+  --muted-foreground: #8695a1;
+  --accent: #151b21;
+  --accent-foreground: #dee6ec;
+  --brand-weak: rgba(47, 211, 184, 0.1);
+  --border: #212a32;
+  --border-strong: #2a343d;
+  --hairline: #1a222a;
+  --input: #212a32;
+  --ring: #2fd3b8;
+  --sidebar: #0f1419;
+  --sidebar-foreground: #dee6ec;
+  --sidebar-border: #212a32;
+  --running: #3fb84f;
+  --stopped: #7b8894;
+  --warn: #e0a219;
+  --destructive: #ee5f6b;
+  --dot-tex: rgba(255, 255, 255, 0.02);
+  --card-shadow: none;
+}
+
+/* Map tokens to Tailwind's theme so utilities (bg-card, text-primary, …) work. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-brand-weak: var(--brand-weak);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-hairline: var(--hairline);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-running: var(--running);
+  --color-stopped: var(--stopped);
+  --color-warn: var(--warn);
+  --color-destructive: var(--destructive);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    letter-spacing: -0.005em;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
