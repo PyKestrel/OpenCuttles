@@ -178,15 +178,15 @@ func (r *Runner) runStep(ctx context.Context, instanceID string, index int, text
 			return pass(result, start)
 		}
 		// Unknown app name: fall through to tapping its icon by description.
-		return r.groundAndTap(ctx, instanceID, result, shot, start)
+		return r.groundAndTap(ctx, instanceID, result, shot, runDir, start)
 
 	case VerbTap:
-		return r.groundAndTap(ctx, instanceID, result, shot, start)
+		return r.groundAndTap(ctx, instanceID, result, shot, runDir, start)
 
 	case VerbType:
 		// Ground the field, tap to focus, then type.
 		if result.Target != "" {
-			res := r.groundAndTap(ctx, instanceID, result, shot, start)
+			res := r.groundAndTap(ctx, instanceID, result, shot, runDir, start)
 			if !res.Pass {
 				return res
 			}
@@ -222,17 +222,39 @@ func (r *Runner) runStep(ctx context.Context, instanceID string, index int, text
 	}
 }
 
-func (r *Runner) groundAndTap(ctx context.Context, instanceID string, result domain.StepResult, shot []byte, start time.Time) domain.StepResult {
-	cfg, err := png.DecodeConfig(bytes.NewReader(shot))
-	if err != nil {
-		return fail(result, start, fmt.Sprintf("decode screenshot: %v", err))
-	}
-	points, err := r.vision.Locate(ctx, shot, result.Target)
-	if err != nil {
-		return fail(result, start, fmt.Sprintf("vision point: %v", err))
+// groundAndTap locates the target and taps it, retrying with fresh screenshots
+// because a screen may still be rendering (e.g. an app cold-launch) when the
+// step begins. The evidence screenshot is updated to the capture that grounded.
+func (r *Runner) groundAndTap(ctx context.Context, instanceID string, result domain.StepResult, shot []byte, runDir string, start time.Time) domain.StepResult {
+	var points []vision.Point
+	for attempt := 0; attempt < 4; attempt++ {
+		pts, err := r.vision.Locate(ctx, shot, result.Target)
+		if err != nil {
+			return fail(result, start, fmt.Sprintf("vision point: %v", err))
+		}
+		if len(pts) > 0 {
+			points = pts
+			break
+		}
+		// Not found yet: let the screen settle and re-capture for another try.
+		select {
+		case <-ctx.Done():
+			return fail(result, start, "cancelled")
+		case <-time.After(1500 * time.Millisecond):
+		}
+		if fresh, err := r.devices.Screenshot(ctx, instanceID); err == nil {
+			shot = fresh
+			if result.Screenshot != "" {
+				_ = os.WriteFile(filepath.Join(runDir, result.Screenshot), shot, 0o644)
+			}
+		}
 	}
 	if len(points) == 0 {
 		return fail(result, start, fmt.Sprintf("could not find %q on screen", result.Target))
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(shot))
+	if err != nil {
+		return fail(result, start, fmt.Sprintf("decode screenshot: %v", err))
 	}
 	result.X, result.Y = points[0].Pixels(cfg.Width, cfg.Height)
 	if err := r.devices.Tap(ctx, instanceID, result.X, result.Y); err != nil {
