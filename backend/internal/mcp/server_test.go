@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -67,9 +68,16 @@ func TestMCPToolsAndDeviceSelection(t *testing.T) {
 	for _, tool := range tools.Tools {
 		got[tool.Name] = true
 	}
-	for _, want := range []string{"list_devices", "select_device", "get_active_device", "get_ui_tree", "tap", "swipe", "type_text", "press_key", "launch_app", "screenshot", "tap_element", "find_element", "ask_screen"} {
+	for _, want := range []string{"list_devices", "select_device", "get_active_device", "get_ui_tree", "scroll", "type_text", "press_key", "launch_app", "tap_element", "find_element", "ask_screen"} {
 		if !got[want] {
 			t.Errorf("missing tool %q", want)
+		}
+	}
+	// The coordinate-based and image tools are intentionally not exposed to the
+	// text-only agent (it uses tap_element/scroll/ask_screen instead).
+	for _, gone := range []string{"tap", "swipe", "screenshot"} {
+		if got[gone] {
+			t.Errorf("tool %q should no longer be exposed to the agent", gone)
 		}
 	}
 
@@ -98,5 +106,24 @@ func TestMCPToolsAndDeviceSelection(t *testing.T) {
 	decode(t, res, &active)
 	if active.ID != "cvd_b" {
 		t.Fatalf("active device = %q, want cvd_b", active.ID)
+	}
+
+	// A hallucinated explicit deviceId must produce a directive, model-readable
+	// error — not a raw "sql: no rows in result set" the agent can't interpret.
+	res, err = session.CallTool(ctx, &mcpsdk.CallToolParams{Name: "get_ui_tree", Arguments: map[string]any{"deviceId": "ghost"}})
+	if err != nil {
+		t.Fatalf("get_ui_tree(ghost): %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected an error result for a bogus deviceId")
+	}
+	var text string
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcpsdk.TextContent); ok {
+			text += tc.Text
+		}
+	}
+	if strings.Contains(text, "no rows") || !strings.Contains(text, "do not guess") {
+		t.Errorf("bogus-id error not sanitized/directive: %q", text)
 	}
 }

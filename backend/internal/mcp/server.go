@@ -1,8 +1,9 @@
 // Package mcp exposes the devicecontrol service as Model Context Protocol tools
 // over a streamable HTTP handler. A local cognitive-core agent (MiniCPM5 via the
 // Flue sidecar) connects to this endpoint and drives Android devices through the
-// tools defined here: it perceives the screen as the uiautomator accessibility
-// tree (get_ui_tree) and acts with tap/swipe/type/press_key/launch_app.
+// tools defined here: it perceives the screen with vision (ask_screen /
+// tap_element / find_element) or the accessibility tree (get_ui_tree) and acts
+// with tap_element/scroll/type_text/press_key/launch_app.
 //
 // Device targeting: the server keeps an "active device" (an instance ID). Tools
 // operate on the active device unless a call passes an explicit deviceId. The
@@ -19,6 +20,7 @@ import (
 	png2 "image/png"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,6 +75,12 @@ func (s *Service) Handler() http.Handler {
 // given, else the active device, else the sole running instance if unambiguous.
 func (s *Service) resolveDevice(ctx context.Context, explicit string) (string, error) {
 	if explicit != "" {
+		// Validate the id rather than passing a hallucinated value downstream
+		// (which used to surface a raw "sql: no rows" error that the agent
+		// could not interpret and would spiral on).
+		if _, err := s.store.GetInstance(ctx, explicit); err != nil {
+			return "", fmt.Errorf("no device with id %q — do not guess or invent device ids. You already operate on the active device, so omit deviceId. Only use list_devices/select_device when the user names a specific other device", explicit)
+		}
 		return explicit, nil
 	}
 	s.mu.Lock()
@@ -122,7 +130,7 @@ func (s *Service) registerTools() {
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "list_devices",
-		Description: "List the Android instances OpenCuttles manages, with their state and device id.",
+		Description: "List the managed Android instances with their ids. You rarely need this: you already operate on the active device. Only use it when the user explicitly names a different device to switch to.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, struct {
 		Devices []deviceInfo `json:"devices"`
 	}, error) {
@@ -141,7 +149,7 @@ func (s *Service) registerTools() {
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "select_device",
-		Description: "Set the active device that subsequent tool calls operate on.",
+		Description: "Switch the active device. Only needed when the user names a different device; pass an id exactly as returned by list_devices. Never invent an id.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
 		DeviceID string `json:"deviceId" jsonschema:"the instance id to make active"`
 	}) (*mcpsdk.CallToolResult, deviceInfo, error) {
@@ -196,56 +204,37 @@ func (s *Service) registerTools() {
 	})
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
-		Name:        "screenshot",
-		Description: "Capture the current screen as a PNG image.",
-	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in deviceRef) (*mcpsdk.CallToolResult, struct{}, error) {
-		id, err := s.resolveDevice(ctx, in.DeviceID)
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		png, err := s.devices.Screenshot(ctx, id)
-		if err != nil {
-			return nil, struct{}{}, err
-		}
-		return &mcpsdk.CallToolResult{
-			Content: []mcpsdk.Content{&mcpsdk.ImageContent{Data: png, MIMEType: "image/png"}},
-		}, struct{}{}, nil
-	})
-
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
-		Name:        "tap",
-		Description: "Tap at screen coordinates (device pixels).",
+		Name:        "scroll",
+		Description: "Scroll the screen to reveal off-screen content. direction is one of: down, up, left, right (down reveals content further down the page). Use this instead of computing swipe coordinates.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
 		deviceRef
-		X int `json:"x"`
-		Y int `json:"y"`
+		Direction string `json:"direction" jsonschema:"one of: down, up, left, right"`
 	}) (*mcpsdk.CallToolResult, statusOut, error) {
 		id, err := s.resolveDevice(ctx, in.DeviceID)
 		if err != nil {
 			return nil, statusOut{}, err
 		}
-		if err := s.devices.Tap(ctx, id, in.X, in.Y); err != nil {
-			return nil, statusOut{}, err
-		}
-		return nil, statusOut{Status: "ok", Device: id}, nil
-	})
-
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
-		Name:        "swipe",
-		Description: "Swipe/drag from (x,y) to (x2,y2) over duration milliseconds.",
-	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
-		deviceRef
-		X        int `json:"x"`
-		Y        int `json:"y"`
-		X2       int `json:"x2"`
-		Y2       int `json:"y2"`
-		Duration int `json:"duration,omitempty"`
-	}) (*mcpsdk.CallToolResult, statusOut, error) {
-		id, err := s.resolveDevice(ctx, in.DeviceID)
+		inst, err := s.store.GetInstance(ctx, id)
 		if err != nil {
 			return nil, statusOut{}, err
 		}
-		if err := s.devices.Swipe(ctx, id, in.X, in.Y, in.X2, in.Y2, in.Duration); err != nil {
+		w, h := inst.DisplayWidth, inst.DisplayHeight
+		if w <= 0 || h <= 0 {
+			w, h = 720, 1280
+		}
+		cx, cy := w/2, h/2
+		// The gesture moves opposite to the reading direction: to scroll "down"
+		// (reveal lower content) the finger drags from lower to upper screen.
+		x, y, x2, y2 := cx, h*7/10, cx, h*3/10
+		switch strings.ToLower(strings.TrimSpace(in.Direction)) {
+		case "up":
+			x, y, x2, y2 = cx, h*3/10, cx, h*7/10
+		case "left":
+			x, y, x2, y2 = w*3/10, cy, w*7/10, cy
+		case "right":
+			x, y, x2, y2 = w*7/10, cy, w*3/10, cy
+		}
+		if err := s.devices.Swipe(ctx, id, x, y, x2, y2, 300); err != nil {
 			return nil, statusOut{}, err
 		}
 		return nil, statusOut{Status: "ok", Device: id}, nil
@@ -253,7 +242,7 @@ func (s *Service) registerTools() {
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "type_text",
-		Description: "Type UTF-8 text into the currently focused input field.",
+		Description: "Type UTF-8 text into the currently focused input field. Tap the target field first (tap_element) so it has focus.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
 		deviceRef
 		Text string `json:"text"`
@@ -287,7 +276,7 @@ func (s *Service) registerTools() {
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "launch_app",
-		Description: "Launch an installed app by package name.",
+		Description: "Launch an installed app by exact package name (e.g. com.android.settings). If unsure of the package, call list_apps — never guess or invent a package name.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
 		deviceRef
 		Package string `json:"package"`
@@ -297,7 +286,7 @@ func (s *Service) registerTools() {
 			return nil, statusOut{}, err
 		}
 		if err := s.devices.LaunchApp(ctx, id, in.Package); err != nil {
-			return nil, statusOut{}, err
+			return nil, statusOut{}, fmt.Errorf("could not launch %q — it may not be installed. Call list_apps for exact installed package names, or tap the app's icon with tap_element. Do not invent package names", in.Package)
 		}
 		return nil, statusOut{Status: "ok", Device: id}, nil
 	})
