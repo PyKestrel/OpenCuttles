@@ -109,7 +109,7 @@ export function AgentTab({ instance }: { instance: Instance }) {
         <button
           disabled={busy || !input.trim()}
           className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2.5 text-[13px] font-medium text-primary-foreground disabled:opacity-50"
-          style={{ background: "var(--primary)" }}
+          style={{ background: "var(--primary-strong)" }}
         >
           <Send className="size-3.5" /> {busy ? "Working…" : "Send"}
         </button>

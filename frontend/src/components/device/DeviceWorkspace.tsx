@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Camera, MonitorPlay, Play, Smartphone, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can } from "@/lib/permissions";
+import { FadeIn } from "@/components/Motion";
 import { SummaryTab } from "@/components/device/SummaryTab";
 import { ControlsTab } from "@/components/device/ControlsTab";
 import { LogsTab } from "@/components/device/LogsTab";
@@ -129,15 +130,17 @@ export function DeviceWorkspace({
 
       {/* content */}
       <div className="flex-1 overflow-auto p-5">
-        {tab === "summary" && <SummaryTab instance={instance} latestRun={latestRun} onOpenTab={setTab} />}
-        {tab === "console" && <ConsoleTab instance={instance} />}
-        {tab === "controls" && <ControlsTab instance={instance} />}
-        {tab === "agent" && <AgentTab instance={instance} />}
-        {tab === "logs" && <LogsTab instance={instance} />}
-        {tab === "tests" && <TestsPanel instance={instance} instances={instances} scoped />}
-        {tab === "configure" && (
-          <ConfigureTab instance={instance} busy={busy} canOperate={canOperate} onDelete={onDelete} />
-        )}
+        <FadeIn id={tab}>
+          {tab === "summary" && <SummaryTab instance={instance} latestRun={latestRun} onOpenTab={setTab} />}
+          {tab === "console" && <ConsoleTab instance={instance} />}
+          {tab === "controls" && <ControlsTab instance={instance} />}
+          {tab === "agent" && <AgentTab instance={instance} />}
+          {tab === "logs" && <LogsTab instance={instance} />}
+          {tab === "tests" && <TestsPanel instance={instance} instances={instances} scoped />}
+          {tab === "configure" && (
+            <ConfigureTab instance={instance} busy={busy} canOperate={canOperate} onDelete={onDelete} />
+          )}
+        </FadeIn>
       </div>
     </div>
   );

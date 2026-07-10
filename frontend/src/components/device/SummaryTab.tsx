@@ -62,7 +62,7 @@ export function SummaryTab({
                 aria-disabled={!running}
                 className="flex-1 rounded-lg px-3 py-2 text-center text-[12px] font-medium text-primary-foreground data-[off=true]:pointer-events-none data-[off=true]:opacity-50"
                 data-off={!running}
-                style={{ background: "var(--primary)" }}
+                style={{ background: "var(--primary-strong)" }}
               >
                 Launch console
               </a>

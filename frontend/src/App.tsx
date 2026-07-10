@@ -6,6 +6,8 @@ import { TopBar } from "@/components/TopBar";
 import { InventorySidebar, type InventoryView } from "@/components/InventorySidebar";
 import { CommandPalette } from "@/components/CommandPalette";
 import { CreateDeviceDialog } from "@/components/CreateDeviceDialog";
+import { DitherField } from "@/components/DitherField";
+import { BrandMark } from "@/components/Brand";
 import { DeviceWorkspace } from "@/components/device/DeviceWorkspace";
 import { ImagesView } from "@/components/views/ImagesView";
 import { ActivityView } from "@/components/views/ActivityView";
@@ -198,10 +200,17 @@ function MainContent({
   // devices
   if (!selected) {
     return (
-      <div className="grid flex-1 place-items-center p-8 text-center">
-        <div className="max-w-sm">
-          <p className="text-[14px] text-muted-foreground">No devices yet.</p>
-          <button onClick={onNewDevice} className="mt-3 rounded-lg px-4 py-2 text-[13px] font-medium text-primary-foreground" style={{ background: "var(--primary)" }}>
+      <div className="relative grid flex-1 place-items-center overflow-hidden p-8 text-center">
+        <div className="pointer-events-none absolute inset-0 opacity-70">
+          <DitherField />
+        </div>
+        <div className="relative max-w-sm rounded-2xl border bg-card/90 px-8 py-9 backdrop-blur-sm" style={{ boxShadow: "var(--card-shadow)" }}>
+          <BrandMark className="mx-auto size-14" />
+          <h2 className="mt-4 text-[17px] font-semibold tracking-tight">No devices yet</h2>
+          <p className="mt-1 text-[13.5px] leading-relaxed text-muted-foreground">
+            Deploy a Cuttlefish Android device and OpenCuttles fetches the image automatically — no manual setup.
+          </p>
+          <button onClick={onNewDevice} className="mt-5 rounded-lg px-4 py-2.5 text-[13px] font-medium text-primary-foreground" style={{ background: "var(--primary-strong)" }}>
             Deploy your first device
           </button>
         </div>

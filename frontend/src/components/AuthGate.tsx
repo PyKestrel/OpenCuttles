@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { BrandMark } from "@/components/Brand";
+import { DitherField } from "@/components/DitherField";
 import { api } from "@/api";
 import type { Principal } from "@/types";
 
@@ -38,8 +39,13 @@ export function AuthGate({
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-background p-4" style={{ backgroundImage: "radial-gradient(var(--dot-tex) 1px, transparent 1.5px)", backgroundSize: "20px 20px" }}>
-      <form onSubmit={submit} className="w-full max-w-[380px] rounded-2xl border bg-card p-7" style={{ boxShadow: "var(--card-shadow)" }}>
+    <div className="relative grid min-h-screen place-items-center overflow-hidden bg-background p-4">
+      {/* dithered brand hero */}
+      <div className="pointer-events-none absolute inset-0">
+        <DitherField />
+      </div>
+      <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "radial-gradient(var(--dot-tex) 1px, transparent 1.5px)", backgroundSize: "20px 20px" }} />
+      <form onSubmit={submit} className="relative w-full max-w-[380px] rounded-2xl border bg-card/95 p-7 backdrop-blur-sm" style={{ boxShadow: "var(--card-shadow), 0 20px 60px rgba(0,0,0,0.18)" }}>
         <div className="mb-5 flex items-center gap-2.5">
           <BrandMark className="size-8" />
           <div>
@@ -62,7 +68,7 @@ export function AuthGate({
         <button
           disabled={busy || !username || !password}
           className="mt-2 w-full rounded-lg py-2.5 text-[14px] font-medium text-primary-foreground disabled:opacity-50"
-          style={{ background: "var(--primary)" }}
+          style={{ background: "var(--primary-strong)" }}
         >
           {bootstrapRequired ? "Create admin" : "Sign in"}
         </button>

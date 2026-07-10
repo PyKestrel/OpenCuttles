@@ -15,7 +15,8 @@
   --card-foreground: #1a222a;
   --popover: #ffffff;
   --popover-foreground: #1a222a;
-  --primary: #12a594;          /* brand teal */
+  --primary: #12a594;          /* brand teal — accents, links, icons */
+  --primary-strong: #0c8676;   /* deeper teal for solid CTAs (≈4.5:1 on white) */
   --primary-foreground: #ffffff;
   --secondary: #f5f7f9;
   --secondary-foreground: #1a222a;
@@ -52,6 +53,7 @@
   --popover: #12171c;
   --popover-foreground: #dee6ec;
   --primary: #2fd3b8;
+  --primary-strong: #2fd3b8;    /* dark uses dark text on the bright teal already */
   --primary-foreground: #04211c;
   --secondary: #151b21;
   --secondary-foreground: #dee6ec;
@@ -86,6 +88,7 @@
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
