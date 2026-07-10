@@ -104,7 +104,7 @@ export function ControlsTab({ instance }: { instance: Instance }) {
         </div>
       )}
 
-      <div className="grid items-start gap-4 lg:grid-cols-2">
+      <div className="space-y-4">
         <Card>
           <CardHeader icon={<RotateCw className="size-[15px]" />} title="Input" />
           <div className="space-y-3 p-4">

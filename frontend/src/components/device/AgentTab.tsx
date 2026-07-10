@@ -54,7 +54,7 @@ export function AgentTab({ instance }: { instance: Instance }) {
   }
 
   return (
-    <div className="flex h-[640px] flex-col overflow-hidden rounded-xl border bg-card" style={{ boxShadow: "var(--card-shadow)" }}>
+    <div className="flex h-full min-h-[480px] flex-col overflow-hidden rounded-xl border bg-card" style={{ boxShadow: "var(--card-shadow)" }}>
       <div className="flex items-center gap-2.5 border-b px-4 py-3" style={{ borderColor: "var(--hairline)" }}>
         <span className="grid size-6 place-items-center rounded-md text-primary" style={{ background: "var(--brand-weak)" }}>
           <Sparkles className="size-3.5" />

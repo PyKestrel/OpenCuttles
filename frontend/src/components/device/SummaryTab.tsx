@@ -13,7 +13,7 @@ export function SummaryTab({
 }: {
   instance: Instance;
   latestRun?: TestRun;
-  onOpenTab: (tab: DeviceTab) => void;
+  onOpenTab: (tab: DeviceTab, pane?: "controls" | "agent") => void;
 }) {
   const running = instance.state === "running";
   const [shotToken, setShotToken] = useState(() => Date.now());
@@ -67,7 +67,7 @@ export function SummaryTab({
                 Launch console
               </a>
               <button
-                onClick={() => onOpenTab("controls")}
+                onClick={() => onOpenTab("console", "controls")}
                 className="flex-1 rounded-lg border bg-secondary px-3 py-2 text-[12px] font-medium hover:bg-accent"
                 style={{ borderColor: "var(--border-strong)" }}
               >
@@ -152,7 +152,7 @@ export function SummaryTab({
           <CardHeader icon={<Sparkles className="size-[15px]" />} title="Agent" action={<span className="text-[12px] text-muted-foreground/70">MiniCPM5-1B</span>} />
           <div className="p-4 text-[13px] text-muted-foreground">
             Drive this device in natural language.
-            <button onClick={() => onOpenTab("agent")} className="mt-2 block text-[13px] text-primary">
+            <button onClick={() => onOpenTab("console", "agent")} className="mt-2 block text-[13px] text-primary">
               Open the agent →
             </button>
           </div>

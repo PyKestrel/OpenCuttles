@@ -4,21 +4,18 @@ import { cn } from "@/lib/utils";
 import { can } from "@/lib/permissions";
 import { FadeIn } from "@/components/Motion";
 import { SummaryTab } from "@/components/device/SummaryTab";
-import { ControlsTab } from "@/components/device/ControlsTab";
 import { LogsTab } from "@/components/device/LogsTab";
-import { AgentTab } from "@/components/device/AgentTab";
 import { ConfigureTab } from "@/components/device/ConfigureTab";
+import { ConsoleWorkspace, type ConsolePane } from "@/components/device/ConsoleWorkspace";
 import { TestsPanel } from "@/components/tests/TestsPanel";
 import { api } from "@/api";
 import type { Instance, Principal, TestRun } from "@/types";
 
-export type DeviceTab = "summary" | "console" | "controls" | "agent" | "tests" | "logs" | "configure";
+export type DeviceTab = "summary" | "console" | "tests" | "logs" | "configure";
 
 const TAB_LABELS: Record<DeviceTab, string> = {
   summary: "Summary",
   console: "Console",
-  controls: "Controls",
-  agent: "Agent",
   tests: "Tests",
   logs: "Logs",
   configure: "Configure",
@@ -42,6 +39,7 @@ export function DeviceWorkspace({
   onDelete: (id: string) => void;
 }) {
   const [tab, setTab] = useState<DeviceTab>("summary");
+  const [consolePane, setConsolePane] = useState<ConsolePane>("controls");
   const [latestRun, setLatestRun] = useState<TestRun>();
 
   const canControl = can(principal, "control");
@@ -50,13 +48,17 @@ export function DeviceWorkspace({
 
   const tabs = useMemo(() => {
     const t: DeviceTab[] = ["summary", "console"];
-    if (canControl) t.push("controls");
-    if (canControl) t.push("agent");
     if (canTest) t.push("tests");
     if (canControl) t.push("logs");
     t.push("configure");
     return t;
   }, [canControl, canTest]);
+
+  // Summary shortcuts can jump straight to a console pane (Controls or Agent).
+  function openTab(next: DeviceTab, pane?: ConsolePane) {
+    setTab(next);
+    if (pane) setConsolePane(pane);
+  }
 
   useEffect(() => setTab("summary"), [instance.id]);
 
@@ -131,10 +133,10 @@ export function DeviceWorkspace({
       {/* content */}
       <div className="flex-1 overflow-auto p-5">
         <FadeIn id={tab}>
-          {tab === "summary" && <SummaryTab instance={instance} latestRun={latestRun} onOpenTab={setTab} />}
-          {tab === "console" && <ConsoleTab instance={instance} />}
-          {tab === "controls" && <ControlsTab instance={instance} />}
-          {tab === "agent" && <AgentTab instance={instance} />}
+          {tab === "summary" && <SummaryTab instance={instance} latestRun={latestRun} onOpenTab={openTab} />}
+          {tab === "console" && (
+            <ConsoleWorkspace instance={instance} canControl={canControl} pane={consolePane} onPane={setConsolePane} />
+          )}
           {tab === "logs" && <LogsTab instance={instance} />}
           {tab === "tests" && <TestsPanel instance={instance} instances={instances} scoped />}
           {tab === "configure" && (
@@ -173,23 +175,5 @@ function HeaderBtn({
     >
       {children}
     </button>
-  );
-}
-
-function ConsoleTab({ instance }: { instance: Instance }) {
-  if (instance.state !== "running") {
-    return (
-      <div className="grid min-h-[240px] place-items-center rounded-xl border border-dashed bg-secondary/40 px-6 text-center text-[13.5px] text-muted-foreground" style={{ borderColor: "var(--border-strong)" }}>
-        <p className="max-w-md">Start the device to open its interactive console.</p>
-      </div>
-    );
-  }
-  return (
-    <iframe
-      title={`${instance.name} console`}
-      src={instance.consoleUrl}
-      allow="autoplay; microphone; camera; clipboard-write"
-      className="h-[640px] w-full rounded-xl border bg-black"
-    />
   );
 }
