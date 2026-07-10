@@ -7,10 +7,13 @@ contract shared by the agent's vision MCP tools and the test runner:
   POST /point  {image, target}   -> {"points": [{"x","y"}]}   (normalized 0-1)
   POST /query  {image, question} -> {"answer": "..."}
 
-`image` is a base64-encoded PNG. Point uses Florence-2 open-vocabulary detection
-and returns the box centers normalized to the image size. Query has no free-form
-VQA in Florence-2, so it returns a detailed caption plus on-screen OCR text — good
-for presence/text/state questions the caller reasons over.
+`image` is a base64-encoded PNG. Point grounds text UI labels with OCR-with-region
+(match the target against recognized on-screen text, return that box's center),
+which is far more reliable than open-vocabulary detection on terse labels; it falls
+back to open-vocab detection (whole-image boxes filtered) for non-text targets like
+icons. Query has no free-form VQA in Florence-2, so it returns a detailed caption
+plus on-screen OCR text — good for presence/text/state questions the caller reasons
+over.
 
 Default model is microsoft/Florence-2-base (~0.23B), CPU. Override with
 OPENCUTTLES_VISION_MODEL (e.g. microsoft/Florence-2-large for more accuracy).
@@ -20,6 +23,7 @@ import base64
 import binascii
 import io
 import os
+import re
 import threading
 from contextlib import asynccontextmanager
 
@@ -87,6 +91,34 @@ def _run(image: Image.Image, task: str, text: str = "") -> dict:
     )
 
 
+def _tokens(text: str) -> list:
+    # Lowercase, treat "&" as "and", keep only alphanumerics as tokens.
+    return re.sub(r"[^a-z0-9 ]+", " ", text.lower().replace("&", "and")).split()
+
+
+def _ocr_locate(image: Image.Image, target: str):
+    """Return the normalized center of the on-screen text best matching target,
+    or None. A candidate matches when it contains every target token; the most
+    specific (fewest extra tokens) candidate wins."""
+    want = _tokens(target)
+    if not want:
+        return None
+    result = _run(image, "<OCR_WITH_REGION>").get("<OCR_WITH_REGION>", {})
+    quads = result.get("quad_boxes", [])
+    labels = result.get("labels", [])
+    best, best_extra = None, 1 << 30
+    for quad, label in zip(quads, labels):
+        have = _tokens(str(label))
+        if have and set(want).issubset(have):
+            extra = len(have) - len(want)
+            if extra < best_extra:
+                best, best_extra = quad, extra
+    if best is None:
+        return None
+    xs, ys = best[0::2], best[1::2]
+    return {"x": (sum(xs) / len(xs)) / image.width, "y": (sum(ys) / len(ys)) / image.height}
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok" if _model is not None else "loading", "model": MODEL_ID}
@@ -96,12 +128,20 @@ def healthz():
 def point(req: PointRequest):
     image = _decode_image(req.image)
     with _lock:
+        # Text labels dominate Android UI: match them via OCR regions first.
+        hit = _ocr_locate(image, req.target)
+        if hit is not None:
+            return {"points": [hit]}
+        # Fall back to open-vocabulary detection for icons / non-text targets.
         result = _run(image, "<OPEN_VOCABULARY_DETECTION>", req.target)
-    parsed = result.get("<OPEN_VOCABULARY_DETECTION>", {})
-    boxes = parsed.get("bboxes", [])
+    boxes = result.get("<OPEN_VOCABULARY_DETECTION>", {}).get("bboxes", [])
+    area = image.width * image.height
     points = []
     for box in boxes:
         x1, y1, x2, y2 = box
+        # Drop degenerate whole-image boxes (Florence-2's "I can't localize").
+        if (x2 - x1) * (y2 - y1) > 0.8 * area:
+            continue
         points.append(
             {"x": ((x1 + x2) / 2) / image.width, "y": ((y1 + y2) / 2) / image.height}
         )

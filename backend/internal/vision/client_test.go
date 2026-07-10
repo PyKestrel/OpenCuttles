@@ -58,46 +58,26 @@ func TestPointAndQuery(t *testing.T) {
 	}
 }
 
-func TestLocateVariants(t *testing.T) {
-	v := LocateVariants("Network & internet")
-	if v[0] != "Network & internet" || v[1] != "Network and internet" {
-		t.Fatalf("first variants wrong: %v", v[:2])
-	}
-	found := false
-	for _, p := range v {
-		if p == "Network and internet menu item" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected an enriched 'menu item' variant, got %v", v)
-	}
-}
-
-// Locate should skip variants that ground nothing and return the first hit.
-func TestLocateCascade(t *testing.T) {
-	var tried []string
+// Locate forwards the (trimmed) target to /point; the sidecar does the matching.
+func TestLocate(t *testing.T) {
+	var got string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var in map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&in)
-		tried = append(tried, in["target"])
-		points := "[]"
-		if in["target"] == "Wi-Fi option" {
-			points = `[{"x":0.5,"y":0.5}]`
-		}
-		_, _ = w.Write([]byte(`{"points":` + points + `}`))
+		got = in["target"]
+		_, _ = w.Write([]byte(`{"points":[{"x":0.5,"y":0.5}]}`))
 	}))
 	defer ts.Close()
 
-	points, err := New(ts.URL).Locate(context.Background(), []byte("png"), "Wi-Fi")
+	points, err := New(ts.URL).Locate(context.Background(), []byte("png"), "  Network & internet  ")
 	if err != nil {
 		t.Fatalf("locate: %v", err)
 	}
 	if len(points) != 1 {
-		t.Fatalf("expected 1 point, got %d (tried %v)", len(points), tried)
+		t.Fatalf("expected 1 point, got %d", len(points))
 	}
-	if tried[0] != "Wi-Fi" {
-		t.Errorf("expected bare target tried first, tried %v", tried)
+	if got != "Network & internet" {
+		t.Errorf("target sent = %q, want trimmed 'Network & internet'", got)
 	}
 }
 
