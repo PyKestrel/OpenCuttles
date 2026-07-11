@@ -47,12 +47,18 @@ export type InstanceState =
   | "stopping"
   | "stopped"
   | "error"
-  | "deleting";
+  | "deleting"
+  | "online"
+  | "offline";
+
+export type Platform = "android" | "windows" | "linux" | "macos";
 
 export type Instance = {
   id: string;
   name: string;
   hostId: string;
+  platform: Platform;
+  controlEndpoint?: string;
   imageId: string;
   androidVersion?: string;
   state: InstanceState;

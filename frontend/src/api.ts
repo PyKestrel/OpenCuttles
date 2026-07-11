@@ -14,6 +14,7 @@ import type {
   LoginResponse,
   Operation,
   PerfSnapshot,
+  Platform,
   Principal,
   TestRun,
   UINode,
@@ -64,6 +65,14 @@ export const api = {
       method: "POST",
       headers: jsonHeaders,
       body: JSON.stringify(payload),
+    }),
+  // Onboard a desktop target; returns the one-time enrollment token the runner
+  // presents to dial home. Same endpoint, keyed by platform.
+  onboardDesktop: (name: string, platform: Exclude<Platform, "android">) =>
+    request<{ instance: Instance; enrollmentToken: string }>("/api/v1/instances", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ name, platform }),
     }),
   startInstance: (id: string) =>
     request<{ instance: Instance; operation: Operation }>(`/api/v1/instances/${id}/start`, {

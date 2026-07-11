@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Activity, ChevronDown, ChevronRight, FlaskConical, Folder, ImageIcon, MonitorSmartphone, Plus, Server, Smartphone } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, FlaskConical, ImageIcon, Laptop, Monitor, MonitorSmartphone, Plus, Server, Smartphone, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusDot } from "@/components/StatusDot";
-import type { Host, Instance } from "@/types";
+import type { Host, Instance, Platform } from "@/types";
 
 export type InventoryView = "devices" | "tests" | "images" | "activity";
 
@@ -11,6 +11,14 @@ const VIEWS: { id: InventoryView; label: string; Icon: typeof MonitorSmartphone 
   { id: "tests", label: "Tests", Icon: FlaskConical },
   { id: "images", label: "Images", Icon: ImageIcon },
   { id: "activity", label: "Activity", Icon: Activity },
+];
+
+// Platform groups, in display order. Android first (the original product).
+const PLATFORMS: { id: Platform; label: string; Icon: typeof Monitor }[] = [
+  { id: "android", label: "Android", Icon: Smartphone },
+  { id: "windows", label: "Windows", Icon: Monitor },
+  { id: "linux", label: "Linux", Icon: Terminal },
+  { id: "macos", label: "macOS", Icon: Laptop },
 ];
 
 export function InventorySidebar({
@@ -31,7 +39,12 @@ export function InventorySidebar({
   onNewDevice: () => void;
 }) {
   const [openHost, setOpenHost] = useState(true);
-  const [openDevices, setOpenDevices] = useState(true);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const groups = PLATFORMS.map((p) => ({
+    ...p,
+    devices: instances.filter((i) => (i.platform || "android") === p.id),
+  })).filter((g) => g.devices.length > 0);
 
   return (
     <aside className="flex flex-col border-r bg-sidebar" style={{ background: "var(--sidebar)" }}>
@@ -56,7 +69,7 @@ export function InventorySidebar({
         <span className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground/80">Inventory</span>
         <button
           onClick={onNewDevice}
-          title="Deploy new device"
+          title="Add a device"
           className="ml-auto grid size-5 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-primary"
         >
           <Plus className="size-3.5" />
@@ -67,30 +80,47 @@ export function InventorySidebar({
         <TreeRow depth={0} chevron={openHost} onChevron={() => setOpenHost((v) => !v)} icon={<Server className="size-[15px]" />} label={host?.name || "local host"} count={instances.length} />
         {openHost && (
           <>
-            <TreeRow depth={1} chevron={openDevices} onChevron={() => setOpenDevices((v) => !v)} icon={<Folder className="size-[15px]" />} label="Cuttlefish devices" count={instances.length} />
-            {openDevices &&
-              instances.map((inst) => (
-                <button
-                  key={inst.id}
-                  onClick={() => onSelect(inst.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left hover:bg-accent",
-                    selectedId === inst.id && "bg-brand-weak shadow-[inset_2px_0_0_var(--primary)]",
-                  )}
-                  style={{ paddingLeft: 38 }}
-                >
-                  <StatusDot state={inst.state} />
-                  <span className="truncate">{inst.name}</span>
-                  {inst.androidVersion && (
-                    <span className="ml-auto font-mono text-[10px] text-muted-foreground/70">{inst.androidVersion}</span>
-                  )}
-                </button>
-              ))}
-            <TreeRow depth={1} chevron={false} onChevron={() => onView("images")} icon={<Smartphone className="size-[15px]" />} label="Images" />
+            {groups.map((g) => {
+              const open = collapsed[g.id] !== true;
+              return (
+                <div key={g.id}>
+                  <TreeRow
+                    depth={1}
+                    chevron={open}
+                    onChevron={() => setCollapsed((c) => ({ ...c, [g.id]: open }))}
+                    icon={<g.Icon className="size-[15px]" />}
+                    label={g.label}
+                    count={g.devices.length}
+                  />
+                  {open &&
+                    g.devices.map((inst) => (
+                      <button
+                        key={inst.id}
+                        onClick={() => onSelect(inst.id)}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left hover:bg-accent",
+                          selectedId === inst.id && "bg-brand-weak shadow-[inset_2px_0_0_var(--primary)]",
+                        )}
+                        style={{ paddingLeft: 38 }}
+                      >
+                        <StatusDot state={inst.state} />
+                        <span className="truncate">{inst.name}</span>
+                        {inst.androidVersion && (
+                          <span className="ml-auto font-mono text-[10px] text-muted-foreground/70">{inst.androidVersion}</span>
+                        )}
+                      </button>
+                    ))}
+                </div>
+              );
+            })}
+            <TreeRow depth={1} chevron={false} onChevron={() => onView("images")} icon={<ImageIcon className="size-[15px]" />} label="Images" />
           </>
         )}
         {instances.length === 0 && (
-          <div className="px-3 py-6 text-center text-[12px] text-muted-foreground/70">No devices yet.</div>
+          <div className="px-3 py-6 text-center text-[12px] text-muted-foreground/70">
+            No devices yet.
+            <button onClick={onNewDevice} className="mt-1 block w-full text-[12px] text-primary">Add one →</button>
+          </div>
         )}
       </nav>
     </aside>

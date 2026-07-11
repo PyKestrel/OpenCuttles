@@ -4,10 +4,12 @@ import type { InstanceState } from "@/types";
 export function stateColor(state: InstanceState): string {
   switch (state) {
     case "running":
+    case "online":
       return "var(--running)";
     case "error":
       return "var(--destructive)";
     case "stopped":
+    case "offline":
       return "var(--stopped)";
     default:
       return "var(--warn)"; // provisioning / starting / booting / stopping / deleting

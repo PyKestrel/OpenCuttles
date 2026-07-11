@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Camera, MonitorPlay, Play, Smartphone, Square } from "lucide-react";
+import { Camera, Laptop, Monitor, MonitorPlay, Play, Smartphone, Square, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can } from "@/lib/permissions";
 import { FadeIn } from "@/components/Motion";
@@ -7,9 +7,23 @@ import { SummaryTab } from "@/components/device/SummaryTab";
 import { LogsTab } from "@/components/device/LogsTab";
 import { ConfigureTab } from "@/components/device/ConfigureTab";
 import { ConsoleWorkspace, type ConsolePane } from "@/components/device/ConsoleWorkspace";
+import { DesktopConsole } from "@/components/device/DesktopConsole";
 import { TestsPanel } from "@/components/tests/TestsPanel";
 import { api } from "@/api";
-import type { Instance, Principal, TestRun } from "@/types";
+import type { Instance, Platform, Principal, TestRun } from "@/types";
+
+function platformIcon(platform: Platform) {
+  switch (platform) {
+    case "windows":
+      return Monitor;
+    case "linux":
+      return Terminal;
+    case "macos":
+      return Laptop;
+    default:
+      return Smartphone;
+  }
+}
 
 export type DeviceTab = "summary" | "console" | "tests" | "logs" | "configure";
 
@@ -45,14 +59,16 @@ export function DeviceWorkspace({
   const canControl = can(principal, "control");
   const canTest = can(principal, "test");
   const canOperate = can(principal, "operate");
+  const isDesktop = (instance.platform || "android") !== "android";
+  const PlatformIcon = platformIcon(instance.platform || "android");
 
   const tabs = useMemo(() => {
     const t: DeviceTab[] = ["summary", "console"];
     if (canTest) t.push("tests");
-    if (canControl) t.push("logs");
+    if (canControl && !isDesktop) t.push("logs"); // logcat is Android-only
     t.push("configure");
     return t;
-  }, [canControl, canTest]);
+  }, [canControl, canTest, isDesktop]);
 
   // Summary shortcuts can jump straight to a console pane (Controls or Agent).
   function openTab(next: DeviceTab, pane?: ConsolePane) {
@@ -86,25 +102,34 @@ export function DeviceWorkspace({
           className="grid place-items-center rounded-lg border text-primary"
           style={{ width: 30, height: 30, background: "var(--brand-weak)", borderColor: "color-mix(in srgb, var(--primary) 30%, transparent)" }}
         >
-          <Smartphone className="size-4" />
+          <PlatformIcon className="size-4" />
         </span>
         <h1 className="text-[18px] font-semibold tracking-tight">{instance.name}</h1>
-        <span className="font-mono text-[12px] text-muted-foreground/70">{instance.deviceId || instance.id}</span>
+        <span className="font-mono text-[12px] text-muted-foreground/70">
+          {isDesktop ? instance.platform : instance.deviceId || instance.id}
+        </span>
         <span className="mx-1 w-px" style={{ background: "var(--border)", height: 22 }} />
-        <div className="flex gap-0.5">
-          <HeaderBtn title="Start" disabled={running || busy || !canOperate} hover="running" onClick={() => onStart(instance.id)}>
-            <Play className="size-4" fill="currentColor" stroke="none" />
-          </HeaderBtn>
-          <HeaderBtn title="Stop" disabled={stopped || busy || !canOperate} hover="destructive" onClick={() => onStop(instance.id)}>
-            <Square className="size-4" fill="currentColor" stroke="none" />
-          </HeaderBtn>
-          <HeaderBtn title="Console" disabled={!running} onClick={() => window.open(instance.consoleUrl, "_blank")}>
-            <MonitorPlay className="size-4" />
-          </HeaderBtn>
-          <HeaderBtn title="Snapshot (coming soon)" disabled>
-            <Camera className="size-4" />
-          </HeaderBtn>
-        </div>
+        {isDesktop ? (
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium" style={{ color: instance.state === "online" ? "var(--running)" : "var(--stopped)" }}>
+            <span className="size-2 rounded-full" style={{ background: instance.state === "online" ? "var(--running)" : "var(--stopped)" }} />
+            {instance.state === "online" ? "Online" : "Offline"}
+          </span>
+        ) : (
+          <div className="flex gap-0.5">
+            <HeaderBtn title="Start" disabled={running || busy || !canOperate} hover="running" onClick={() => onStart(instance.id)}>
+              <Play className="size-4" fill="currentColor" stroke="none" />
+            </HeaderBtn>
+            <HeaderBtn title="Stop" disabled={stopped || busy || !canOperate} hover="destructive" onClick={() => onStop(instance.id)}>
+              <Square className="size-4" fill="currentColor" stroke="none" />
+            </HeaderBtn>
+            <HeaderBtn title="Console" disabled={!running} onClick={() => window.open(instance.consoleUrl, "_blank")}>
+              <MonitorPlay className="size-4" />
+            </HeaderBtn>
+            <HeaderBtn title="Snapshot (coming soon)" disabled>
+              <Camera className="size-4" />
+            </HeaderBtn>
+          </div>
+        )}
         <button
           onClick={() => setTab("configure")}
           className="ml-auto flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px] font-medium text-primary hover:bg-accent"
@@ -134,9 +159,12 @@ export function DeviceWorkspace({
       <div className="flex-1 overflow-auto p-5">
         <FadeIn id={tab}>
           {tab === "summary" && <SummaryTab instance={instance} latestRun={latestRun} onOpenTab={openTab} />}
-          {tab === "console" && (
-            <ConsoleWorkspace instance={instance} canControl={canControl} pane={consolePane} onPane={setConsolePane} />
-          )}
+          {tab === "console" &&
+            (isDesktop ? (
+              <DesktopConsole instance={instance} canControl={canControl} pane={consolePane} onPane={setConsolePane} />
+            ) : (
+              <ConsoleWorkspace instance={instance} canControl={canControl} pane={consolePane} onPane={setConsolePane} />
+            ))}
           {tab === "logs" && <LogsTab instance={instance} />}
           {tab === "tests" && <TestsPanel instance={instance} instances={instances} scoped />}
           {tab === "configure" && (
