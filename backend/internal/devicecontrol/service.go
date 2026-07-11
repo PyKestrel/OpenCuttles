@@ -69,27 +69,69 @@ func NewService(store InstanceStore, runner CommandRunner, logger *slog.Logger) 
 	}
 }
 
-// resolve loads the instance and validates it is controllable.
+// resolve loads the instance and validates it is controllable. Android requires
+// a running Cuttlefish VM with an ADB port and real execution enabled; a desktop
+// target requires a registered control endpoint and an online/running state (the
+// OPENCUTTLES_EXECUTE_CVD gate is Cuttlefish-only and does not apply to it).
 func (s *Service) resolve(ctx context.Context, id string) (domain.Instance, error) {
 	instance, err := s.store.GetInstance(ctx, id)
 	if err != nil {
 		return domain.Instance{}, err
 	}
-	if !s.execute {
-		return domain.Instance{}, ErrExecutionDisabled
+	if isAndroid(instance.Platform) {
+		if !s.execute {
+			return domain.Instance{}, ErrExecutionDisabled
+		}
+		if instance.State != domain.StateRunning {
+			return domain.Instance{}, ErrNotRunning
+		}
+		if instance.ADBPort == 0 {
+			return domain.Instance{}, fmt.Errorf("instance %s has no ADB port", id)
+		}
+		return instance, nil
 	}
-	if instance.State != domain.StateRunning {
+	// Desktop target.
+	if instance.ControlEndpoint == "" {
+		return domain.Instance{}, fmt.Errorf("device %s has no control endpoint", id)
+	}
+	if instance.State != domain.StateOnline && instance.State != domain.StateRunning {
 		return domain.Instance{}, ErrNotRunning
-	}
-	if instance.ADBPort == 0 {
-		return domain.Instance{}, fmt.Errorf("instance %s has no ADB port", id)
 	}
 	return instance, nil
 }
 
+// driverFor returns the control driver for an instance's platform. The desktop
+// (MCP-client) driver is wired in Phase 2; until then non-Android platforms
+// report ErrUnsupported.
+func (s *Service) driverFor(inst domain.Instance) (Driver, error) {
+	if isAndroid(inst.Platform) {
+		return adbDriver{svc: s, inst: inst}, nil
+	}
+	return nil, fmt.Errorf("%w: no control driver for platform %q", ErrUnsupported, inst.Platform)
+}
+
+// Capabilities reports which optional operations a device supports.
+func (s *Service) Capabilities(ctx context.Context, id string) (Capabilities, error) {
+	inst, err := s.store.GetInstance(ctx, id)
+	if err != nil {
+		return Capabilities{}, err
+	}
+	drv, err := s.driverFor(inst)
+	if err != nil {
+		return Capabilities{}, err
+	}
+	return drv.Capabilities(), nil
+}
+
+
 // adb runs an adb command scoped to the instance's transport and returns raw
-// stdout. args should not include the leading "-s <target>".
+// stdout. args should not include the leading "-s <target>". ADB is Android-only;
+// desktop targets that reach an ADB-only operation are rejected here so they get
+// a clear message instead of a malformed transport.
 func (s *Service) adb(ctx context.Context, instance domain.Instance, args ...string) ([]byte, error) {
+	if !isAndroid(instance.Platform) {
+		return nil, fmt.Errorf("%w: ADB operations are Android-only", ErrUnsupported)
+	}
 	target := fmt.Sprintf("127.0.0.1:%d", instance.ADBPort)
 	full := append([]string{"-s", target}, args...)
 	out, err := s.runner.Run(ctx, nil, "adb", full...)
@@ -111,7 +153,11 @@ func (s *Service) Screenshot(ctx context.Context, id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.adb(ctx, instance, "exec-out", "screencap", "-p")
+	drv, err := s.driverFor(instance)
+	if err != nil {
+		return nil, err
+	}
+	return drv.Screenshot(ctx)
 }
 
 // Tap injects a single tap at the given screen coordinates (pixels).
@@ -120,24 +166,26 @@ func (s *Service) Tap(ctx context.Context, id string, x, y int) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.adbShell(ctx, instance, "input", "tap", strconv.Itoa(x), strconv.Itoa(y))
-	return err
+	drv, err := s.driverFor(instance)
+	if err != nil {
+		return err
+	}
+	return drv.Tap(ctx, x, y)
 }
 
 // Swipe drags from (x1,y1) to (x2,y2) over durationMs milliseconds. A duration
-// of 0 lets Android pick its default. A swipe to the same point with a long
+// of 0 lets the platform pick its default. A swipe to the same point with a long
 // duration acts as a long press.
 func (s *Service) Swipe(ctx context.Context, id string, x1, y1, x2, y2, durationMs int) error {
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
 	}
-	args := []string{"input", "swipe", strconv.Itoa(x1), strconv.Itoa(y1), strconv.Itoa(x2), strconv.Itoa(y2)}
-	if durationMs > 0 {
-		args = append(args, strconv.Itoa(durationMs))
+	drv, err := s.driverFor(instance)
+	if err != nil {
+		return err
 	}
-	_, err = s.adbShell(ctx, instance, args...)
-	return err
+	return drv.Swipe(ctx, x1, y1, x2, y2, durationMs)
 }
 
 // LongPress presses and holds at (x,y) for durationMs (default 800ms).
@@ -148,27 +196,32 @@ func (s *Service) LongPress(ctx context.Context, id string, x, y, durationMs int
 	return s.Swipe(ctx, id, x, y, x, y, durationMs)
 }
 
-// Text types a UTF-8 string. Spaces are encoded as %s, which `input text`
-// interprets as a literal space.
+// Text types a UTF-8 string.
 func (s *Service) Text(ctx context.Context, id, text string) error {
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
 	}
-	_, err = s.adbShell(ctx, instance, "input", "text", escapeInputText(text))
-	return err
+	drv, err := s.driverFor(instance)
+	if err != nil {
+		return err
+	}
+	return drv.Text(ctx, text)
 }
 
-// Key sends a key event. keycode may be a numeric code or an Android key name
-// such as HOME, BACK, ENTER, APP_SWITCH (recents), VOLUME_UP, POWER. The KEYCODE_
-// prefix is optional.
+// Key sends a key event. keycode may be a numeric code or a key name such as
+// HOME, BACK, ENTER, APP_SWITCH (recents), VOLUME_UP, POWER (Android); desktop
+// drivers map common names to their own key syntax.
 func (s *Service) Key(ctx context.Context, id, keycode string) error {
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
 	}
-	_, err = s.adbShell(ctx, instance, "input", "keyevent", normalizeKeycode(keycode))
-	return err
+	drv, err := s.driverFor(instance)
+	if err != nil {
+		return err
+	}
+	return drv.Key(ctx, keycode)
 }
 
 // UITree returns the current screen's accessibility hierarchy as a compact tree

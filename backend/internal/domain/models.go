@@ -11,8 +11,22 @@ const (
 	StateStopped      = "stopped"
 	StateError        = "error"
 	StateDeleting     = "deleting"
+	// Desktop targets (Windows/Linux/macOS) use a simpler reachability lifecycle
+	// than provisioned Cuttlefish VMs.
+	StateOnline  = "online"
+	StateOffline = "offline"
+
+	// Platform identifies what a device is and which control driver runs it.
+	// Empty is treated as android for pre-multi-OS rows.
+	PlatformAndroid = "android"
+	PlatformWindows = "windows"
+	PlatformLinux   = "linux"
+	PlatformMacOS   = "macos"
 
 	ConsoleProviderCuttlefishWebRTC = "cuttlefish-webrtc"
+	// ConsoleProviderScreenshot streams periodic screenshots for desktop targets
+	// that have no WebRTC console.
+	ConsoleProviderScreenshot = "screenshot"
 
 	ImageStatusPending  = "pending"
 	ImageStatusFetching = "fetching"
@@ -77,6 +91,11 @@ type Instance struct {
 	ID              string    `json:"id"`
 	Name            string    `json:"name"`
 	HostID          string    `json:"hostId"`
+	// Platform is android (default) or a desktop OS (windows/linux/macos).
+	Platform        string    `json:"platform"`
+	// ControlEndpoint is the desktop target's computer-use MCP server URL; empty
+	// for Android (which is controlled over ADB).
+	ControlEndpoint string    `json:"controlEndpoint,omitempty"`
 	ImageID         string    `json:"imageId"`
 	AndroidVersion  string    `json:"androidVersion,omitempty"`
 	State           string    `json:"state"`

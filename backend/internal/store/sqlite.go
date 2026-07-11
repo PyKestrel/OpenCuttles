@@ -200,6 +200,11 @@ func (s *SQLite) migrate(ctx context.Context) error {
 		{"instances", "display_height", `ALTER TABLE instances ADD COLUMN display_height INTEGER NOT NULL DEFAULT 0`},
 		{"instances", "dpi", `ALTER TABLE instances ADD COLUMN dpi INTEGER NOT NULL DEFAULT 0`},
 		{"instances", "device_id", `ALTER TABLE instances ADD COLUMN device_id TEXT NOT NULL DEFAULT ''`},
+		// v3: multi-OS targets. Existing rows default to android; desktop targets
+		// carry a computer-use MCP endpoint and an encrypted bearer token.
+		{"instances", "platform", `ALTER TABLE instances ADD COLUMN platform TEXT NOT NULL DEFAULT 'android'`},
+		{"instances", "control_endpoint", `ALTER TABLE instances ADD COLUMN control_endpoint TEXT NOT NULL DEFAULT ''`},
+		{"instances", "control_token_ciphertext", `ALTER TABLE instances ADD COLUMN control_token_ciphertext TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, column := range additive {
 		if err := s.ensureColumn(ctx, column.table, column.column, column.ddl); err != nil {
@@ -212,6 +217,10 @@ func (s *SQLite) migrate(ctx context.Context) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (2, ?)`, formatTime(time.Now().UTC()))
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, ?)`, formatTime(time.Now().UTC()))
 	if err != nil {
 		return err
 	}
@@ -426,6 +435,7 @@ func (s *SQLite) CreateInstance(ctx context.Context, req domain.CreateInstanceRe
 		ID:              instanceID,
 		Name:            req.Name,
 		HostID:          "local",
+		Platform:        domain.PlatformAndroid,
 		ImageID:         imageID,
 		AndroidVersion:  req.AndroidVersion,
 		State:           domain.StateStopped,
@@ -505,7 +515,7 @@ func ValidateImagePath(path string, requireExisting bool) error {
 	return nil
 }
 
-const instanceColumns = `id, name, host_id, image_id, android_version, state, cpu_cores, memory_mb, display_width, display_height, dpi, adb_port, webrtc_port, device_id, console_provider, console_url, last_error, created_at, updated_at`
+const instanceColumns = `id, name, host_id, image_id, android_version, state, cpu_cores, memory_mb, display_width, display_height, dpi, adb_port, webrtc_port, device_id, console_provider, console_url, last_error, created_at, updated_at, platform, control_endpoint`
 
 func (s *SQLite) ListInstances(ctx context.Context) ([]domain.Instance, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+instanceColumns+` FROM instances ORDER BY created_at DESC`)
@@ -675,11 +685,15 @@ func scanInstance(row scanner) (domain.Instance, error) {
 		&instance.CPUCores, &instance.MemoryMB, &instance.DisplayWidth, &instance.DisplayHeight, &instance.DPI,
 		&instance.ADBPort, &instance.WebRTCPort, &instance.DeviceID,
 		&instance.ConsoleProvider, &instance.ConsoleURL, &instance.LastError, &createdAt, &updatedAt,
+		&instance.Platform, &instance.ControlEndpoint,
 	); err != nil {
 		return domain.Instance{}, err
 	}
 	instance.CreatedAt = parseTime(createdAt)
 	instance.UpdatedAt = parseTime(updatedAt)
+	if instance.Platform == "" {
+		instance.Platform = domain.PlatformAndroid
+	}
 	return instance, nil
 }
 
