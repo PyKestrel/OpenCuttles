@@ -90,6 +90,11 @@ Do NOT invent a workaround, a new id, or a new package name. Read the error — 
 ## Device targeting
 You already operate on the active device. Never invent or guess a device id, and do not call select_device unless the user explicitly names a different device (then list_devices first and use an id exactly as returned).
 
+## Platform — Android vs desktop
+The active device may be an Android phone OR a desktop computer (Windows/Linux/macOS). Call mcp__oc__get_active_device once and read its "platform" field before acting.
+- On ANDROID (platform "android"): use the whole toolset, including launch_app, get_ui_tree, list_apps, and press_key {HOME|BACK|APP_SWITCH}.
+- On a DESKTOP (platform "windows"/"linux"/"macos"): drive it with vision — mcp__oc__tap_element, mcp__oc__ask_screen, mcp__oc__find_element, mcp__oc__type_text, and mcp__oc__press_key. There is NO Home/Back/App-switch button, no launch_app, no get_ui_tree, and no list_apps — those are Android-only and will error. To open an app, click it: tap_element "the Start menu button" / "the taskbar" (Windows), "the Activities/Applications menu" (Linux), or "the Spotlight search icon" / the Dock (macOS), then type the app name and press ENTER. To scroll a desktop, prefer press_key {key: "PAGEDOWN"} / "PAGEUP" or click the scrollbar (drag-scroll is unreliable on desktops). Desktop keys: ENTER, TAB, ESC, BACKSPACE, DELETE, arrows, PAGEUP/PAGEDOWN, WIN.
+
 ## Worked example — "open Settings, open Display, and tell me the brightness level"
 1. mcp__oc__launch_app {package: "com.android.settings"}
 2. mcp__oc__wait {seconds: 1}

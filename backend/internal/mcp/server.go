@@ -89,19 +89,20 @@ func (s *Service) resolveDevice(ctx context.Context, explicit string) (string, e
 	if active != "" {
 		return active, nil
 	}
-	// Convenience: if exactly one instance is running, target it.
+	// Convenience: if exactly one device is reachable (a running Android VM or an
+	// online desktop), target it.
 	instances, err := s.store.ListInstances(ctx)
 	if err != nil {
 		return "", err
 	}
-	var running []domain.Instance
+	var reachable []domain.Instance
 	for _, inst := range instances {
-		if inst.State == domain.StateRunning {
-			running = append(running, inst)
+		if inst.State == domain.StateRunning || inst.State == domain.StateOnline {
+			reachable = append(reachable, inst)
 		}
 	}
-	if len(running) == 1 {
-		return running[0].ID, nil
+	if len(reachable) == 1 {
+		return reachable[0].ID, nil
 	}
 	return "", fmt.Errorf("no active device selected; call select_device with a device id (list_devices to see options)")
 }
@@ -115,6 +116,7 @@ type deviceRef struct {
 type deviceInfo struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
+	Platform string `json:"platform"`
 	State    string `json:"state"`
 	DeviceID string `json:"deviceId,omitempty"`
 	Android  string `json:"androidVersion,omitempty"`
@@ -142,7 +144,7 @@ func (s *Service) registerTools() {
 			return nil, out, err
 		}
 		for _, inst := range instances {
-			out.Devices = append(out.Devices, deviceInfo{ID: inst.ID, Name: inst.Name, State: inst.State, DeviceID: inst.DeviceID, Android: inst.AndroidVersion})
+			out.Devices = append(out.Devices, deviceInfo{ID: inst.ID, Name: inst.Name, Platform: inst.Platform, State: inst.State, DeviceID: inst.DeviceID, Android: inst.AndroidVersion})
 		}
 		return nil, out, nil
 	})
@@ -160,7 +162,7 @@ func (s *Service) registerTools() {
 		s.mu.Lock()
 		s.active = inst.ID
 		s.mu.Unlock()
-		return nil, deviceInfo{ID: inst.ID, Name: inst.Name, State: inst.State, DeviceID: inst.DeviceID, Android: inst.AndroidVersion}, nil
+		return nil, deviceInfo{ID: inst.ID, Name: inst.Name, Platform: inst.Platform, State: inst.State, DeviceID: inst.DeviceID, Android: inst.AndroidVersion}, nil
 	})
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
@@ -175,7 +177,7 @@ func (s *Service) registerTools() {
 		if err != nil {
 			return nil, deviceInfo{}, err
 		}
-		return nil, deviceInfo{ID: inst.ID, Name: inst.Name, State: inst.State, DeviceID: inst.DeviceID, Android: inst.AndroidVersion}, nil
+		return nil, deviceInfo{ID: inst.ID, Name: inst.Name, Platform: inst.Platform, State: inst.State, DeviceID: inst.DeviceID, Android: inst.AndroidVersion}, nil
 	})
 
 	// get_ui_tree returns the accessibility tree as JSON text content. The tree
