@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
@@ -30,6 +31,7 @@ import (
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	mcpserver "github.com/opencuttles/opencuttles/backend/internal/mcp"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
+	"github.com/opencuttles/opencuttles/backend/internal/runnerhub"
 	"github.com/opencuttles/opencuttles/backend/internal/scenario"
 	"github.com/opencuttles/opencuttles/backend/internal/secretbox"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
@@ -54,6 +56,7 @@ type Server struct {
 	agentTarget   string
 	tests         *scenario.Runner
 	secrets       *secretbox.Box
+	runners       *runnerhub.Hub
 }
 
 // operatorPortFromEnv resolves the host-wide cuttlefish-operator HTTPS port.
@@ -87,6 +90,21 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	visionClient := vision.NewFromEnv()
 	server.mcpHandler = mcpserver.New(devices, store, visionClient, logger).Handler()
 	server.tests = scenario.New(store, devices, visionClient, logger)
+	// Desktop runner tunnel: authenticate runners by enrollment token, flip the
+	// device online/offline as they connect/drop, and let devicecontrol drive
+	// them over the tunnel.
+	server.runners = runnerhub.New()
+	server.runners.TokenAuth = server.authenticateRunner
+	server.runners.OnOnline = func(deviceID string, online bool) {
+		state := domain.StateOffline
+		if online {
+			state = domain.StateOnline
+		}
+		if _, err := store.UpdateInstanceState(context.Background(), deviceID, state, ""); err != nil && logger != nil {
+			logger.Warn("runner state update failed", "device", deviceID, "online", online, "error", err)
+		}
+	}
+	devices.SetRunners(server.runners)
 	server.mcpToken = os.Getenv("OPENCUTTLES_MCP_TOKEN")
 	// Optional at-rest encryption for stored secrets (agent provider API keys).
 	// Absent key → secret storage stays disabled; keyless providers still work.
@@ -131,6 +149,11 @@ func (s *Server) routes() {
 	// permission. The streamable handler owns method routing under this path.
 	s.mux.Handle("/api/v1/mcp", s.mcpAuth(s.mcpHandler))
 	s.mux.Handle("/api/v1/mcp/", s.mcpAuth(s.mcpHandler))
+	// Desktop runner dial-home tunnel. Authenticated by the per-device enrollment
+	// token inside the hub (not a browser session): the runner opens the SSE
+	// stream and POSTs command results back.
+	s.mux.HandleFunc("GET /api/v1/runner/stream", s.runners.StreamHandler)
+	s.mux.HandleFunc("POST /api/v1/runner/result", s.runners.ResultHandler)
 	// Flue agent sidecar: reverse-proxy its HTTP endpoints (POST invoke + GET
 	// event stream at /agents/<name>/<id>) so the SPA reaches it same-origin.
 	// Guarded by the control permission; SSE streaming is flushed immediately.
@@ -405,6 +428,12 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, badRequest("instance name is required"))
 		return
 	}
+	// Desktop targets are onboarded (not provisioned): register the device and
+	// return a one-time enrollment token instead of deploying a Cuttlefish VM.
+	if isDesktopPlatform(req.Platform) {
+		s.onboardDesktop(w, r, req)
+		return
+	}
 	// Resolve a chosen Android version into a backing image (fetched on deploy).
 	if strings.TrimSpace(req.ImageID) == "" && strings.TrimSpace(req.AndroidVersion) != "" {
 		version, ok := catalog.Lookup(req.AndroidVersion)
@@ -434,6 +463,72 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, instance)
 }
 
+// onboardDesktop registers a desktop target and returns the enrollment token
+// exactly once. The runner presents this token to open the dial-home tunnel.
+func (s *Server) onboardDesktop(w http.ResponseWriter, r *http.Request, req domain.CreateInstanceRequest) {
+	token, err := newRunnerToken()
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	sum := sha256.Sum256([]byte(token))
+	instance, err := s.store.CreateDesktopInstance(r.Context(), req.Name, req.Platform, hex.EncodeToString(sum[:]))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	principal, _ := principalFromContext(r.Context())
+	s.audit(r, principal, "onboard_device", "instance", instance.ID, "accepted", req.Platform)
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"instance":        instance,
+		"enrollmentToken": token,
+	})
+}
+
+func isDesktopPlatform(p string) bool {
+	switch p {
+	case domain.PlatformWindows, domain.PlatformLinux, domain.PlatformMacOS:
+		return true
+	default:
+		return false
+	}
+}
+
+func isDesktopInstance(inst domain.Instance) bool {
+	return isDesktopPlatform(inst.Platform)
+}
+
+// newRunnerToken returns a 32-byte random enrollment token as hex.
+func newRunnerToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// authenticateRunner resolves a runner request's bearer/X-Runner-Token to its
+// device id by matching the token hash. Wired into the runner hub.
+func (s *Server) authenticateRunner(r *http.Request) (string, bool) {
+	tok := runnerTokenFromRequest(r)
+	if tok == "" {
+		return "", false
+	}
+	sum := sha256.Sum256([]byte(tok))
+	inst, err := s.store.FindDesktopByTokenHash(r.Context(), hex.EncodeToString(sum[:]))
+	if err != nil {
+		return "", false
+	}
+	return inst.ID, true
+}
+
+func runnerTokenFromRequest(r *http.Request) string {
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+	}
+	return strings.TrimSpace(r.Header.Get("X-Runner-Token"))
+}
+
 func (s *Server) instanceRoute(w http.ResponseWriter, r *http.Request) {
 	id, action := splitInstancePath(r.URL.Path)
 	if id == "" {
@@ -457,6 +552,11 @@ func (s *Server) instanceRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		s.consoleProxy(w, r, id)
 	case r.Method == http.MethodPost && action == "start":
+		// Desktops come online via their runner dialing home, not a start command.
+		if inst, err := s.store.GetInstance(r.Context(), id); err == nil && isDesktopInstance(inst) {
+			writeJSON(w, http.StatusAccepted, map[string]any{"instance": inst})
+			return
+		}
 		instance, operation, err := s.orch.StartInstance(r.Context(), id)
 		if err != nil {
 			writeError(w, err)
@@ -466,6 +566,10 @@ func (s *Server) instanceRoute(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, principal, "start_instance", "instance", id, "accepted", operation.ID)
 		writeJSON(w, http.StatusAccepted, map[string]any{"instance": instance, "operation": operation})
 	case r.Method == http.MethodPost && action == "stop":
+		if inst, err := s.store.GetInstance(r.Context(), id); err == nil && isDesktopInstance(inst) {
+			writeJSON(w, http.StatusAccepted, map[string]any{"instance": inst})
+			return
+		}
 		instance, operation, err := s.orch.StopInstance(r.Context(), id)
 		if err != nil {
 			writeError(w, err)
@@ -475,6 +579,17 @@ func (s *Server) instanceRoute(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, principal, "stop_instance", "instance", id, "accepted", operation.ID)
 		writeJSON(w, http.StatusAccepted, map[string]any{"instance": instance, "operation": operation})
 	case r.Method == http.MethodDelete && action == "":
+		// Desktops aren't provisioned, so delete just removes the registration.
+		if inst, err := s.store.GetInstance(r.Context(), id); err == nil && isDesktopInstance(inst) {
+			if err := s.store.DeleteInstance(r.Context(), id); err != nil {
+				writeError(w, err)
+				return
+			}
+			principal, _ := principalFromContext(r.Context())
+			s.audit(r, principal, "delete_device", "instance", id, "succeeded", inst.Platform)
+			writeJSON(w, http.StatusAccepted, map[string]any{"status": "deleted"})
+			return
+		}
 		operation, err := s.orch.DeleteInstance(r.Context(), id)
 		if err != nil {
 			writeError(w, err)

@@ -282,6 +282,10 @@ type CreateTestRequest struct {
 
 type CreateInstanceRequest struct {
 	Name           string `json:"name"`
+	// Platform selects the device kind. Empty/"android" deploys a Cuttlefish VM;
+	// windows/linux/macos onboard a desktop target reached over the dial-home
+	// runner tunnel.
+	Platform       string `json:"platform,omitempty"`
 	ImageID        string `json:"imageId,omitempty"`
 	AndroidVersion string `json:"androidVersion,omitempty"`
 	CPUCores       int    `json:"cpuCores"`

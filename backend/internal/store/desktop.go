@@ -1,0 +1,61 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"time"
+
+	"github.com/opencuttles/opencuttles/backend/internal/domain"
+)
+
+// CreateDesktopInstance registers a desktop target (Windows/Linux/macOS). Unlike
+// Android instances these are not provisioned by the orchestrator: they start
+// offline and come online when their runner dials home. tokenHash is the SHA-256
+// of the enrollment token the runner presents (the plaintext is shown once and
+// never stored). A placeholder image id satisfies the instances.image_id FK.
+func (s *SQLite) CreateDesktopInstance(ctx context.Context, name, platform, tokenHash string) (domain.Instance, error) {
+	img, err := s.GetOrCreateDefaultImage(ctx)
+	if err != nil {
+		return domain.Instance{}, err
+	}
+	now := time.Now().UTC()
+	inst := domain.Instance{
+		ID:              newID("dev"),
+		Name:            name,
+		HostID:          "local",
+		Platform:        platform,
+		ControlEndpoint: "tunnel", // dial-home; the runner connects to us
+		ImageID:         img.ID,
+		State:           domain.StateOffline,
+		ConsoleProvider: domain.ConsoleProviderScreenshot,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO instances (
+		id, name, host_id, image_id, android_version, state, cpu_cores, memory_mb,
+		display_width, display_height, dpi, adb_port, webrtc_port, device_id,
+		console_provider, console_url, last_error, created_at, updated_at,
+		platform, control_endpoint, control_token_ciphertext
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		inst.ID, inst.Name, inst.HostID, inst.ImageID, "", inst.State,
+		0, 0, 0, 0, 0, 0, 0, "",
+		inst.ConsoleProvider, "", "",
+		formatTime(now), formatTime(now),
+		inst.Platform, inst.ControlEndpoint, tokenHash)
+	if err != nil {
+		return domain.Instance{}, err
+	}
+	return inst, nil
+}
+
+// FindDesktopByTokenHash resolves a runner's presented enrollment token (hashed)
+// to its device. Used to authenticate the dial-home tunnel.
+func (s *SQLite) FindDesktopByTokenHash(ctx context.Context, tokenHash string) (domain.Instance, error) {
+	if tokenHash == "" {
+		return domain.Instance{}, sql.ErrNoRows
+	}
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+instanceColumns+` FROM instances
+		 WHERE control_token_ciphertext = ? AND platform NOT IN ('', 'android') LIMIT 1`, tokenHash)
+	return scanInstance(row)
+}
