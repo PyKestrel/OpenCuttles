@@ -46,12 +46,20 @@ type CommandRunner interface {
 	Run(ctx context.Context, stdin []byte, name string, args ...string) ([]byte, error)
 }
 
-// Service performs ADB-backed operations against instances.
+// Service performs control operations against instances, dispatching to an ADB
+// driver (Android) or a tunnel-backed MCP driver (desktop targets).
 type Service struct {
 	store   InstanceStore
 	runner  CommandRunner
+	runners RunnerCaller // desktop tunnel; nil until wired by the API server
 	logger  *slog.Logger
 	execute bool
+}
+
+// SetRunners injects the desktop runner tunnel (the runnerhub). Called after
+// construction so NewService's signature stays stable for existing callers/tests.
+func (s *Service) SetRunners(r RunnerCaller) {
+	s.runners = r
 }
 
 // NewService builds a device control service. When runner is nil the default
@@ -100,14 +108,20 @@ func (s *Service) resolve(ctx context.Context, id string) (domain.Instance, erro
 	return instance, nil
 }
 
-// driverFor returns the control driver for an instance's platform. The desktop
-// (MCP-client) driver is wired in Phase 2; until then non-Android platforms
-// report ErrUnsupported.
+// driverFor returns the control driver for an instance's platform: ADB for
+// Android, or the tunnel-backed MCP driver for a desktop target whose runner is
+// connected.
 func (s *Service) driverFor(inst domain.Instance) (Driver, error) {
 	if isAndroid(inst.Platform) {
 		return adbDriver{svc: s, inst: inst}, nil
 	}
-	return nil, fmt.Errorf("%w: no control driver for platform %q", ErrUnsupported, inst.Platform)
+	if s.runners == nil {
+		return nil, fmt.Errorf("%w: desktop control tunnel is not configured", ErrUnsupported)
+	}
+	if !s.runners.Online(inst.ID) {
+		return nil, fmt.Errorf("device %s is offline (no runner connected)", inst.ID)
+	}
+	return mcpDriver{runners: s.runners, inst: inst}, nil
 }
 
 // Capabilities reports which optional operations a device supports.
