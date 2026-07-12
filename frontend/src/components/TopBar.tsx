@@ -33,7 +33,7 @@ export function TopBar({
 
       <div className="flex items-center gap-2.5 font-semibold">
         <BrandMark className="size-6" />
-        <span className="text-[15px]">OpenCuttles</span>
+        <span className="text-[15px]">Testral</span>
       </div>
 
       <button

@@ -1,13 +1,18 @@
-# OpenCuttles
+# Testral
 
-OpenCuttles is a single-host Android virtualization control plane for Ubuntu
-Server. It manages local Google Cuttlefish instances and exposes them through a
-central web dashboard with the operational feel of Google Cloud Console and
-VMware vCenter.
+Testral is a control plane for **agentic UI testing across operating systems**.
+A local cognitive-core agent, grounded by a lightweight vision model, drives real
+devices in natural language and runs replayable, self-healing UI tests — on
+**Android** (Google Cuttlefish VMs on the host) and on **Windows / Linux / macOS**
+desktops (onboarded via a dial-home runner). One dashboard, with the operational
+feel of Google Cloud Console and VMware vCenter.
 
-The MVP intentionally targets one Ubuntu Server VM. Cuttlefish runs directly on
-the host with KVM, while OpenCuttles provides the API, inventory, lifecycle
-tracking, health checks, deployment templates, and dashboard.
+Android devices are provisioned and controlled over ADB; desktop targets run a
+small runner that connects outbound to the appliance (no inbound ports) and
+exposes screenshot + input so the same vision grounding and test runner work
+everywhere. Testral runs on a single Ubuntu Server host with KVM and provides the
+API, inventory, lifecycle tracking, health checks, deployment templates, and
+dashboard.
 
 ## MVP Scope
 
@@ -128,7 +133,7 @@ The frontend dev server proxies API calls to `http://localhost:8080`.
 
 ## Deployment Sketch
 
-OpenCuttles builds into a single Go binary with the dashboard embedded, so
+Testral builds into a single Go binary with the dashboard embedded, so
 deployment is one artifact. `make package` builds the frontend, embeds it into
 the binary, and stages the release.
 

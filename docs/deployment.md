@@ -78,7 +78,7 @@ bash scripts/ubuntu/check-host.sh
 
 ## 2. Build artifacts
 
-OpenCuttles ships as a single binary with the dashboard embedded. `make package`
+Testral ships as a single binary with the dashboard embedded. `make package`
 builds the frontend, stages it into the embed directory, builds the binary, and
 assembles the release under `dist/package`:
 
@@ -157,8 +157,8 @@ Open the Caddy hostname in a browser, bootstrap the first local admin user using
 The device console is Cuttlefish's built-in WebRTC stream served by the host-wide
 `cuttlefish-operator`. Current Cuttlefish serves this on HTTPS `:1443` (older
 builds used `:8443`); set `OPENCUTTLES_OPERATOR_PORT` if your build differs.
-OpenCuttles reverse-proxies it per instance at
-`/api/v1/instances/<id>/console/...` (reusing OpenCuttles auth and TLS), so the
+Testral reverse-proxies it per instance at
+`/api/v1/instances/<id>/console/...` (reusing Testral auth and TLS), so the
 operator port itself stays host-local. Browsers connect to the media stream
 directly over `TCP/UDP 15550-15599`, which `scripts/ubuntu/firewall.sh` opens.
 

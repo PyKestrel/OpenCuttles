@@ -1,6 +1,6 @@
 # MVP Acceptance Checklist
 
-Use this checklist on a prepared Ubuntu Server VM before treating an OpenCuttles
+Use this checklist on a prepared Ubuntu Server VM before treating a Testral
 build as merge-ready.
 
 ## Host Readiness
@@ -9,7 +9,7 @@ build as merge-ready.
 - `/dev/kvm` exists and is readable/writable by the service user.
 - `cvd` and `adb` are available on `PATH`; legacy `launch_cvd` / `stop_cvd` are optional fallbacks.
 - The host has enough free memory and disk for at least one Cuttlefish instance.
-- The OpenCuttles API service starts under systemd.
+- The Testral API service starts under systemd.
 
 ## Backend
 

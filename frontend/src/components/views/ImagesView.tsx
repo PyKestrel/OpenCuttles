@@ -74,7 +74,7 @@ export function ImagesView({ principal }: { principal: Principal }) {
           <CardHeader icon={<PackagePlus className="size-[15px]" />} title="Register image" />
           <form className="space-y-3 p-4" onSubmit={submit}>
             <p className="text-[12px] leading-relaxed text-muted-foreground">
-              Register an image directory already present on the host. For most workflows just deploy a device — OpenCuttles fetches the image automatically.
+              Register an image directory already present on the host. For most workflows just deploy a device — Testral fetches the image automatically.
             </p>
             <label className="block">
               <span className="mb-1 block text-[12px] text-muted-foreground">Name</span>

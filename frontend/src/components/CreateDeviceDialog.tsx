@@ -149,7 +149,7 @@ export function CreateDeviceDialog({
             {mode === "android" ? (
               <form className="space-y-3.5" onSubmit={deployAndroid}>
                 <p className="text-[12px] leading-relaxed text-muted-foreground">
-                  OpenCuttles fetches the image with <code className="font-mono">cvd fetch</code> and launches a Cuttlefish VM — no manual image registration.
+                  Testral fetches the image with <code className="font-mono">cvd fetch</code> and launches a Cuttlefish VM — no manual image registration.
                 </p>
                 <Field label="Name">
                   <input value={name} onChange={(e) => setName(e.target.value)} placeholder="android-01" className={inputCls} />
@@ -202,7 +202,7 @@ export function CreateDeviceDialog({
             ) : (
               <form className="space-y-3.5" onSubmit={onboardDesktop}>
                 <p className="text-[12px] leading-relaxed text-muted-foreground">
-                  Onboard a real machine for UI testing. You'll get a one-time token to start the OpenCuttles runner on that machine — it dials home, so no inbound ports are needed.
+                  Onboard a real machine for UI testing. You'll get a one-time token to start the Testral runner on that machine — it dials home, so no inbound ports are needed.
                 </p>
                 <Field label="Name">
                   <input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-workstation" className={inputCls} />

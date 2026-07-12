@@ -94,7 +94,7 @@ export default function App() {
   }
 
   if (!authChecked) {
-    return <div className="grid min-h-screen place-items-center text-muted-foreground">Loading OpenCuttles…</div>;
+    return <div className="grid min-h-screen place-items-center text-muted-foreground">Loading Testral…</div>;
   }
   if (!principal || bootstrapRequired) {
     return (
@@ -208,7 +208,7 @@ function MainContent({
           <BrandMark className="mx-auto size-14" />
           <h2 className="mt-4 text-[17px] font-semibold tracking-tight">No devices yet</h2>
           <p className="mt-1 text-[13.5px] leading-relaxed text-muted-foreground">
-            Deploy a Cuttlefish Android device and OpenCuttles fetches the image automatically — no manual setup.
+            Deploy a Cuttlefish Android device and Testral fetches the image automatically — no manual setup.
           </p>
           <button onClick={onNewDevice} className="mt-5 rounded-lg px-4 py-2.5 text-[13px] font-medium text-primary-foreground" style={{ background: "var(--primary-strong)" }}>
             Deploy your first device

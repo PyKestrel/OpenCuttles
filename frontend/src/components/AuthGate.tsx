@@ -12,7 +12,7 @@ export function AuthGate({
   onAuthenticated: (p: Principal) => void;
 }) {
   const [username, setUsername] = useState("admin");
-  const [displayName, setDisplayName] = useState("OpenCuttles Admin");
+  const [displayName, setDisplayName] = useState("Testral Admin");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
@@ -49,7 +49,7 @@ export function AuthGate({
         <div className="mb-5 flex items-center gap-2.5">
           <BrandMark className="size-8" />
           <div>
-            <div className="font-semibold">OpenCuttles</div>
+            <div className="font-semibold">Testral</div>
             <div className="text-[12px] text-muted-foreground">{bootstrapRequired ? "Create the first admin" : "Sign in"}</div>
           </div>
         </div>

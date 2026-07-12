@@ -1,7 +1,7 @@
-# OpenCuttles Runner
+# Testral Runner
 
 A small agent you run **on a desktop machine** (Windows today; Linux/macOS on the
-same seam next) so an OpenCuttles appliance can drive it for agentic UI testing.
+same seam next) so a Testral appliance can drive it for agentic UI testing.
 
 - **Dial-home only** — it makes an *outbound* connection to the appliance and
   keeps it open. No inbound ports, firewall rules, or RDP/SSH exposure.
@@ -24,7 +24,7 @@ GOOS=windows GOARCH=amd64 go build -o opencuttles-runner.exe .
 
 ## Run
 
-1. Add the device in the OpenCuttles dashboard (or via the API) and copy the
+1. Add the device in the Testral dashboard (or via the API) and copy the
    **enrollment token** shown once.
 2. In an interactive session on the target:
 
@@ -46,7 +46,7 @@ reconnects automatically if the link drops.
 ## What it exposes
 
 The appliance drives the desktop through a small, server-agnostic vocabulary:
-`screenshot`, `click(x,y)`, `drag`, `type(text)`, `key(name)`. OpenCuttles'
+`screenshot`, `click(x,y)`, `drag`, `type(text)`, `key(name)`. Testral's
 Florence-2 vision grounding turns "tap the Start button" into a click at the right
 pixel — the same engine used for Android.
 

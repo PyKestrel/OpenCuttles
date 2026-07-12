@@ -36,7 +36,7 @@ describe("App", () => {
     );
 
     // The top bar brand appears once the session is established.
-    expect(await screen.findByText("OpenCuttles")).toBeInTheDocument();
+    expect(await screen.findByText("Testral")).toBeInTheDocument();
     expect(screen.getByText("host-01")).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
-# OpenCuttles Architecture
+# Testral Architecture
 
-OpenCuttles is a host-local control plane for Google Cuttlefish. The MVP treats
+Testral is a host-local control plane for Google Cuttlefish. The MVP treats
 the Ubuntu Server VM as the only managed host and models every Android device as
 a Cuttlefish instance owned by that host.
 
@@ -11,7 +11,7 @@ flowchart TD
   Browser["Web dashboard"] -->|"HTTPS"| Proxy["Caddy reverse proxy"]
   Browser -->|"WebRTC console"| Proxy
   Proxy --> Frontend["Static dashboard assets"]
-  Proxy --> Api["OpenCuttles API"]
+  Proxy --> Api["Testral API"]
   Api --> Store["SQLite state store"]
   Api --> Orchestrator["Cuttlefish orchestrator"]
   Orchestrator --> Commands["cvd, launch_cvd, stop_cvd, adb"]
@@ -87,7 +87,7 @@ instance model.
 
 ## Networking Guardrails
 
-- Public users should reach OpenCuttles only through HTTPS.
+- Public users should reach Testral only through HTTPS.
 - ADB should bind locally and should not be exposed by the reverse proxy.
 - WebSocket and WebRTC upgrade paths should be routed through the proxy.
 - Host firewall rules should allow only the dashboard/proxy surface by default.
