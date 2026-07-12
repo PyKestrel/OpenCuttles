@@ -85,7 +85,7 @@ One-command Ubuntu Server quickstart:
 bash scripts/ubuntu/quickstart.sh
 ```
 
-Set `OPENCUTTLES_HOSTNAME=opencuttles.example.com` before running quickstart to
+Set `OPENCUTTLES_HOSTNAME=testral.cloud` before running quickstart to
 control the Caddy hostname and allowed browser origin.
 Single-label hostnames and IP addresses, such as `opencuttles` or `192.168.1.50`,
 default to plain HTTP to avoid local TLS certificate errors. In HTTP mode the

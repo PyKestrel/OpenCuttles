@@ -8,7 +8,7 @@ Ubuntu Server VM with nested virtualization enabled.
 For a new Ubuntu Server host, run:
 
 ```bash
-OPENCUTTLES_HOSTNAME=opencuttles.example.com bash scripts/ubuntu/quickstart.sh
+OPENCUTTLES_HOSTNAME=testral.cloud bash scripts/ubuntu/quickstart.sh
 ```
 
 The script installs common host dependencies, installs Go 1.23 and Node.js 22
