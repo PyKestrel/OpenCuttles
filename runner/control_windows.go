@@ -17,6 +17,9 @@ var (
 	user32 = windows.NewLazySystemDLL("user32.dll")
 	gdi32  = windows.NewLazySystemDLL("gdi32.dll")
 
+	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
+	procSetProcessDPIAware            = user32.NewProc("SetProcessDPIAware")
+
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
 	procGetDC            = user32.NewProc("GetDC")
 	procReleaseDC        = user32.NewProc("ReleaseDC")
@@ -63,6 +66,23 @@ type bitmapInfoHeader struct {
 type bitmapInfo struct {
 	Header bitmapInfoHeader
 	Colors [1]uint32
+}
+
+// init makes the process DPI-aware BEFORE any capture or cursor call, so screen
+// metrics, GDI capture, and SetCursorPos all use the same physical-pixel space
+// regardless of the display's scaling (100/125/150/…%). This eliminates the
+// capture-vs-input coordinate mismatch entirely — no per-scale correction needed
+// — and captures at full native resolution (sharp, not upscaled). Prefers
+// Per-Monitor-V2 (Windows 10 1703+, handles multi-monitor mixed DPI), falling
+// back to system DPI-aware on older builds.
+func init() {
+	const perMonitorAwareV2 = ^uintptr(3) // (DPI_AWARENESS_CONTEXT)-4
+	if procSetProcessDpiAwarenessContext.Find() == nil {
+		if r, _, _ := procSetProcessDpiAwarenessContext.Call(perMonitorAwareV2); r != 0 {
+			return
+		}
+	}
+	procSetProcessDPIAware.Call()
 }
 
 type winScreen struct{}
