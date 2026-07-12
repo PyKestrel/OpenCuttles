@@ -82,10 +82,19 @@ function ScreenView({ instance }: { instance: Instance }) {
 
   function onClick(e: MouseEvent<HTMLImageElement>) {
     const img = imgRef.current;
-    if (!img || !img.naturalWidth) return;
+    if (!img || !img.naturalWidth || !img.naturalHeight) return;
     const rect = img.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * img.naturalWidth);
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * img.naturalHeight);
+    // object-contain letterboxes the image: it is scaled to fit and centered, so
+    // the rendered image is smaller than the element box. Map clicks against the
+    // actual image rect, not the element box, or they land offset.
+    const scale = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight);
+    const dispW = img.naturalWidth * scale;
+    const dispH = img.naturalHeight * scale;
+    const lx = e.clientX - rect.left - (rect.width - dispW) / 2;
+    const ly = e.clientY - rect.top - (rect.height - dispH) / 2;
+    if (lx < 0 || ly < 0 || lx > dispW || ly > dispH) return; // clicked the letterbox
+    const x = Math.round(lx / scale);
+    const y = Math.round(ly / scale);
     api.controlTap(instance.id, x, y).catch(() => undefined);
   }
 
