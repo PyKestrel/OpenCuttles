@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useFlueAgent, useFlueClient } from "@flue/react";
 import type { FlueConversationPart } from "@flue/react";
-import { Send, Sparkles, Square, Wrench } from "lucide-react";
+import { RotateCcw, Send, Sparkles, Square, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/api";
 import type { Instance } from "@/types";
@@ -34,7 +34,11 @@ function AgentPart({ part }: { part: FlueConversationPart }) {
 
 // Natural-language device driver: one Flue conversation thread per device.
 export function AgentTab({ instance }: { instance: Instance }) {
-  const conversationId = `oc-${instance.id}`;
+  // A conversation is pinned to its id and keeps the model it was created with;
+  // bumping the epoch starts a fresh thread that picks up the current model
+  // (and escapes a spiralled one). Reset to the base thread when the device changes.
+  const [epoch, setEpoch] = useState(0);
+  const conversationId = epoch === 0 ? `oc-${instance.id}` : `oc-${instance.id}-r${epoch}`;
   const agent = useFlueAgent({ name: AGENT_NAME, id: conversationId });
   const client = useFlueClient();
   const [input, setInput] = useState("");
@@ -67,6 +71,8 @@ export function AgentTab({ instance }: { instance: Instance }) {
     }
   }
 
+  useEffect(() => setEpoch(0), [instance.id]);
+
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [agent.messages]);
@@ -91,7 +97,14 @@ export function AgentTab({ instance }: { instance: Instance }) {
         </span>
         <span className="text-[13px] font-semibold">Cognitive core</span>
         {modelLabel && <span className="truncate font-mono text-[11px] text-muted-foreground/70">{modelLabel}</span>}
-        <span className="ml-auto inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
+        <button
+          onClick={() => { setEpoch((e) => e + 1); setInput(""); }}
+          title="New conversation (picks up the current model)"
+          className="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <RotateCcw className="size-3.5" />
+        </button>
+        <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
           <span className="size-1.5 rounded-full" style={{ background: agent.status === "error" ? "var(--destructive)" : busy ? "var(--warn)" : "var(--running)" }} />
           {agent.status}
         </span>
