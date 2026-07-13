@@ -142,6 +142,24 @@ type statusOut struct {
 	Device string `json:"device"`
 }
 
+// androidPackages maps common display names to launcher packages, for open_app.
+var androidPackages = map[string]string{
+	"settings": "com.android.settings", "chrome": "com.android.chrome", "browser": "com.android.chrome",
+	"clock": "com.android.deskclock", "contacts": "com.android.contacts",
+	"phone": "com.android.dialer", "dialer": "com.android.dialer",
+	"messages": "com.android.messaging", "messaging": "com.android.messaging",
+	"camera": "com.android.camera2", "calculator": "com.android.calculator2",
+	"files": "com.android.documentsui", "gallery": "com.android.gallery3d",
+}
+
+// settle waits briefly (interruptible) between the steps of a composite action.
+func (s *Service) settle(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
+	}
+}
+
 func (s *Service) registerTools() {
 	srv := s.server
 
@@ -310,6 +328,50 @@ func (s *Service) registerTools() {
 		}
 		if err := s.devices.LaunchApp(ctx, id, in.Package); err != nil {
 			return nil, statusOut{}, fmt.Errorf("could not launch %q — it may not be installed. Call list_apps for exact installed package names, or tap the app's icon with tap_element. Do not invent package names", in.Package)
+		}
+		return nil, statusOut{Status: "ok", Device: id}, nil
+	})
+
+	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+		Name:        "open_app",
+		Description: "Open an application by its display name (e.g. \"Settings\", \"Notepad\", \"Chrome\") on ANY platform — the preferred way to open an app. On a desktop it opens the OS launcher (Start menu), types the name, and presses Enter; on Android it launches the matching app. After calling it, use ask_screen to confirm the app opened.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
+		deviceRef
+		Name string `json:"name" jsonschema:"the app's display name, e.g. Settings"`
+	}) (*mcpsdk.CallToolResult, statusOut, error) {
+		id, err := s.resolveDevice(ctx, in.DeviceID)
+		if err != nil {
+			return nil, statusOut{}, err
+		}
+		inst, err := s.store.GetInstance(ctx, id)
+		if err != nil {
+			return nil, statusOut{}, err
+		}
+		name := strings.TrimSpace(in.Name)
+		if name == "" {
+			return nil, statusOut{}, fmt.Errorf("name is required")
+		}
+		if inst.Platform == "" || inst.Platform == domain.PlatformAndroid {
+			pkg := androidPackages[strings.ToLower(name)]
+			if pkg == "" {
+				return nil, statusOut{}, fmt.Errorf("don't know the Android package for %q — call list_apps and use launch_app with the exact package name", name)
+			}
+			if err := s.devices.LaunchApp(ctx, id, pkg); err != nil {
+				return nil, statusOut{}, err
+			}
+			return nil, statusOut{Status: "ok", Device: id}, nil
+		}
+		// Desktop: open the launcher (Start menu / activities), type the name, Enter.
+		if err := s.devices.Key(ctx, id, "WIN"); err != nil {
+			return nil, statusOut{}, err
+		}
+		s.settle(ctx, 800*time.Millisecond)
+		if err := s.devices.Text(ctx, id, name); err != nil {
+			return nil, statusOut{}, err
+		}
+		s.settle(ctx, 900*time.Millisecond)
+		if err := s.devices.Key(ctx, id, "ENTER"); err != nil {
+			return nil, statusOut{}, err
 		}
 		return nil, statusOut{Status: "ok", Device: id}, nil
 	})
