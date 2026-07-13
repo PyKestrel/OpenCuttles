@@ -127,3 +127,48 @@ func TestMCPToolsAndDeviceSelection(t *testing.T) {
 		t.Errorf("bogus-id error not sanitized/directive: %q", text)
 	}
 }
+
+// TestDesktopToolsRedirect verifies that the Android-only tools return a directive
+// "this is a desktop, use tap_element/Start menu" error instead of running ADB, so
+// a confused agent gets redirected rather than looping.
+func TestDesktopToolsRedirect(t *testing.T) {
+	store := &fakeStore{instances: []domain.Instance{
+		{ID: "win_1", Name: "Laptop", Platform: domain.PlatformWindows, State: domain.StateOnline},
+	}}
+	devices := devicecontrol.NewService(store, nil, slog.Default())
+	svc := New(devices, store, nil, slog.Default())
+	ts := httptest.NewServer(svc.Handler())
+	defer ts.Close()
+
+	ctx := context.Background()
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "test", Version: "0"}, nil)
+	session, err := client.Connect(ctx, &mcpsdk.StreamableClientTransport{Endpoint: ts.URL}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer session.Close()
+
+	for _, tool := range []string{"launch_app", "list_apps", "get_ui_tree", "current_activity"} {
+		args := map[string]any{"deviceId": "win_1"}
+		if tool == "launch_app" {
+			args["package"] = "com.android.settings"
+		}
+		res, err := session.CallTool(ctx, &mcpsdk.CallToolParams{Name: tool, Arguments: args})
+		if err != nil {
+			t.Fatalf("%s: %v", tool, err)
+		}
+		if !res.IsError {
+			t.Errorf("%s on a desktop should return an error", tool)
+			continue
+		}
+		var text string
+		for _, c := range res.Content {
+			if tc, ok := c.(*mcpsdk.TextContent); ok {
+				text += tc.Text
+			}
+		}
+		if !strings.Contains(text, "DESKTOP") || !strings.Contains(text, "tap_element") {
+			t.Errorf("%s error not directive for desktop: %q", tool, text)
+		}
+	}
+}

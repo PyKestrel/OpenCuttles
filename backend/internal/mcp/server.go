@@ -107,6 +107,21 @@ func (s *Service) resolveDevice(ctx context.Context, explicit string) (string, e
 	return "", fmt.Errorf("no active device selected; call select_device with a device id (list_devices to see options)")
 }
 
+// requireAndroidDevice returns a directive error when the target is a desktop, so
+// the Android-only tools (packages / app list / UI tree / activity) redirect the
+// agent to the desktop approach instead of failing cryptically and sending it into
+// a loop of more Android-only calls.
+func (s *Service) requireAndroidDevice(ctx context.Context, id string) error {
+	inst, err := s.store.GetInstance(ctx, id)
+	if err != nil {
+		return err
+	}
+	if inst.Platform != "" && inst.Platform != domain.PlatformAndroid {
+		return fmt.Errorf("this device is a %s DESKTOP, not Android — there is no app package, app list, UI tree, or foreground activity here, and this tool does not apply. To OPEN an app: press_key {key:\"WIN\"} (or tap_element {description:\"the Start menu button\"}), then type_text the app name and press_key {key:\"ENTER\"}. To SEE the screen use ask_screen; to CLICK use tap_element", inst.Platform)
+	}
+	return nil
+}
+
 // --- tool input/output types ------------------------------------------------
 
 type deviceRef struct {
@@ -192,6 +207,9 @@ func (s *Service) registerTools() {
 		if err != nil {
 			return nil, struct{}{}, err
 		}
+		if err := s.requireAndroidDevice(ctx, id); err != nil {
+			return nil, struct{}{}, err
+		}
 		tree, err := s.devices.UITree(ctx, id)
 		if err != nil {
 			return nil, struct{}{}, err
@@ -261,7 +279,7 @@ func (s *Service) registerTools() {
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "press_key",
-		Description: "Press a key: HOME, BACK, APP_SWITCH (recents), ENTER, VOLUME_UP, VOLUME_DOWN, POWER, or a numeric keycode.",
+		Description: "Press a key. Android: HOME, BACK, APP_SWITCH (recents), ENTER, VOLUME_UP, VOLUME_DOWN, POWER, or a numeric keycode. Desktop (Windows/Linux/macOS): ENTER, TAB, ESC, BACKSPACE, DELETE, UP, DOWN, LEFT, RIGHT, PAGEUP, PAGEDOWN, WIN.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
 		deviceRef
 		Key string `json:"key"`
@@ -287,6 +305,9 @@ func (s *Service) registerTools() {
 		if err != nil {
 			return nil, statusOut{}, err
 		}
+		if err := s.requireAndroidDevice(ctx, id); err != nil {
+			return nil, statusOut{}, err
+		}
 		if err := s.devices.LaunchApp(ctx, id, in.Package); err != nil {
 			return nil, statusOut{}, fmt.Errorf("could not launch %q — it may not be installed. Call list_apps for exact installed package names, or tap the app's icon with tap_element. Do not invent package names", in.Package)
 		}
@@ -309,6 +330,9 @@ func (s *Service) registerTools() {
 		if err != nil {
 			return nil, out, err
 		}
+		if err := s.requireAndroidDevice(ctx, id); err != nil {
+			return nil, out, err
+		}
 		pkgs, err := s.devices.ListApps(ctx, id, in.ThirdPartyOnly)
 		if err != nil {
 			return nil, out, err
@@ -328,6 +352,9 @@ func (s *Service) registerTools() {
 		}
 		id, err := s.resolveDevice(ctx, in.DeviceID)
 		if err != nil {
+			return nil, out, err
+		}
+		if err := s.requireAndroidDevice(ctx, id); err != nil {
 			return nil, out, err
 		}
 		act, err := s.devices.CurrentActivity(ctx, id)
