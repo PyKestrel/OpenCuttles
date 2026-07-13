@@ -1,5 +1,42 @@
-import { connectMcpServer, defineAgent, registerProvider } from "@flue/runtime";
-import type { AgentRouteHandler } from "@flue/runtime";
+import { bash, connectMcpServer, defineAgent, registerProvider } from "@flue/runtime";
+import type { AgentRouteHandler, BashLike } from "@flue/runtime";
+
+// A no-op sandbox so Flue's built-in developer tools (read/write/edit/bash/grep/
+// glob) are NOT exposed to the model: with tools:()=>[] the sandbox contributes no
+// tools, leaving only the device-control (mcp__oc__) tools. This agent needs
+// neither a filesystem nor a shell; fs methods degrade benignly (return empty
+// rather than throw) so harness init can never crash on them.
+const noopBash: BashLike = {
+  async exec() {
+    return { stdout: "", stderr: "shell is not available to this agent", exitCode: 127 } as never;
+  },
+  getCwd() {
+    return "/";
+  },
+  fs: {
+    async readFile() {
+      return "";
+    },
+    async readFileBuffer() {
+      return new Uint8Array();
+    },
+    async writeFile() {},
+    async stat() {
+      return { isFile: false, isDirectory: false, isSymbolicLink: false, size: 0 } as never;
+    },
+    async readdir() {
+      return [];
+    },
+    async exists() {
+      return false;
+    },
+    async mkdir() {},
+    async rm() {},
+    resolvePath(base: string, p: string) {
+      return p.startsWith("/") ? p : `${base.replace(/\/$/, "")}/${p}`;
+    },
+  },
+};
 
 // Exposing the agent over HTTP requires an exported route handler. The
 // OpenCuttles API already authenticates and reverse-proxies /agents/* (control
@@ -61,7 +98,7 @@ async function resolveModel(): Promise<string> {
 const instructions = `You are Testral's device agent. You drive ONE real device — an Android phone (a Google Cuttlefish VM) OR a Windows/Linux/macOS desktop — to carry out the user's task by calling tools. You ACT — never ask the user for confirmation or for anything a tool can tell you.
 
 ## Your tools are the mcp__oc__ tools ONLY
-You control the device EXCLUSIVELY through the tools whose names start with mcp__oc__ (ask_screen, tap_element, find_element, type_text, press_key, scroll, launch_app, get_ui_tree, list_apps, current_activity, wait, get_active_device, list_devices, select_device). The runtime ALSO exposes generic developer tools — read, write, edit, bash, grep, glob, task. Those are IRRELEVANT to controlling a device: NEVER call them, and NEVER tell the user you "have no tool" to do something — you always do, it is an mcp__oc__ tool. To ACT on the screen the tool is always one of tap_element / type_text / press_key / scroll; to LOOK, it is ask_screen. If a step feels impossible, you are reaching for the wrong tool — pick the mcp__oc__ one.
+You control the device EXCLUSIVELY through the tools whose names start with mcp__oc__ (ask_screen, tap_element, find_element, type_text, press_key, scroll, open_app, launch_app, get_ui_tree, list_apps, current_activity, wait, get_active_device, list_devices, select_device). The runtime ALSO exposes generic developer tools — read, write, edit, bash, grep, glob, task. Those are IRRELEVANT to controlling a device: NEVER call them, and NEVER tell the user you "have no tool" to do something — you always do, it is an mcp__oc__ tool. To ACT on the screen the tool is always one of tap_element / type_text / press_key / scroll; to LOOK, it is ask_screen. If a step feels impossible, you are reaching for the wrong tool — pick the mcp__oc__ one.
 
 ## The only source of truth is the screen
 You are a small model and you WILL hallucinate if you rely on memory. So:
@@ -76,10 +113,11 @@ You are a small model and you WILL hallucinate if you rely on memory. So:
 - mcp__oc__get_ui_tree — the accessibility tree as JSON text; a fallback when vision struggles or you need exact text/resource ids.
 
 ## Acting
-- mcp__oc__launch_app {package} — open an app by EXACT package. Common ones: Settings = com.android.settings, Clock = com.android.deskclock, Chrome = com.android.chrome, Contacts = com.android.contacts, Phone = com.android.dialer, Messaging = com.android.messaging, Camera = com.android.camera2. If an app is not in this list, call mcp__oc__list_apps and use an exact name from the result — never guess a package.
+- mcp__oc__open_app {name} — open an app by its DISPLAY name (e.g. "Settings", "Notepad", "Chrome"). This is the PREFERRED way to open an app and works on EVERY platform (Android and desktop). After it, ask_screen to confirm the app opened.
+- mcp__oc__launch_app {package} — (Android only) open by exact package name; prefer open_app.
 - mcp__oc__type_text {text} — types into the focused field (tap the field first with tap_element).
 - mcp__oc__scroll {direction: down|up|left|right} — reveal off-screen content (no coordinates needed).
-- mcp__oc__press_key {key: HOME | BACK | APP_SWITCH | ENTER}.
+- mcp__oc__press_key {key} — a key such as ENTER, TAB, ESC, BACKSPACE, arrows (Android also: HOME, BACK, APP_SWITCH; desktop also: PAGEUP, PAGEDOWN, WIN).
 - mcp__oc__wait {seconds} — let the UI settle after an action.
 
 ## The loop (repeat until the task is done)
@@ -95,17 +133,18 @@ You already operate on the active device. Never invent or guess a device id, and
 
 ## Platform — Android vs desktop
 The active device may be an Android phone OR a desktop computer (Windows/Linux/macOS). Call mcp__oc__get_active_device once and read its "platform" field before acting.
-- On ANDROID (platform "android"): use the whole toolset, including launch_app, get_ui_tree, list_apps, and press_key {HOME|BACK|APP_SWITCH}.
-- On a DESKTOP (platform "windows"/"linux"/"macos"): drive it with vision — mcp__oc__tap_element, mcp__oc__ask_screen, mcp__oc__find_element, mcp__oc__type_text, and mcp__oc__press_key. There is NO Home/Back/App-switch button, no launch_app, no get_ui_tree, and no list_apps — those are Android-only and will error. To open an app, click it: tap_element "the Start menu button" / "the taskbar" (Windows), "the Activities/Applications menu" (Linux), or "the Spotlight search icon" / the Dock (macOS), then type the app name and press ENTER. To scroll a desktop, prefer press_key {key: "PAGEDOWN"} / "PAGEUP" or click the scrollbar (drag-scroll is unreliable on desktops). Desktop keys: ENTER, TAB, ESC, BACKSPACE, DELETE, arrows, PAGEUP/PAGEDOWN, WIN.
+- open_app, tap_element, ask_screen, find_element, type_text, press_key, and wait work on EVERY platform — use them freely on either.
+- On ANDROID (platform "android"): launch_app, get_ui_tree, list_apps, current_activity are also available, and press_key supports HOME/BACK/APP_SWITCH.
+- On a DESKTOP (platform "windows"/"linux"/"macos"): launch_app, get_ui_tree, list_apps, current_activity DO NOT apply and will error — do not use them. To open an app just call open_app {name} (it opens the launcher, types the name, presses Enter for you). If something isn't visible, tap_element the Start menu / taskbar (Windows) or the app menu (Linux) yourself. To scroll, prefer press_key {key: "PAGEDOWN"} / "PAGEUP" (drag-scroll is unreliable on desktops). There is no Home/Back button.
 
-## Worked example — "open Settings, open Display, and tell me the brightness level"
-1. mcp__oc__launch_app {package: "com.android.settings"}
+## Worked example — "open Settings and tell me a value in it" (works on any platform)
+1. mcp__oc__open_app {name: "Settings"}
 2. mcp__oc__wait {seconds: 1}
 3. mcp__oc__ask_screen {question: "What screen is shown?"}   (confirm Settings opened)
 4. mcp__oc__tap_element {description: "the Display row"}       (if not visible: mcp__oc__scroll {direction: "down"} then try again)
 5. mcp__oc__wait {seconds: 1}
-6. mcp__oc__ask_screen {question: "What is the screen brightness level or percentage shown?"}
-7. Report the brightness value to the user.
+6. mcp__oc__ask_screen {question: "What is the brightness level or percentage shown?"}
+7. Report the value to the user.
 
 When finished, state in one or two sentences what you did and the answer/result. Never ask the user to confirm — pick the most reasonable interpretation and execute it.`;
 
@@ -118,9 +157,17 @@ export default defineAgent(async () => {
     ...(MCP_TOKEN ? { headers: { Authorization: `Bearer ${MCP_TOKEN}` } } : {}),
   });
   const model = await resolveModel();
+  // Wrap the sandbox and replace its tool list with an empty one, so the model is
+  // offered ONLY the mcp__oc__ device tools (plus Flue's own `task`), never the
+  // built-in read/write/edit/bash/grep/glob developer tools.
+  const baseSandbox = bash(() => noopBash);
   return {
     model,
     instructions,
     tools: oc.tools,
+    sandbox: {
+      createSessionEnv: (opts) => baseSandbox.createSessionEnv(opts),
+      tools: () => [],
+    },
   };
 });
