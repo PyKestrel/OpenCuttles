@@ -3,6 +3,7 @@ import { useFlueAgent, useFlueClient } from "@flue/react";
 import type { FlueConversationPart } from "@flue/react";
 import { Send, Sparkles, Square, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { api } from "@/api";
 import type { Instance } from "@/types";
 
 const AGENT_NAME = "opencuttles";
@@ -38,9 +39,19 @@ export function AgentTab({ instance }: { instance: Instance }) {
   const client = useFlueClient();
   const [input, setInput] = useState("");
   const [stopping, setStopping] = useState(false);
+  const [modelLabel, setModelLabel] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
 
   const busy = agent.status === "submitted" || agent.status === "streaming";
+
+  // Show the actually-configured model (admins). New conversations pick up the
+  // latest choice; older threads keep the model they started with.
+  useEffect(() => {
+    api
+      .agentModel()
+      .then((c) => setModelLabel(c.providerId && c.model ? `${c.providerId}/${c.model}` : "local default"))
+      .catch(() => setModelLabel(""));
+  }, []);
 
   // Interrupt the in-flight run so the operator can revise the prompt. The Flue
   // client aborts the agent instance's current (and any queued) durable work;
@@ -79,7 +90,7 @@ export function AgentTab({ instance }: { instance: Instance }) {
           <Sparkles className="size-3.5" />
         </span>
         <span className="text-[13px] font-semibold">Cognitive core</span>
-        <span className="font-mono text-[11px] text-muted-foreground/70">MiniCPM5-1B</span>
+        {modelLabel && <span className="truncate font-mono text-[11px] text-muted-foreground/70">{modelLabel}</span>}
         <span className="ml-auto inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
           <span className="size-1.5 rounded-full" style={{ background: agent.status === "error" ? "var(--destructive)" : busy ? "var(--warn)" : "var(--running)" }} />
           {agent.status}
