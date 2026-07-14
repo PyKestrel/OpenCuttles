@@ -2,83 +2,111 @@
 @import "tw-animate-css";
 
 /* Theme is driven by an explicit data-theme attribute set by ThemeProvider, so
-   the dark variant keys off it (no reliance on the .dark class). */
+   the dark variant keys off it (no reliance on the .dark class). shadcn/ui
+   components authored with `dark:` utilities pick this up automatically. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* ---- Light (default) ---- */
+/* ---- Light (default) ----
+   Clean-minimal grayscale, adapted from the shadcn/ui neutral base: white
+   ground, near-black primary, hairline borders. Semantic status colors
+   (running/warn/destructive) are kept — they encode device state, not brand. */
 :root,
 :root[data-theme="light"] {
-  --background: #eef1f4;
-  --foreground: #1a222a;
-  --surface: #ffffff;          /* raised chrome: top bar, headers */
-  --card: #ffffff;
-  --card-foreground: #1a222a;
-  --popover: #ffffff;
-  --popover-foreground: #1a222a;
-  --primary: #12a594;          /* brand teal — accents, links, icons */
-  --primary-strong: #0c8676;   /* deeper teal for solid CTAs (≈4.5:1 on white) */
-  --primary-foreground: #ffffff;
-  --secondary: #f5f7f9;
-  --secondary-foreground: #1a222a;
-  --muted: #f2f5f7;
-  --muted-foreground: #5c6975;
-  --accent: #eef2f4;           /* subtle hover surface (shadcn semantics) */
-  --accent-foreground: #1a222a;
-  --brand-weak: rgba(18, 165, 148, 0.1);
-  --border: #e3e7eb;
-  --border-strong: #d3d9de;
-  --hairline: #edf0f3;
-  --input: #e3e7eb;
-  --ring: #12a594;
-  --sidebar: #f8fafb;
-  --sidebar-foreground: #1a222a;
-  --sidebar-border: #e3e7eb;
-  /* semantic — separate from the brand accent */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --surface: oklch(1 0 0);          /* raised chrome: top bar, headers */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);      /* near-black — primary actions, emphasis */
+  --primary-strong: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);        /* subtle hover surface */
+  --accent-foreground: oklch(0.205 0 0);
+  --brand-weak: oklch(0.97 0 0);    /* neutral chip/icon backing (was brand tint) */
+  --border: oklch(0.922 0 0);
+  --border-strong: oklch(0.87 0 0);
+  --hairline: oklch(0.952 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  /* charts — muted neutral-leaning ramp that suits the minimal look */
+  --chart-1: oklch(0.205 0 0);
+  --chart-2: oklch(0.45 0 0);
+  --chart-3: oklch(0.62 0 0);
+  --chart-4: oklch(0.75 0 0);
+  --chart-5: oklch(0.85 0 0);
+  /* semantic — functional device/status color, separate from the neutral UI */
   --running: #2f9e44;
   --stopped: #8a96a0;
   --warn: #b7791f;
-  --destructive: #e03131;
-  --dot-tex: rgba(20, 30, 45, 0.045);
-  --card-shadow: 0 1px 2px rgba(25, 35, 50, 0.06);
-  --radius: 0.75rem;
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --dot-tex: rgba(20, 30, 45, 0.04);
+  --card-shadow: 0 1px 2px rgba(20, 25, 35, 0.05);
+  --radius: 0.625rem;
 }
 
 /* ---- Dark ---- */
 :root[data-theme="dark"] {
-  --background: #0e1216;
-  --foreground: #dee6ec;
-  --surface: #101519;
-  --card: #12171c;
-  --card-foreground: #dee6ec;
-  --popover: #12171c;
-  --popover-foreground: #dee6ec;
-  --primary: #2fd3b8;
-  --primary-strong: #2fd3b8;    /* dark uses dark text on the bright teal already */
-  --primary-foreground: #04211c;
-  --secondary: #151b21;
-  --secondary-foreground: #dee6ec;
-  --muted: #151b21;
-  --muted-foreground: #8695a1;
-  --accent: #151b21;
-  --accent-foreground: #dee6ec;
-  --brand-weak: rgba(47, 211, 184, 0.1);
-  --border: #212a32;
-  --border-strong: #2a343d;
-  --hairline: #1a222a;
-  --input: #212a32;
-  --ring: #2fd3b8;
-  --sidebar: #0f1419;
-  --sidebar-foreground: #dee6ec;
-  --sidebar-border: #212a32;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --surface: oklch(0.205 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);      /* near-white — primary actions, emphasis */
+  --primary-strong: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --brand-weak: oklch(0.269 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --border-strong: oklch(1 0 0 / 18%);
+  --hairline: oklch(1 0 0 / 6%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.985 0 0);
+  --sidebar-primary-foreground: oklch(0.205 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.985 0 0);
+  --chart-2: oklch(0.8 0 0);
+  --chart-3: oklch(0.65 0 0);
+  --chart-4: oklch(0.5 0 0);
+  --chart-5: oklch(0.37 0 0);
   --running: #3fb84f;
   --stopped: #7b8894;
   --warn: #e0a219;
-  --destructive: #ee5f6b;
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
   --dot-tex: rgba(255, 255, 255, 0.02);
   --card-shadow: none;
 }
 
-/* Map tokens to Tailwind's theme so utilities (bg-card, text-primary, …) work. */
+/* Map tokens to Tailwind's theme so utilities (bg-card, text-primary,
+   bg-sidebar-accent, stroke-chart-1, …) resolve. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -104,16 +132,28 @@
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-running: var(--running);
   --color-stopped: var(--stopped);
   --color-warn: var(--warn);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+  --radius-xl: calc(var(--radius) + 4px);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-mono: ui-mono, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
 }
 
 @layer base {
