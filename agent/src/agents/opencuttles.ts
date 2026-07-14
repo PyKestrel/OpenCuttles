@@ -77,21 +77,40 @@ type RuntimeConfig = {
 // without a sidecar restart.
 async function resolveModel(): Promise<string> {
   registerProvider("ollama", { api: "openai-completions", baseUrl: OLLAMA_BASE_URL, apiKey: "ollama" });
+  // Every path logs the OUTCOME (never the API key): a silent fallback here is
+  // exactly what let the sidecar run the local MiniCPM for ages while the UI
+  // showed the configured model. If you see "falling back", the sidecar could
+  // not read the admin-configured model — check that agent/.env's
+  // OPENCUTTLES_MCP_TOKEN matches the API's and OPENCUTTLES_MCP_URL is right.
   try {
     const res = await fetch(RUNTIME_URL, {
       headers: MCP_TOKEN ? { Authorization: `Bearer ${MCP_TOKEN}` } : {},
     });
-    if (!res.ok) return FALLBACK_MODEL;
+    if (!res.ok) {
+      console.warn(
+        `[opencuttles] runtime config ${RUNTIME_URL} -> HTTP ${res.status}; falling back to ${FALLBACK_MODEL}. ` +
+          `Verify agent/.env OPENCUTTLES_MCP_TOKEN matches the API's service token and OPENCUTTLES_MCP_URL.`,
+      );
+      return FALLBACK_MODEL;
+    }
     const cfg = (await res.json()) as RuntimeConfig;
-    if (!cfg.configured || !cfg.providerId || !cfg.model) return FALLBACK_MODEL;
+    if (!cfg.configured || !cfg.providerId || !cfg.model) {
+      console.warn(`[opencuttles] runtime config not set (configured=${cfg.configured}); falling back to ${FALLBACK_MODEL}.`);
+      return FALLBACK_MODEL;
+    }
     registerProvider(cfg.providerId, {
       ...(cfg.api ? { api: cfg.api as never } : {}),
       ...(cfg.baseUrl ? { baseUrl: cfg.baseUrl } : {}),
       ...(cfg.apiKey ? { apiKey: cfg.apiKey } : {}),
       ...(cfg.headers ? { headers: cfg.headers } : {}),
     });
-    return `${cfg.providerId}/${cfg.model}`;
-  } catch {
+    const model = `${cfg.providerId}/${cfg.model}`;
+    console.log(`[opencuttles] using configured model ${model} (base ${cfg.baseUrl ?? "default"})`);
+    return model;
+  } catch (err) {
+    console.error(
+      `[opencuttles] runtime config fetch failed (${RUNTIME_URL}): ${(err as Error).message}; falling back to ${FALLBACK_MODEL}.`,
+    );
     return FALLBACK_MODEL;
   }
 }
