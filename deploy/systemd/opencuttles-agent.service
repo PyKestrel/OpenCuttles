@@ -11,7 +11,9 @@ WorkingDirectory=/home/atorres/opencuttles/agent
 EnvironmentFile=/home/atorres/opencuttles/agent/.env
 # The OpenCuttles API reverse-proxies /agents/* to this port.
 Environment=PORT=8790
-# Build first with `npx flue build --target node` (produces dist/server.mjs).
+# Build the bundle first: `make build-agent` (or `npx flue build --target node`)
+# produces dist/server.mjs. `scripts/ubuntu/update.sh` rebuilds it on every
+# deploy so this never runs a stale bundle.
 ExecStart=/usr/bin/node dist/server.mjs
 Restart=on-failure
 RestartSec=5

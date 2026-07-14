@@ -2,7 +2,7 @@ SHELL := bash
 
 WEB_EMBED := backend/internal/web/dist
 
-.PHONY: all dev test test-backend test-frontend build build-backend build-frontend embed-frontend lint package update clean
+.PHONY: all dev test test-backend test-frontend build build-backend build-frontend embed-frontend build-agent lint package update clean
 
 all: test build
 
@@ -35,6 +35,15 @@ embed-frontend: build-frontend
 build-backend: embed-frontend
 	mkdir -p dist
 	cd backend && go build -trimpath -ldflags="-s -w" -o ../dist/opencuttles-api ./cmd/opencuttles-api
+
+# Build the Flue agent sidecar bundle (agent/dist/server.mjs) that the
+# opencuttles-agent service runs. Kept separate from `build`/`package` because it
+# needs Node >= 22.18 and runs from the source checkout (not the packaged API
+# artifact). `update.sh` invokes this so a redeploy can't silently keep a stale
+# sidecar; run it by hand after an agent change with:
+#   make build-agent && sudo systemctl restart opencuttles-agent
+build-agent:
+	cd agent && { [ -f package-lock.json ] && npm ci || npm install; } && npx flue build --target node
 
 lint:
 	cd backend && go test ./...

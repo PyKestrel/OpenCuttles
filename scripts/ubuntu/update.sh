@@ -49,6 +49,22 @@ make package
 log "Applying upgrade (this restarts opencuttles-api)"
 bash "${script_dir}/upgrade.sh" "${repo_root}/dist/package"
 
+# 3b. Agent sidecar (Flue) ---------------------------------------------------
+# The API upgrade above does NOT touch the agent sidecar: it runs a prebuilt
+# agent/dist/server.mjs, so without rebuilding it here a `git pull` silently keeps
+# the old bundle (and thus the old model/prompt/skills). Rebuild + restart it.
+if [[ "${OPENCUTTLES_SKIP_AGENT:-0}" == "1" ]]; then
+  log "Skipping agent sidecar rebuild (OPENCUTTLES_SKIP_AGENT=1)."
+elif systemctl list-unit-files 2>/dev/null | grep -q '^opencuttles-agent'; then
+  log "Rebuilding the agent sidecar bundle (make build-agent) and restarting it"
+  # 'flue build' needs Node >= 22.18; if it fails, stop loudly rather than leave
+  # a stale sidecar running (the failure this whole step exists to prevent).
+  make build-agent
+  sudo systemctl restart opencuttles-agent
+else
+  warn "opencuttles-agent service not found; skipping sidecar rebuild."
+fi
+
 # 4. Firewall ----------------------------------------------------------------
 if [[ "${OPENCUTTLES_SKIP_FIREWALL:-0}" == "1" ]]; then
   log "Skipping firewall refresh (OPENCUTTLES_SKIP_FIREWALL=1)."
