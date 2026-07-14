@@ -361,11 +361,14 @@ func (s *Service) registerTools() {
 			}
 			return nil, statusOut{Status: "ok", Device: id}, nil
 		}
-		// Desktop: the runner resolves the name against the Start menu and launches it.
-		if err := s.devices.OpenApp(ctx, id, name); err != nil {
+		// Desktop: the runner resolves the name against the Start menu and launches
+		// it, reporting back which app it matched so the agent can verify (and
+		// re-issue with a more specific name if it opened the wrong one).
+		opened, err := s.devices.OpenApp(ctx, id, name)
+		if err != nil {
 			return nil, statusOut{}, err
 		}
-		return nil, statusOut{Status: "ok", Device: id}, nil
+		return nil, statusOut{Status: "opened " + opened, Device: id}, nil
 	})
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{

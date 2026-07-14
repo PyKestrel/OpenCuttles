@@ -259,18 +259,29 @@ func (winScreen) ListApps() ([]string, error) {
 	return apps, nil
 }
 
-func (winScreen) OpenApp(name string) error {
-	// Resolve the closest Start-menu match to its AppID and launch it via the
-	// AppsFolder shell namespace (works for both Store and classic desktop apps).
-	const script = `$n=$args[0]
-$a = Get-StartApps | Where-Object { $_.Name -eq $n }
-if (-not $a) { $a = Get-StartApps | Where-Object { $_.Name -like "*$n*" } }
-if (-not $a) { exit 2 }
-Start-Process ("shell:AppsFolder\" + @($a)[0].AppID)`
-	if err := hidden("powershell", "-NoProfile", "-NonInteractive", "-Command", script, name).Run(); err != nil {
-		return fmt.Errorf("could not open %q (not found in the Start menu?)", name)
+func (winScreen) OpenApp(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("open_app needs an app name (e.g. \"Settings\"); none was given")
 	}
-	return nil
+	// Resolve the best Start-menu match to its AppID and launch it via the
+	// AppsFolder shell namespace (works for both Store and classic desktop apps).
+	// Match precedence is exact (case-insensitive) → starts-with → contains, so a
+	// query like "Settings" can't fall through to the alphabetically-first app.
+	// Echo the resolved Name so the caller knows exactly what was launched.
+	const script = `$n=$args[0]
+$apps = Get-StartApps
+$m = @($apps | Where-Object { $_.Name -ieq $n })
+if (-not $m) { $m = @($apps | Where-Object { $_.Name -like "$n*" }) }
+if (-not $m) { $m = @($apps | Where-Object { $_.Name -like "*$n*" }) }
+if (-not $m) { exit 2 }
+Start-Process ("shell:AppsFolder\" + $m[0].AppID)
+Write-Output $m[0].Name`
+	out, err := hidden("powershell", "-NoProfile", "-NonInteractive", "-Command", script, name).Output()
+	if err != nil {
+		return "", fmt.Errorf("no Start-menu app matches %q — call list_apps to see exact names", name)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (winScreen) CurrentActivity() (string, error) {

@@ -322,13 +322,23 @@ func (s *Service) CurrentActivity(ctx context.Context, id string) (string, error
 }
 
 // OpenApp launches an app by its display name on a desktop target (the runner
-// resolves it against the Start menu). Android app-opening goes through
-// LaunchApp with a resolved package instead.
-func (s *Service) OpenApp(ctx context.Context, id, name string) error {
+// resolves it against the Start menu) and returns the display name of the app it
+// actually launched, so the caller can confirm the right one opened. Android
+// app-opening goes through LaunchApp with a resolved package instead.
+func (s *Service) OpenApp(ctx context.Context, id, name string) (string, error) {
 	if _, err := s.resolve(ctx, id); err != nil {
-		return err
+		return "", err
 	}
-	return s.callRunner(ctx, id, "open_app", map[string]string{"name": name}, nil)
+	var out struct {
+		Opened string `json:"opened"`
+	}
+	if err := s.callRunner(ctx, id, "open_app", map[string]string{"name": name}, &out); err != nil {
+		return "", err
+	}
+	if out.Opened == "" {
+		return name, nil
+	}
+	return out.Opened, nil
 }
 
 // callRunner sends a method to a desktop device's runner over the tunnel and, if
