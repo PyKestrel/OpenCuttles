@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -269,7 +270,13 @@ func (winScreen) OpenApp(name string) (string, error) {
 	// Match precedence is exact (case-insensitive) → starts-with → contains, so a
 	// query like "Settings" can't fall through to the alphabetically-first app.
 	// Echo the resolved Name so the caller knows exactly what was launched.
-	const script = `$n=$args[0]
+	//
+	// The name is passed via an environment variable, NOT a positional arg:
+	// powershell -Command does NOT reliably bind trailing args to $args, so the
+	// old $args[0] came through empty — every app matched "*" and it opened the
+	// alphabetically-first one (7-Zip). $env:OC_APPNAME is reliable and avoids
+	// interpolating caller text into the script.
+	const script = `$n=$env:OC_APPNAME
 $apps = Get-StartApps
 $m = @($apps | Where-Object { $_.Name -ieq $n })
 if (-not $m) { $m = @($apps | Where-Object { $_.Name -like "$n*" }) }
@@ -277,7 +284,9 @@ if (-not $m) { $m = @($apps | Where-Object { $_.Name -like "*$n*" }) }
 if (-not $m) { exit 2 }
 Start-Process ("shell:AppsFolder\" + $m[0].AppID)
 Write-Output $m[0].Name`
-	out, err := hidden("powershell", "-NoProfile", "-NonInteractive", "-Command", script, name).Output()
+	cmd := hidden("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd.Env = append(os.Environ(), "OC_APPNAME="+name)
+	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("no Start-menu app matches %q — call list_apps to see exact names", name)
 	}
