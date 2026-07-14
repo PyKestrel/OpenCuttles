@@ -148,7 +148,10 @@ func TestDesktopToolsRedirect(t *testing.T) {
 	}
 	defer session.Close()
 
-	for _, tool := range []string{"launch_app", "list_apps", "get_ui_tree", "current_activity"} {
+	// launch_app (package concept) and get_ui_tree (accessibility) remain
+	// Android-only and redirect; list_apps/open_app/current_activity now work on
+	// desktop via the runner and are covered elsewhere.
+	for _, tool := range []string{"launch_app", "get_ui_tree"} {
 		args := map[string]any{"deviceId": "win_1"}
 		if tool == "launch_app" {
 			args["package"] = "com.android.settings"

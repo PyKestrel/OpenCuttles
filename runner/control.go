@@ -14,6 +14,9 @@ type screen interface {
 	Drag(x1, y1, x2, y2, durationMs int) error
 	Type(text string) error
 	Key(name string) error
+	ListApps() ([]string, error)   // installed/launchable app display names
+	OpenApp(name string) error     // launch an app by display name
+	CurrentActivity() (string, error) // foreground window / app title
 }
 
 // controller maps the appliance's server-agnostic control vocabulary to the
@@ -46,6 +49,22 @@ func (c *controller) handle(method string, params json.RawMessage) (any, error) 
 		var p struct{ Key string }
 		_ = json.Unmarshal(params, &p)
 		return map[string]any{}, c.screen.Key(p.Key)
+	case "list_apps":
+		apps, err := c.screen.ListApps()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"apps": apps}, nil
+	case "open_app":
+		var p struct{ Name string }
+		_ = json.Unmarshal(params, &p)
+		return map[string]any{}, c.screen.OpenApp(p.Name)
+	case "current_activity":
+		act, err := c.screen.CurrentActivity()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"activity": act}, nil
 	default:
 		return nil, fmt.Errorf("unknown method %q", method)
 	}

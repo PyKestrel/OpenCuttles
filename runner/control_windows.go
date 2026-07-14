@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"os/exec"
+	"strings"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -23,10 +26,12 @@ var (
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
 	procGetDC            = user32.NewProc("GetDC")
 	procReleaseDC        = user32.NewProc("ReleaseDC")
-	procSetCursorPos     = user32.NewProc("SetCursorPos")
-	procMouseEvent       = user32.NewProc("mouse_event")
-	procKeybdEvent       = user32.NewProc("keybd_event")
-	procVkKeyScanW       = user32.NewProc("VkKeyScanW")
+	procSetCursorPos       = user32.NewProc("SetCursorPos")
+	procMouseEvent         = user32.NewProc("mouse_event")
+	procKeybdEvent         = user32.NewProc("keybd_event")
+	procVkKeyScanW         = user32.NewProc("VkKeyScanW")
+	procGetForegroundWindow = user32.NewProc("GetForegroundWindow")
+	procGetWindowTextW      = user32.NewProc("GetWindowTextW")
 
 	procCreateCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
 	procCreateCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")
@@ -227,4 +232,53 @@ func (winScreen) Key(name string) error {
 	procKeybdEvent.Call(uintptr(vk), 0, 0, 0)
 	procKeybdEvent.Call(uintptr(vk), 0, keyEventUp, 0)
 	return nil
+}
+
+// hidden runs a helper process without flashing a console window.
+func hidden(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd
+}
+
+func (winScreen) ListApps() ([]string, error) {
+	out, err := hidden("powershell", "-NoProfile", "-NonInteractive", "-Command",
+		"Get-StartApps | Select-Object -ExpandProperty Name").Output()
+	if err != nil {
+		return nil, fmt.Errorf("list apps: %w", err)
+	}
+	var apps []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !seen[line] {
+			seen[line] = true
+			apps = append(apps, line)
+		}
+	}
+	return apps, nil
+}
+
+func (winScreen) OpenApp(name string) error {
+	// Resolve the closest Start-menu match to its AppID and launch it via the
+	// AppsFolder shell namespace (works for both Store and classic desktop apps).
+	const script = `$n=$args[0]
+$a = Get-StartApps | Where-Object { $_.Name -eq $n }
+if (-not $a) { $a = Get-StartApps | Where-Object { $_.Name -like "*$n*" } }
+if (-not $a) { exit 2 }
+Start-Process ("shell:AppsFolder\" + @($a)[0].AppID)`
+	if err := hidden("powershell", "-NoProfile", "-NonInteractive", "-Command", script, name).Run(); err != nil {
+		return fmt.Errorf("could not open %q (not found in the Start menu?)", name)
+	}
+	return nil
+}
+
+func (winScreen) CurrentActivity() (string, error) {
+	hwnd, _, _ := procGetForegroundWindow.Call()
+	if hwnd == 0 {
+		return "", nil
+	}
+	buf := make([]uint16, 512)
+	procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	return windows.UTF16ToString(buf), nil
 }

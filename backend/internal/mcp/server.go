@@ -117,7 +117,7 @@ func (s *Service) requireAndroidDevice(ctx context.Context, id string) error {
 		return err
 	}
 	if inst.Platform != "" && inst.Platform != domain.PlatformAndroid {
-		return fmt.Errorf("this device is a %s DESKTOP, not Android — there is no app package, app list, UI tree, or foreground activity here, and this tool does not apply. To OPEN an app: press_key {key:\"WIN\"} (or tap_element {description:\"the Start menu button\"}), then type_text the app name and press_key {key:\"ENTER\"}. To SEE the screen use ask_screen; to CLICK use tap_element", inst.Platform)
+		return fmt.Errorf("this device is a %s DESKTOP, not Android — this particular tool (package launch / accessibility UI tree) is Android-only. Instead: OPEN an app with open_app {name}; LIST apps with list_apps; READ the screen with ask_screen; CLICK with tap_element. Those all work on this desktop", inst.Platform)
 	}
 	return nil
 }
@@ -361,16 +361,8 @@ func (s *Service) registerTools() {
 			}
 			return nil, statusOut{Status: "ok", Device: id}, nil
 		}
-		// Desktop: open the launcher (Start menu / activities), type the name, Enter.
-		if err := s.devices.Key(ctx, id, "WIN"); err != nil {
-			return nil, statusOut{}, err
-		}
-		s.settle(ctx, 800*time.Millisecond)
-		if err := s.devices.Text(ctx, id, name); err != nil {
-			return nil, statusOut{}, err
-		}
-		s.settle(ctx, 900*time.Millisecond)
-		if err := s.devices.Key(ctx, id, "ENTER"); err != nil {
+		// Desktop: the runner resolves the name against the Start menu and launches it.
+		if err := s.devices.OpenApp(ctx, id, name); err != nil {
 			return nil, statusOut{}, err
 		}
 		return nil, statusOut{Status: "ok", Device: id}, nil
@@ -378,7 +370,7 @@ func (s *Service) registerTools() {
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "list_apps",
-		Description: "List installed package names. Set thirdPartyOnly to exclude system apps.",
+		Description: "List installed/launchable apps on ANY platform — package names on Android, Start-menu app names on a desktop. (thirdPartyOnly excludes system apps on Android.) Open one with open_app.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
 		deviceRef
 		ThirdPartyOnly bool `json:"thirdPartyOnly,omitempty"`
@@ -392,9 +384,6 @@ func (s *Service) registerTools() {
 		if err != nil {
 			return nil, out, err
 		}
-		if err := s.requireAndroidDevice(ctx, id); err != nil {
-			return nil, out, err
-		}
 		pkgs, err := s.devices.ListApps(ctx, id, in.ThirdPartyOnly)
 		if err != nil {
 			return nil, out, err
@@ -405,7 +394,7 @@ func (s *Service) registerTools() {
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "current_activity",
-		Description: "Return the package/activity currently in the foreground.",
+		Description: "Return what's in the foreground on ANY platform — the package/activity on Android, or the active window title on a desktop.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in deviceRef) (*mcpsdk.CallToolResult, struct {
 		Activity string `json:"activity"`
 	}, error) {
@@ -414,9 +403,6 @@ func (s *Service) registerTools() {
 		}
 		id, err := s.resolveDevice(ctx, in.DeviceID)
 		if err != nil {
-			return nil, out, err
-		}
-		if err := s.requireAndroidDevice(ctx, id); err != nil {
 			return nil, out, err
 		}
 		act, err := s.devices.CurrentActivity(ctx, id)

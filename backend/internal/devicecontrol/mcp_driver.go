@@ -60,9 +60,9 @@ func (d mcpDriver) Key(ctx context.Context, key string) error {
 	return err
 }
 
-// Capabilities: v1 desktop control exposes only the core primitives; the vision
-// layer + test runner ride on screenshot+click, so this is enough for UI testing.
-// Accessibility-tree / app-launch land as the bundled server profile grows.
+// Capabilities: desktop control supports the core primitives plus app listing/
+// launching and the foreground window (via the runner). The accessibility tree is
+// not exposed yet (the agent uses vision/ask_screen on desktops).
 func (mcpDriver) Capabilities() Capabilities {
-	return Capabilities{}
+	return Capabilities{Apps: true}
 }

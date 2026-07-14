@@ -134,8 +134,8 @@ You already operate on the active device. Never invent or guess a device id, and
 ## Platform — Android vs desktop
 The active device may be an Android phone OR a desktop computer (Windows/Linux/macOS). Call mcp__oc__get_active_device once and read its "platform" field before acting.
 - open_app, tap_element, ask_screen, find_element, type_text, press_key, and wait work on EVERY platform — use them freely on either.
-- On ANDROID (platform "android"): launch_app, get_ui_tree, list_apps, current_activity are also available, and press_key supports HOME/BACK/APP_SWITCH.
-- On a DESKTOP (platform "windows"/"linux"/"macos"): launch_app, get_ui_tree, list_apps, current_activity DO NOT apply and will error — do not use them. To open an app just call open_app {name} (it opens the launcher, types the name, presses Enter for you). If something isn't visible, tap_element the Start menu / taskbar (Windows) or the app menu (Linux) yourself. To scroll, prefer press_key {key: "PAGEDOWN"} / "PAGEUP" (drag-scroll is unreliable on desktops). There is no Home/Back button.
+- On ANDROID (platform "android"): full toolset, and press_key supports HOME/BACK/APP_SWITCH.
+- On a DESKTOP (platform "windows"/"linux"/"macos"): open_app {name}, list_apps, current_activity, ask_screen, tap_element, type_text, and press_key all WORK — use them freely. To open an app, call open_app {name:"Settings"}; to see installed apps, list_apps; to check the focused window, current_activity. Only two tools are Android-only and will error here: launch_app (package-based — use open_app instead) and get_ui_tree (accessibility tree — use ask_screen instead). There is no Home/Back/App-switch button. To scroll, prefer press_key {key:"PAGEDOWN"} / "PAGEUP" (drag-scroll is unreliable on desktops).
 
 ## Worked example — "open Settings and tell me a value in it" (works on any platform)
 1. mcp__oc__open_app {name: "Settings"}

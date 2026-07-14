@@ -46,9 +46,10 @@ reconnects automatically if the link drops.
 ## What it exposes
 
 The appliance drives the desktop through a small, server-agnostic vocabulary:
-`screenshot`, `click(x,y)`, `drag`, `type(text)`, `key(name)`. Testral's
-Florence-2 vision grounding turns "tap the Start button" into a click at the right
-pixel — the same engine used for Android.
+`screenshot`, `click(x,y)`, `drag`, `type(text)`, `key(name)`, plus `list_apps`,
+`open_app(name)`, and `current_activity` (Start-menu enumeration/launch and the
+foreground window). Testral's Florence-2 vision grounding turns "tap the Start
+button" into a click at the right pixel — the same engine used for Android.
 
 Key names: `ENTER`, `TAB`, `ESC`, `BACKSPACE`, `DELETE`, `SPACE`, arrows
 (`UP`/`DOWN`/`LEFT`/`RIGHT`), `HOME`, `END`, `PAGEUP`, `PAGEDOWN`, `WIN`.

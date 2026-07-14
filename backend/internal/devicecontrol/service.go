@@ -13,6 +13,7 @@ package devicecontrol
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -260,6 +261,15 @@ func (s *Service) ListApps(ctx context.Context, id string, thirdPartyOnly bool) 
 	if err != nil {
 		return nil, err
 	}
+	if !isAndroid(instance.Platform) {
+		var out struct {
+			Apps []string `json:"apps"`
+		}
+		if err := s.callRunner(ctx, id, "list_apps", struct{}{}, &out); err != nil {
+			return nil, err
+		}
+		return out.Apps, nil
+	}
 	args := []string{"pm", "list", "packages"}
 	if thirdPartyOnly {
 		args = append(args, "-3")
@@ -288,17 +298,53 @@ func (s *Service) LaunchApp(ctx context.Context, id, pkg string) error {
 	return err
 }
 
-// CurrentActivity returns the package/activity that currently has window focus.
+// CurrentActivity returns the package/activity (Android) or the foreground window
+// title (desktop) that currently has focus.
 func (s *Service) CurrentActivity(ctx context.Context, id string) (string, error) {
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return "", err
+	}
+	if !isAndroid(instance.Platform) {
+		var out struct {
+			Activity string `json:"activity"`
+		}
+		if err := s.callRunner(ctx, id, "current_activity", struct{}{}, &out); err != nil {
+			return "", err
+		}
+		return out.Activity, nil
 	}
 	out, err := s.adbShell(ctx, instance, "dumpsys", "activity", "activities")
 	if err != nil {
 		return "", err
 	}
 	return parseResumedActivity(out), nil
+}
+
+// OpenApp launches an app by its display name on a desktop target (the runner
+// resolves it against the Start menu). Android app-opening goes through
+// LaunchApp with a resolved package instead.
+func (s *Service) OpenApp(ctx context.Context, id, name string) error {
+	if _, err := s.resolve(ctx, id); err != nil {
+		return err
+	}
+	return s.callRunner(ctx, id, "open_app", map[string]string{"name": name}, nil)
+}
+
+// callRunner sends a method to a desktop device's runner over the tunnel and, if
+// out is non-nil, decodes the JSON result into it.
+func (s *Service) callRunner(ctx context.Context, id, method string, params, out any) error {
+	if s.runners == nil {
+		return fmt.Errorf("%w: desktop control tunnel is not configured", ErrUnsupported)
+	}
+	raw, err := s.runners.Call(ctx, id, method, params)
+	if err != nil {
+		return err
+	}
+	if out != nil && len(raw) > 0 {
+		return json.Unmarshal(raw, out)
+	}
+	return nil
 }
 
 // InstallAPK installs an APK from a path on the OpenCuttles host, replacing any
