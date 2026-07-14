@@ -34,27 +34,38 @@ function AgentPart({ part }: { part: FlueConversationPart }) {
 
 // Natural-language device driver: one Flue conversation thread per device.
 export function AgentTab({ instance }: { instance: Instance }) {
-  // A conversation is pinned to its id and keeps the model it was created with;
-  // bumping the epoch starts a fresh thread that picks up the current model
-  // (and escapes a spiralled one). Reset to the base thread when the device changes.
+  // A Flue conversation is pinned to its id and keeps the model + prompt + tools it
+  // was CREATED with. So we key the id on the configured model: switching models in
+  // settings yields a new id → a fresh harness that picks up the new model, prompt,
+  // and stripped toolset automatically. The epoch adds a manual reset (↺) on top.
   const [epoch, setEpoch] = useState(0);
-  const conversationId = epoch === 0 ? `oc-${instance.id}` : `oc-${instance.id}-r${epoch}`;
+  const [modelKey, setModelKey] = useState("");
+  const [modelLabel, setModelLabel] = useState("");
+  const conversationId =
+    `oc-${instance.id}` + (modelKey ? `-${modelKey}` : "") + (epoch ? `-r${epoch}` : "");
   const agent = useFlueAgent({ name: AGENT_NAME, id: conversationId });
   const client = useFlueClient();
   const [input, setInput] = useState("");
   const [stopping, setStopping] = useState(false);
-  const [modelLabel, setModelLabel] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
 
   const busy = agent.status === "submitted" || agent.status === "streaming";
 
-  // Show the actually-configured model (admins). New conversations pick up the
-  // latest choice; older threads keep the model they started with.
+  // Read the configured model: label it in the header AND fold it into the
+  // conversation id so a model change starts a clean thread (admins only; others
+  // just get the base thread).
   useEffect(() => {
     api
       .agentModel()
-      .then((c) => setModelLabel(c.providerId && c.model ? `${c.providerId}/${c.model}` : "local default"))
-      .catch(() => setModelLabel(""));
+      .then((c) => {
+        const configured = c.providerId && c.model;
+        setModelLabel(configured ? `${c.providerId}/${c.model}` : "local default");
+        setModelKey((configured ? `${c.providerId}-${c.model}` : "").replace(/[^a-zA-Z0-9]+/g, "-").slice(0, 40));
+      })
+      .catch(() => {
+        setModelLabel("");
+        setModelKey("");
+      });
   }, []);
 
   // Interrupt the in-flight run so the operator can revise the prompt. The Flue
