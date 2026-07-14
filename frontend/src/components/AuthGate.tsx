@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { BrandMark } from "@/components/Brand";
+import { DitherField } from "@/components/DitherField";
 import { api } from "@/api";
 import type { Principal } from "@/types";
 
@@ -39,9 +40,11 @@ export function AuthGate({
 
   return (
     <div className="relative grid min-h-screen place-items-center overflow-hidden bg-background p-4">
-      {/* clean minimal ground: a single, very subtle neutral dot grid */}
-      <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "radial-gradient(var(--dot-tex) 1px, transparent 1.5px)", backgroundSize: "22px 22px" }} />
-      <form onSubmit={submit} className="relative w-full max-w-[380px] rounded-2xl border bg-card p-7" style={{ boxShadow: "var(--card-shadow)" }}>
+      {/* neutral dithered hero (matches the clean-minimal palette) */}
+      <div className="pointer-events-none absolute inset-0">
+        <DitherField />
+      </div>
+      <form onSubmit={submit} className="relative w-full max-w-[380px] rounded-2xl border bg-card/95 p-7 backdrop-blur-sm" style={{ boxShadow: "var(--card-shadow), 0 12px 40px rgba(0,0,0,0.12)" }}>
         <div className="mb-5 flex items-center gap-2.5">
           <BrandMark className="size-8" />
           <div>

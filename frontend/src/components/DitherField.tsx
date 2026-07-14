@@ -10,9 +10,9 @@ const BAYER = [
 ].map((row) => row.map((v) => (v + 0.5) / 16));
 
 // A restrained, self-contained dithered backdrop: an ordered dither of a slow
-// plasma field in the brand teal. Rendered on a downscaled buffer and scaled up
-// with smoothing off for the classic chunky-dot look. Cheap and reduced-motion
-// aware. Purely decorative — behind content, pointer-events: none.
+// plasma field in neutral gray (matches the clean-minimal palette). Rendered on a
+// downscaled buffer and scaled up with smoothing off for the classic chunky-dot
+// look. Cheap and reduced-motion aware. Purely decorative — pointer-events: none.
 export function DitherField({ className }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { theme } = useTheme();
@@ -26,9 +26,10 @@ export function DitherField({ className }: { className?: string }) {
     const c = ctx;
 
     const dark = theme === "dark";
-    // dot RGB + peak alpha per theme (light stays fainter).
-    const [r, g, b] = dark ? [47, 211, 184] : [18, 165, 148];
-    const peak = dark ? 0.16 : 0.09;
+    // Neutral gray dots + peak alpha per theme (light stays fainter): light dots
+    // on the dark ground, dark dots on the light ground.
+    const [r, g, b] = dark ? [212, 212, 212] : [82, 82, 82];
+    const peak = dark ? 0.14 : 0.07;
 
     const cell = 6; // upscaled dot size in CSS px
     let bw = 0;
