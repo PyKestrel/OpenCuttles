@@ -68,7 +68,17 @@ type RuntimeConfig = {
   model?: string;
   headers?: Record<string, string>;
   apiKey?: string;
+  contextWindow?: number;
+  maxTokens?: number;
 };
+
+// A non-catalog provider (e.g. "custom" for OpenRouter) has NO catalog defaults,
+// so an unset maxTokens falls back to 0 and Flue caps the completion at nothing —
+// the model emits a single token and stops, never finishing a tool call. Give the
+// custom provider real limits. Defaults suit a modern large model (Haiku 4.5 =
+// 200k context); the admin config can override per deployment.
+const DEFAULT_CONTEXT_WINDOW = 200_000;
+const DEFAULT_MAX_TOKENS = 8_192;
 
 // resolveModel registers the effective provider and returns its model specifier.
 // It always registers the local Ollama default (so a fetch failure still yields
@@ -98,14 +108,20 @@ async function resolveModel(): Promise<string> {
       console.warn(`[opencuttles] runtime config not set (configured=${cfg.configured}); falling back to ${FALLBACK_MODEL}.`);
       return FALLBACK_MODEL;
     }
+    const contextWindow = cfg.contextWindow && cfg.contextWindow > 0 ? cfg.contextWindow : DEFAULT_CONTEXT_WINDOW;
+    const maxTokens = cfg.maxTokens && cfg.maxTokens > 0 ? cfg.maxTokens : DEFAULT_MAX_TOKENS;
     registerProvider(cfg.providerId, {
       ...(cfg.api ? { api: cfg.api as never } : {}),
       ...(cfg.baseUrl ? { baseUrl: cfg.baseUrl } : {}),
       ...(cfg.apiKey ? { apiKey: cfg.apiKey } : {}),
       ...(cfg.headers ? { headers: cfg.headers } : {}),
+      contextWindow,
+      maxTokens,
     });
     const model = `${cfg.providerId}/${cfg.model}`;
-    console.log(`[opencuttles] using configured model ${model} (base ${cfg.baseUrl ?? "default"})`);
+    console.log(
+      `[opencuttles] using configured model ${model} (base ${cfg.baseUrl ?? "default"}, context ${contextWindow}, maxTokens ${maxTokens})`,
+    );
     return model;
   } catch (err) {
     console.error(
