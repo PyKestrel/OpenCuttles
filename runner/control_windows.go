@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -265,30 +266,46 @@ func (winScreen) OpenApp(name string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("open_app needs an app name (e.g. \"Settings\"); none was given")
 	}
-	// Resolve the best Start-menu match to its AppID and launch it via the
-	// AppsFolder shell namespace (works for both Store and classic desktop apps).
-	// Match precedence is exact (case-insensitive) → starts-with → contains, so a
-	// query like "Settings" can't fall through to the alphabetically-first app.
-	// Echo the resolved Name so the caller knows exactly what was launched.
+	// Resolve the best Start-menu match to its AppID and launch it. Match
+	// precedence is exact (case-insensitive) → starts-with → contains, so a query
+	// like "Settings" can't fall through to the alphabetically-first app.
 	//
-	// The name is passed via an environment variable, NOT a positional arg:
-	// powershell -Command does NOT reliably bind trailing args to $args, so the
-	// old $args[0] came through empty — every app matched "*" and it opened the
-	// alphabetically-first one (7-Zip). $env:OC_APPNAME is reliable and avoids
-	// interpolating caller text into the script.
+	// Launch: Start-Process on the AppsFolder moniker works for classic desktop
+	// apps (Notepad), but UWP/immersive apps like Settings REJECT it — so on
+	// failure we fall back to explorer.exe, which launches every app kind. Only a
+	// genuine no-match exits non-zero (with a reason on stderr); a launch that
+	// needed the fallback still succeeds. Echo the resolved Name on success.
+	//
+	// The name is passed via $env:OC_APPNAME, NOT a positional arg: powershell
+	// -Command does NOT reliably bind trailing args to $args (the old $args[0]
+	// came through empty, so every app matched "*" and it opened 7-Zip).
 	const script = `$n=$env:OC_APPNAME
 $apps = Get-StartApps
 $m = @($apps | Where-Object { $_.Name -ieq $n })
 if (-not $m) { $m = @($apps | Where-Object { $_.Name -like "$n*" }) }
 if (-not $m) { $m = @($apps | Where-Object { $_.Name -like "*$n*" }) }
-if (-not $m) { exit 2 }
-Start-Process ("shell:AppsFolder\" + $m[0].AppID)
-Write-Output $m[0].Name`
+if (-not $m) { [Console]::Error.WriteLine("no Start-menu app matches"); exit 2 }
+$app = $m[0]
+try {
+  Start-Process ("shell:AppsFolder\" + $app.AppID) -ErrorAction Stop
+} catch {
+  Start-Process -FilePath explorer.exe -ArgumentList ("shell:AppsFolder\" + $app.AppID)
+}
+Write-Output $app.Name`
 	cmd := hidden("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
 	cmd.Env = append(os.Environ(), "OC_APPNAME="+name)
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("no Start-menu app matches %q — call list_apps to see exact names", name)
+		// Surface the real reason (stderr) instead of assuming "no match".
+		detail := ""
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			detail = strings.TrimSpace(string(ee.Stderr))
+		}
+		if detail == "" {
+			detail = err.Error()
+		}
+		return "", fmt.Errorf("could not open %q: %s — call list_apps for exact names", name, detail)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
