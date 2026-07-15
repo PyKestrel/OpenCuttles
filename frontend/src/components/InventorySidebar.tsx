@@ -48,21 +48,25 @@ export function InventorySidebar({
 
   return (
     <aside className="flex flex-col border-r bg-sidebar" style={{ background: "var(--sidebar)" }}>
-      <div className="flex gap-0.5 border-b p-2" style={{ borderColor: "var(--hairline)" }}>
-        {VIEWS.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            title={label}
-            onClick={() => onView(id)}
-            className={cn(
-              "grid h-8.5 flex-1 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-              view === id && "bg-accent text-primary shadow-[inset_0_-2px_0_var(--primary)]",
-            )}
-            style={{ height: 34 }}
-          >
-            <Icon className="size-[17px]" />
-          </button>
-        ))}
+      {/* Segmented view switcher: a muted track with a raised active pill. */}
+      <div className="border-b p-2" style={{ borderColor: "var(--hairline)" }}>
+        <div className="flex gap-1 rounded-lg bg-muted p-1">
+          {VIEWS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              title={label}
+              aria-label={label}
+              aria-pressed={view === id}
+              onClick={() => onView(id)}
+              className={cn(
+                "grid h-8 flex-1 place-items-center rounded-md text-muted-foreground transition-all hover:text-foreground",
+                view === id && "bg-background text-foreground shadow-sm",
+              )}
+            >
+              <Icon className="size-[17px]" />
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex items-center px-3.5 pb-1.5 pt-3">
