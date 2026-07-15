@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Cpu, FlaskConical, Info, Laptop, Monitor, Plug, Smartphone, Sparkles, Terminal } from "lucide-react";
+import { Cpu, FlaskConical, Info, Plug, Sparkles } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/StatusDot";
+import { isDesktopPlatform, isLive, platformIcon, platformLabel } from "@/lib/platform";
 import { api } from "@/api";
 import type { DeviceTab } from "@/components/device/DeviceWorkspace";
-import type { Instance, Platform, TestRun } from "@/types";
+import type { Instance, TestRun } from "@/types";
 
 export function SummaryTab({
   instance,
@@ -17,9 +18,8 @@ export function SummaryTab({
   onOpenTab: (tab: DeviceTab, pane?: "controls" | "agent") => void;
 }) {
   const platform = instance.platform || "android";
-  const isDesktop = platform !== "android";
-  // Desktops are "live" when the runner is online; Android VMs when running.
-  const live = isDesktop ? instance.state === "online" : instance.state === "running";
+  const isDesktop = isDesktopPlatform(instance.platform);
+  const live = isLive(instance);
   const ScreenIcon = platformIcon(platform);
   const [shotToken, setShotToken] = useState(() => Date.now());
   const [shotFailed, setShotFailed] = useState(false);
@@ -221,21 +221,6 @@ function Detail({ k, sans, children }: { k: string; sans?: boolean; children: Re
   );
 }
 
-function platformIcon(platform: Platform) {
-  switch (platform) {
-    case "windows":
-      return Monitor;
-    case "linux":
-      return Terminal;
-    case "macos":
-      return Laptop;
-    default:
-      return Smartphone;
-  }
-}
-function platformLabel(platform: Platform) {
-  return platform === "macos" ? "macOS" : platform.charAt(0).toUpperCase() + platform.slice(1);
-}
 function cap(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Camera, Laptop, Monitor, MonitorPlay, Play, Smartphone, Square, Terminal } from "lucide-react";
+import { Camera, MonitorPlay, Play, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can } from "@/lib/permissions";
+import { isDesktopPlatform, platformIcon } from "@/lib/platform";
 import { FadeIn } from "@/components/Motion";
 import { SummaryTab } from "@/components/device/SummaryTab";
 import { LogsTab } from "@/components/device/LogsTab";
@@ -10,20 +11,7 @@ import { ConsoleWorkspace, type ConsolePane } from "@/components/device/ConsoleW
 import { DesktopConsole } from "@/components/device/DesktopConsole";
 import { TestsPanel } from "@/components/tests/TestsPanel";
 import { api } from "@/api";
-import type { Instance, Platform, Principal, TestRun } from "@/types";
-
-function platformIcon(platform: Platform) {
-  switch (platform) {
-    case "windows":
-      return Monitor;
-    case "linux":
-      return Terminal;
-    case "macos":
-      return Laptop;
-    default:
-      return Smartphone;
-  }
-}
+import type { Instance, Principal, TestRun } from "@/types";
 
 export type DeviceTab = "summary" | "console" | "tests" | "logs" | "configure";
 
@@ -59,7 +47,7 @@ export function DeviceWorkspace({
   const canControl = can(principal, "control");
   const canTest = can(principal, "test");
   const canOperate = can(principal, "operate");
-  const isDesktop = (instance.platform || "android") !== "android";
+  const isDesktop = isDesktopPlatform(instance.platform);
   const PlatformIcon = platformIcon(instance.platform || "android");
 
   const tabs = useMemo(() => {

@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Settings2, Trash2 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { Instance, Platform } from "@/types";
+import { isDesktopPlatform, platformLabel } from "@/lib/platform";
+import type { Instance } from "@/types";
 
 // Read-only device configuration plus a guarded delete.
 export function ConfigureTab({
@@ -18,7 +19,7 @@ export function ConfigureTab({
 }) {
   const [confirming, setConfirming] = useState(false);
   const platform = instance.platform || "android";
-  const isDesktop = platform !== "android";
+  const isDesktop = isDesktopPlatform(instance.platform);
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -77,10 +78,6 @@ export function ConfigureTab({
       </Card>
     </div>
   );
-}
-
-function platformLabel(platform: Platform) {
-  return platform === "macos" ? "macOS" : platform.charAt(0).toUpperCase() + platform.slice(1);
 }
 
 function Row({ k, mono, children }: { k: string; mono?: boolean; children: React.ReactNode }) {
