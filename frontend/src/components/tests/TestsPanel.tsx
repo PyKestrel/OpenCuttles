@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { FlaskConical, History, Plus, Trash2 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { TestReport } from "@/components/tests/TestReport";
 import { api } from "@/api";
 import type { DeviceTest, Instance, TestRun } from "@/types";
@@ -150,16 +152,16 @@ export function TestsPanel({
             </p>
             <label className="block">
               <span className="mb-1 block text-[12px] text-muted-foreground">Name</span>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Wi-Fi settings smoke test" className="w-full rounded-lg border bg-secondary px-3 py-2 text-[13px] outline-none focus:border-[var(--ring)]" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Wi-Fi settings smoke test" />
             </label>
             <label className="block">
               <span className="mb-1 block text-[12px] text-muted-foreground">Steps</span>
-              <textarea
+              <Textarea
                 rows={7}
                 value={stepsText}
                 onChange={(e) => setStepsText(e.target.value)}
                 placeholder={"open Settings\ntap Network & internet\nassert Airplane mode is visible"}
-                className="w-full resize-y rounded-lg border bg-secondary px-3 py-2 font-mono text-[12.5px] leading-relaxed outline-none focus:border-[var(--ring)]"
+                className="resize-y font-mono text-[12.5px] leading-relaxed"
               />
             </label>
             <Button variant="primary" disabled={busy || !name.trim() || !stepsText.trim()}>Save test</Button>

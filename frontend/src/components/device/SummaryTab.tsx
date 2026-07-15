@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Cpu, FlaskConical, Info, Smartphone, Sparkles } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/StatusDot";
 import { api } from "@/api";
 import type { DeviceTab } from "@/components/device/DeviceWorkspace";
@@ -119,13 +120,7 @@ export function SummaryTab({
           <CardHeader
             icon={<FlaskConical className="size-[15px]" />}
             title="Latest test"
-            action={
-              latestRun ? (
-                <span className="rounded-[5px] px-1.5 font-mono text-[10.5px]" style={badgeStyle(latestRun.passed)}>
-                  {latestRun.status.toUpperCase()}
-                </span>
-              ) : undefined
-            }
+            action={latestRun ? <RunStatusBadge run={latestRun} /> : undefined}
           />
           <div className="p-4">
             {latestRun ? (
@@ -149,7 +144,7 @@ export function SummaryTab({
         </Card>
 
         <Card>
-          <CardHeader icon={<Sparkles className="size-[15px]" />} title="Agent" action={<span className="text-[12px] text-muted-foreground/70">MiniCPM5-1B</span>} />
+          <CardHeader icon={<Sparkles className="size-[15px]" />} title="Agent" />
           <div className="p-4 text-[13px] text-muted-foreground">
             Drive this device in natural language.
             <button onClick={() => onOpenTab("console", "agent")} className="mt-2 block text-[13px] text-primary">
@@ -190,7 +185,17 @@ function stateTextColor(state: Instance["state"]) {
   if (state === "error") return "var(--destructive)";
   return "var(--foreground)";
 }
-function badgeStyle(pass: boolean): React.CSSProperties {
-  const c = pass ? "var(--running)" : "var(--destructive)";
-  return { color: c, background: `color-mix(in srgb, ${c} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${c} 30%, transparent)` };
+// Latest-test status as a shadcn Badge, tinted by the semantic status color
+// (running / passed / failed) rather than the neutral UI palette.
+function RunStatusBadge({ run }: { run: TestRun }) {
+  const c = run.status === "running" ? "var(--warn)" : run.passed ? "var(--running)" : "var(--destructive)";
+  return (
+    <Badge
+      variant="outline"
+      className="font-mono text-[10px]"
+      style={{ color: c, background: `color-mix(in srgb, ${c} 12%, transparent)`, borderColor: `color-mix(in srgb, ${c} 30%, transparent)` }}
+    >
+      {run.status.toUpperCase()}
+    </Badge>
+  );
 }
