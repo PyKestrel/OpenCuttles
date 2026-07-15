@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ImageIcon, PackagePlus } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { api } from "@/api";
 import type { Image, Principal } from "@/types";
 import { can } from "@/lib/permissions";
@@ -78,11 +79,11 @@ export function ImagesView({ principal }: { principal: Principal }) {
             </p>
             <label className="block">
               <span className="mb-1 block text-[12px] text-muted-foreground">Name</span>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="AOSP main" className={inputCls} />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="AOSP main" />
             </label>
             <label className="block">
               <span className="mb-1 block text-[12px] text-muted-foreground">Image path</span>
-              <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/var/lib/opencuttles/images/aosp" className={inputCls} />
+              <Input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/var/lib/opencuttles/images/aosp" />
             </label>
             <Button variant="primary" disabled={!canOperate || busy || !name || !path}>Register image</Button>
             {!canOperate && <div className="text-[11.5px] text-muted-foreground/70">Your role cannot register images.</div>}
@@ -93,7 +94,6 @@ export function ImagesView({ principal }: { principal: Principal }) {
   );
 }
 
-const inputCls = "w-full rounded-lg border bg-secondary px-3 py-2 text-[13px] outline-none focus:border-[var(--ring)]";
 
 function statusBadge(status?: string): React.CSSProperties {
   const c = status === "ready" || !status ? "var(--running)" : status === "error" ? "var(--destructive)" : "var(--warn)";

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Check, Copy, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { api } from "@/api";
 import type { AndroidVersion, Image, Instance, Platform } from "@/types";
 
@@ -152,7 +153,7 @@ export function CreateDeviceDialog({
                   Testral fetches the image with <code className="font-mono">cvd fetch</code> and launches a Cuttlefish VM — no manual image registration.
                 </p>
                 <Field label="Name">
-                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="android-01" className={inputCls} />
+                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="android-01" />
                 </Field>
                 <Field label="Android version">
                   <select value={androidVersion} onChange={(e) => setAndroidVersion(e.target.value)} disabled={Boolean(imageId)} className={inputCls}>
@@ -171,10 +172,10 @@ export function CreateDeviceDialog({
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="CPU cores">
-                    <input type="number" min={1} max={16} value={cpuCores} onChange={(e) => setCpuCores(Number(e.target.value))} className={inputCls} />
+                    <Input type="number" min={1} max={16} value={cpuCores} onChange={(e) => setCpuCores(Number(e.target.value))} />
                   </Field>
                   <Field label="Memory (MB)">
-                    <input type="number" min={1024} step={512} value={memoryMb} onChange={(e) => setMemoryMb(Number(e.target.value))} className={inputCls} />
+                    <Input type="number" min={1024} step={512} value={memoryMb} onChange={(e) => setMemoryMb(Number(e.target.value))} />
                   </Field>
                 </div>
                 <button type="button" onClick={() => setShowAdvanced((v) => !v)} className="text-[12.5px] font-medium text-primary">
@@ -205,7 +206,7 @@ export function CreateDeviceDialog({
                   Onboard a real machine for UI testing. You'll get a one-time token to start the Testral runner on that machine — it dials home, so no inbound ports are needed.
                 </p>
                 <Field label="Name">
-                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-workstation" className={inputCls} />
+                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="my-workstation" />
                 </Field>
                 <Field label="Operating system">
                   <select value={desktopOS} onChange={(e) => setDesktopOS(e.target.value as DesktopOS)} className={inputCls}>

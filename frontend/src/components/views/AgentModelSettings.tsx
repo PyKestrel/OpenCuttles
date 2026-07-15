@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { BrainCircuit, Check, Plug, X } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/api";
 import type { AgentModelConfig, AgentModelPreset, AgentModelUpdate } from "@/types";
 
@@ -129,28 +131,32 @@ export function AgentModelSettings() {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Provider id">
-            <input value={form.providerId} onChange={(e) => set("providerId", e.target.value)} placeholder="openai" className={inputCls} />
+            <Input value={form.providerId} onChange={(e) => set("providerId", e.target.value)} placeholder="openai" />
           </Field>
           <Field label="API method">
-            <select value={form.api} onChange={(e) => set("api", e.target.value)} className={inputCls}>
-              {(cfg?.supportedApis ?? [form.api]).map((a) => (
-                <option key={a} value={a}>{a}</option>
-              ))}
-            </select>
+            <Select value={form.api} onValueChange={(v) => set("api", v)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(cfg?.supportedApis ?? [form.api]).map((a) => (
+                  <SelectItem key={a} value={a}>{a}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           <Field label="Model">
-            <input value={form.model} onChange={(e) => set("model", e.target.value)} placeholder="gpt-4o-mini" className={inputCls} />
+            <Input value={form.model} onChange={(e) => set("model", e.target.value)} placeholder="gpt-4o-mini" />
           </Field>
           <Field label="Base URL">
-            <input value={form.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} placeholder="https://api.openai.com/v1" className={inputCls} />
+            <Input value={form.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} placeholder="https://api.openai.com/v1" />
           </Field>
           <Field label="API key">
-            <input
+            <Input
               type="password"
               value={form.apiKey}
               onChange={(e) => set("apiKey", e.target.value)}
               placeholder={cfg?.keySet ? "•••••••• (leave blank to keep)" : "API key"}
-              className={inputCls}
               autoComplete="new-password"
             />
           </Field>
@@ -192,7 +198,6 @@ export function AgentModelSettings() {
   );
 }
 
-const inputCls = "w-full rounded-lg border bg-secondary px-3 py-2 text-[13px] outline-none focus:border-[var(--ring)]";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (

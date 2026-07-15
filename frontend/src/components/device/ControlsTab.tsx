@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { ChevronRight, RotateCw, Terminal, Upload } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { api } from "@/api";
 import type { Instance } from "@/types";
 
@@ -119,11 +120,11 @@ export function ControlsTab({ instance }: { instance: Instance }) {
               </Button>
             </div>
             <form className="flex gap-2" onSubmit={sendText}>
-              <input
+              <Input
                 value={typeValue}
                 onChange={(e) => setTypeValue(e.target.value)}
                 placeholder="Type text into the focused field"
-                className="min-w-0 flex-1 rounded-lg border bg-secondary px-3 py-2 text-[13px] outline-none focus:border-[var(--ring)]"
+                className="min-w-0 flex-1 text-[13px]"
               />
               <Button variant="primary" disabled={busy || !typeValue}>Send</Button>
             </form>
@@ -138,11 +139,11 @@ export function ControlsTab({ instance }: { instance: Instance }) {
           />
           <div className="space-y-3 p-4">
             <form className="flex gap-2" onSubmit={runShell}>
-              <input
+              <Input
                 value={shellCmd}
                 onChange={(e) => setShellCmd(e.target.value)}
                 placeholder="getprop ro.build.version.release"
-                className="min-w-0 flex-1 rounded-lg border bg-secondary px-3 py-2 font-mono text-[12.5px] outline-none focus:border-[var(--ring)]"
+                className="min-w-0 flex-1 font-mono text-[12.5px]"
               />
               <Button variant="primary" disabled={busy || !shellCmd}>Run</Button>
             </form>
