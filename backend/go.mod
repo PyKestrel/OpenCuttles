@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/xuri/excelize/v2 v2.11.0
 	modernc.org/sqlite v1.37.1
 )

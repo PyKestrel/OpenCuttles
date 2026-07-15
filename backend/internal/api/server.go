@@ -151,6 +151,7 @@ func (s *Server) routes() {
 	s.registerControlRoutes()
 	// Vision-grounded test authoring/execution/reports; guarded by PermissionTest.
 	s.registerTestRoutes()
+	s.registerCaseRoutes()
 	// MCP endpoint: device tools for the local agent. Authenticated by the
 	// service token (OPENCUTTLES_MCP_TOKEN) or a session with the control
 	// permission. The streamable handler owns method routing under this path.

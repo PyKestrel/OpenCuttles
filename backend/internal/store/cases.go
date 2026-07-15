@@ -466,6 +466,13 @@ func (s *SQLite) UpdateBuildStatus(ctx context.Context, id, status, note string)
 	return err
 }
 
+// SetBuildLocation records the stored artifact path + size after the upload is
+// streamed to disk.
+func (s *SQLite) SetBuildLocation(ctx context.Context, id, path string, size int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE builds SET path=?, size_bytes=? WHERE id=?`, path, size, id)
+	return err
+}
+
 func scanBuild(row scanner) (domain.Build, error) {
 	var b domain.Build
 	var created string
