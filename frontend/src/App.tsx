@@ -21,7 +21,7 @@ export default function App() {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [view, setView] = useState<InventoryView>("devices");
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [sidebarCompact, setSidebarCompact] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -111,19 +111,18 @@ export default function App() {
 
   return (
     <div className="grid h-screen grid-rows-[auto_1fr]">
-      <TopBar principal={principal} onOpenCommand={() => setCmdOpen(true)} onToggleSidebar={() => setShowSidebar((v) => !v)} />
-      <div className="grid min-h-0" style={{ gridTemplateColumns: showSidebar ? "290px 1fr" : "0 1fr" }}>
-        {showSidebar && (
-          <InventorySidebar
-            host={host}
-            instances={instances}
-            selectedId={selected?.id}
-            view={view}
-            onView={setView}
-            onSelect={selectDevice}
-            onNewDevice={() => setCreateOpen(true)}
-          />
-        )}
+      <TopBar principal={principal} onOpenCommand={() => setCmdOpen(true)} onToggleSidebar={() => setSidebarCompact((v) => !v)} />
+      <div className="grid min-h-0" style={{ gridTemplateColumns: sidebarCompact ? "56px 1fr" : "290px 1fr" }}>
+        <InventorySidebar
+          compact={sidebarCompact}
+          host={host}
+          instances={instances}
+          selectedId={selected?.id}
+          view={view}
+          onView={setView}
+          onSelect={selectDevice}
+          onNewDevice={() => setCreateOpen(true)}
+        />
         <main className="flex min-w-0 flex-col overflow-hidden">
           {error && (
             <div className="border-b px-5 py-2 text-[13px]" style={{ color: "var(--destructive)" }}>

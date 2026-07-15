@@ -29,6 +29,7 @@ export function InventorySidebar({
   onView,
   onSelect,
   onNewDevice,
+  compact = false,
 }: {
   host?: Host;
   instances: Instance[];
@@ -37,6 +38,7 @@ export function InventorySidebar({
   onView: (v: InventoryView) => void;
   onSelect: (id: string) => void;
   onNewDevice: () => void;
+  compact?: boolean;
 }) {
   const [openHost, setOpenHost] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -45,6 +47,40 @@ export function InventorySidebar({
     ...p,
     devices: instances.filter((i) => (i.platform || "android") === p.id),
   })).filter((g) => g.devices.length > 0);
+
+  // Collapsed rail: keep navigation reachable (view icons + add) instead of
+  // hiding the sidebar entirely, which would strand the user with no nav.
+  if (compact) {
+    return (
+      <aside className="flex flex-col items-center gap-1 overflow-hidden border-r bg-sidebar py-2" style={{ background: "var(--sidebar)" }}>
+        {VIEWS.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            title={label}
+            aria-label={label}
+            aria-pressed={view === id}
+            onClick={() => onView(id)}
+            className={cn(
+              "grid size-9 place-items-center rounded-md border border-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+              view === id && "text-foreground",
+            )}
+            style={{ borderColor: view === id ? "color-mix(in srgb, var(--foreground) 35%, transparent)" : undefined }}
+          >
+            <Icon className="size-[18px]" />
+          </button>
+        ))}
+        <div className="my-1 h-px w-6" style={{ background: "var(--hairline)" }} />
+        <button
+          onClick={onNewDevice}
+          title="Add a device"
+          aria-label="Add a device"
+          className="grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-primary"
+        >
+          <Plus className="size-[18px]" />
+        </button>
+      </aside>
+    );
+  }
 
   return (
     <aside className="flex flex-col border-r bg-sidebar" style={{ background: "var(--sidebar)" }}>
