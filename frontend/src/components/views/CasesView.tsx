@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,7 @@ export function CasesView({ principal }: { principal: Principal }) {
   const [folder, setFolder] = useState<string>("");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Partial<TestCase> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const canTest = can(principal, "test");
@@ -108,17 +110,7 @@ export function CasesView({ principal }: { principal: Principal }) {
 
   async function clone(c: TestCase) {
     try {
-      await api.createCase({
-        summary: `${c.summary} (copy)`,
-        description: c.description,
-        precondition: c.precondition,
-        priority: c.priority,
-        status: c.status,
-        labels: c.labels,
-        components: c.components,
-        folderPath: c.folderPath,
-        steps: c.steps.map((s) => ({ ...s })),
-      });
+      await api.createCase(cloneFields(c));
       toast.success("Case cloned");
       refresh();
     } catch (err) {
@@ -128,6 +120,55 @@ export function CasesView({ principal }: { principal: Principal }) {
 
   async function remove(c: TestCase) {
     await api.deleteCase(c.id);
+    setSelected((prev) => {
+      const n = new Set(prev);
+      n.delete(c.id);
+      return n;
+    });
+    refresh();
+  }
+
+  const cloneFields = (c: TestCase): Partial<TestCase> => ({
+    summary: `${c.summary} (copy)`,
+    description: c.description,
+    precondition: c.precondition,
+    priority: c.priority,
+    status: c.status,
+    labels: c.labels,
+    components: c.components,
+    folderPath: c.folderPath,
+    steps: c.steps.map((s) => ({ ...s })),
+  });
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  }
+  const allVisibleSelected = visible.length > 0 && visible.every((c) => selected.has(c.id));
+  function toggleAll() {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (allVisibleSelected) visible.forEach((c) => n.delete(c.id));
+      else visible.forEach((c) => n.add(c.id));
+      return n;
+    });
+  }
+
+  async function bulkDelete() {
+    const ids = Array.from(selected);
+    await Promise.all(ids.map((id) => api.deleteCase(id).catch(() => undefined)));
+    setSelected(new Set());
+    toast.success(`Deleted ${ids.length} case${ids.length === 1 ? "" : "s"}`);
+    refresh();
+  }
+  async function bulkClone() {
+    const picked = cases.filter((c) => selected.has(c.id));
+    await Promise.all(picked.map((c) => api.createCase(cloneFields(c)).catch(() => undefined)));
+    setSelected(new Set());
+    toast.success(`Cloned ${picked.length} case${picked.length === 1 ? "" : "s"}`);
     refresh();
   }
 
@@ -196,6 +237,14 @@ export function CasesView({ principal }: { principal: Principal }) {
 
         <Card>
           <CardHeader icon={<BookMarked className="size-[15px]" />} title={folder || "All cases"} action={<span className="text-[12px] text-muted-foreground/70">{visible.length}{query || folder ? ` / ${cases.length}` : ""}</span>} />
+          {selected.size > 0 && canTest && (
+            <div className="flex items-center gap-2 border-b bg-secondary/60 px-4 py-2 text-[13px]" style={{ borderColor: "var(--hairline)" }}>
+              <span className="font-medium">{selected.size} selected</span>
+              <Button size="sm" variant="secondary" onClick={bulkClone}><Copy className="size-3.5" /> Clone</Button>
+              <Button size="sm" variant="danger" onClick={bulkDelete}><Trash2 className="size-3.5" /> Delete</Button>
+              <button onClick={() => setSelected(new Set())} className="ml-auto text-[12px] text-muted-foreground hover:text-foreground">Clear</button>
+            </div>
+          )}
           {visible.length === 0 ? (
             <div className="px-4 py-10 text-center text-[13px] text-muted-foreground/70">{query ? "No cases match your search." : "No cases here yet. Import a QMetry export or author one."}</div>
           ) : (
@@ -203,6 +252,7 @@ export function CasesView({ principal }: { principal: Principal }) {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8"><Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} aria-label="Select all" /></TableHead>
                     <TableHead>Summary</TableHead>
                     <TableHead className="w-40">Folder</TableHead>
                     <TableHead className="w-20">Priority</TableHead>
@@ -212,7 +262,10 @@ export function CasesView({ principal }: { principal: Principal }) {
                 </TableHeader>
                 <TableBody>
                   {visible.map((c) => (
-                    <TableRow key={c.id} className="cursor-pointer" onClick={() => setEditing(c)}>
+                    <TableRow key={c.id} className="cursor-pointer" data-state={selected.has(c.id) ? "selected" : undefined} onClick={() => setEditing(c)}>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={selected.has(c.id)} onCheckedChange={() => toggleSelect(c.id)} aria-label="Select case" />
+                      </TableCell>
                       <TableCell className="font-medium">
                         {c.summary}
                         {c.externalKey && <span className="ml-2 font-mono text-[10.5px] text-muted-foreground/60">{c.externalKey}</span>}
