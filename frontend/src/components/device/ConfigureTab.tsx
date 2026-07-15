@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Settings2, Trash2 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import type { Instance } from "@/types";
+import type { Instance, Platform } from "@/types";
 
 // Read-only device configuration plus a guarded delete.
 export function ConfigureTab({
@@ -17,6 +17,8 @@ export function ConfigureTab({
   onDelete: (id: string) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const platform = instance.platform || "android";
+  const isDesktop = platform !== "android";
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
@@ -26,12 +28,27 @@ export function ConfigureTab({
           <Row k="Name">{instance.name}</Row>
           <Row k="Instance ID" mono>{instance.id}</Row>
           <Row k="Host" mono>{instance.hostId}</Row>
-          <Row k="Image" mono>{instance.imageId || "—"}</Row>
-          <Row k="Android">{instance.androidVersion || "—"}</Row>
-          <Row k="Resources">{instance.cpuCores} vCPU · {instance.memoryMb} MB</Row>
-          <Row k="Display">
-            {instance.displayWidth && instance.displayHeight ? `${instance.displayWidth} × ${instance.displayHeight} · ${instance.dpi} dpi` : "—"}
-          </Row>
+          {isDesktop ? (
+            <>
+              <Row k="Platform">{platformLabel(platform)}</Row>
+              <Row k="Control endpoint" mono>{instance.controlEndpoint || "dial-home tunnel"}</Row>
+              {instance.displayWidth ? (
+                <Row k="Display">
+                  {instance.displayWidth} × {instance.displayHeight}
+                  {instance.dpi ? ` · ${instance.dpi} dpi` : ""}
+                </Row>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Row k="Image" mono>{instance.imageId || "—"}</Row>
+              <Row k="Android">{instance.androidVersion || "—"}</Row>
+              <Row k="Resources">{instance.cpuCores} vCPU · {instance.memoryMb} MB</Row>
+              <Row k="Display">
+                {instance.displayWidth && instance.displayHeight ? `${instance.displayWidth} × ${instance.displayHeight} · ${instance.dpi} dpi` : "—"}
+              </Row>
+            </>
+          )}
           <Row k="Console">{instance.consoleProvider}</Row>
           <Row k="Created">{new Date(instance.createdAt).toLocaleString()}</Row>
         </div>
@@ -41,7 +58,9 @@ export function ConfigureTab({
         <CardHeader icon={<Trash2 className="size-[15px]" />} title="Danger zone" />
         <div className="space-y-3 p-4">
           <p className="text-[13px] text-muted-foreground">
-            Deleting this device stops it and removes its Cuttlefish instance and disk state. This cannot be undone.
+            {isDesktop
+              ? "Deleting this device deregisters its runner and removes its enrollment. The machine itself is left untouched. This cannot be undone."
+              : "Deleting this device stops it and removes its Cuttlefish instance and disk state. This cannot be undone."}
           </p>
           {!confirming ? (
             <Button variant="danger" disabled={!canOperate || busy} onClick={() => setConfirming(true)}>
@@ -58,6 +77,10 @@ export function ConfigureTab({
       </Card>
     </div>
   );
+}
+
+function platformLabel(platform: Platform) {
+  return platform === "macos" ? "macOS" : platform.charAt(0).toUpperCase() + platform.slice(1);
 }
 
 function Row({ k, mono, children }: { k: string; mono?: boolean; children: React.ReactNode }) {
