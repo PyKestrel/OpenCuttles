@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { Check, Link2, Play, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { api } from "@/api";
 import type { StepResult, TestRun } from "@/types";
 
@@ -35,9 +36,9 @@ export function TestReport({ run }: { run: TestRun }) {
           <div className="text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground/70">Report</div>
           <h3 className="truncate text-[14px] font-semibold">{run.testName || run.testId}</h3>
         </div>
-        <span className="ml-auto rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase" style={{ color: statusColor, background: `color-mix(in srgb, ${statusColor} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${statusColor} 30%, transparent)` }}>
+        <Badge variant="outline" className="ml-auto text-[11px] font-semibold uppercase" style={{ color: statusColor, background: `color-mix(in srgb, ${statusColor} 12%, transparent)`, borderColor: `color-mix(in srgb, ${statusColor} 30%, transparent)` }}>
           {run.status}
-        </span>
+        </Badge>
         <button onClick={copyLink} className="inline-flex items-center gap-1.5 rounded-lg border bg-secondary px-2.5 py-1.5 text-[12px] font-medium hover:bg-accent">
           <Link2 className="size-3.5" /> {copied ? "Copied" : "Share"}
         </button>
@@ -117,10 +118,10 @@ function StepRow({ run, step, onSeek }: { run: TestRun; step: StepResult; onSeek
           <span className="text-[13px] font-medium leading-snug">
             <span className="text-muted-foreground/60">{step.index + 1}.</span> {step.text}
           </span>
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold uppercase" style={badge(step.pass)}>
+          <Badge variant="outline" className="ml-auto shrink-0 text-[10.5px] font-semibold uppercase" style={stepBadgeStyle(step.pass)}>
             {step.pass ? <Check className="size-3" /> : <X className="size-3" />}
             {step.pass ? "pass" : "fail"}
-          </span>
+          </Badge>
         </div>
         <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 font-mono text-[11.5px] text-muted-foreground/80">
           <span>{step.verb}</span>
@@ -135,7 +136,7 @@ function StepRow({ run, step, onSeek }: { run: TestRun; step: StepResult; onSeek
   );
 }
 
-function badge(pass: boolean): React.CSSProperties {
+function stepBadgeStyle(pass: boolean): React.CSSProperties {
   const c = pass ? "var(--running)" : "var(--destructive)";
-  return { color: c, background: `color-mix(in srgb, ${c} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${c} 30%, transparent)` };
+  return { color: c, background: `color-mix(in srgb, ${c} 12%, transparent)`, borderColor: `color-mix(in srgb, ${c} 30%, transparent)` };
 }
