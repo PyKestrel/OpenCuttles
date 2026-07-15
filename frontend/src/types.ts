@@ -162,6 +162,7 @@ export type StepResult = {
   y?: number;
   modelOutput?: string;
   pass: boolean;
+  status?: "pass" | "fail" | "blocked";
   detail?: string;
   durationMs: number;
   screenshot?: string;
@@ -180,6 +181,80 @@ export type TestRun = {
   error?: string;
   startedAt: string;
   finishedAt?: string;
+  cycleRunId?: string;
+  caseId?: string;
+};
+
+// QMetry-style test management.
+export type TestStep = {
+  index: number;
+  action: string;
+  testData?: string;
+  expected?: string;
+};
+
+export type TestCase = {
+  id: string;
+  summary: string;
+  description?: string;
+  precondition?: string;
+  priority?: string;
+  status?: string;
+  labels: string[];
+  components: string[];
+  folderPath?: string;
+  steps: TestStep[];
+  externalKey?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TestCycle = {
+  id: string;
+  name: string;
+  platform: Platform;
+  buildId?: string;
+  environment?: string;
+  caseIds: string[];
+  cron?: string;
+  onNewBuild: boolean;
+  enabled: boolean;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  createdAt: string;
+};
+
+export type CycleTotals = {
+  cases: number;
+  pass: number;
+  fail: number;
+  blocked: number;
+  notRun: number;
+};
+
+export type CycleRun = {
+  id: string;
+  cycleId: string;
+  cycleName?: string;
+  trigger: "manual" | "cron" | "build";
+  buildId?: string;
+  instanceId?: string;
+  status: "running" | "passed" | "failed";
+  totals: CycleTotals;
+  startedAt: string;
+  finishedAt?: string;
+};
+
+export type Build = {
+  id: string;
+  platform: Platform;
+  filename: string;
+  path: string;
+  sizeBytes: number;
+  version?: string;
+  status: string;
+  note?: string;
+  createdAt: string;
 };
 
 export type AgentModelPreset = {

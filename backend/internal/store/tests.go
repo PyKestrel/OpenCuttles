@@ -62,6 +62,11 @@ func (s *SQLite) ListTests(ctx context.Context) ([]domain.Test, error) {
 }
 
 func (s *SQLite) DeleteTest(ctx context.Context, id string) error {
+	// test_runs no longer has an ON DELETE CASCADE FK (case-runs set test_id=''),
+	// so remove a test's runs explicitly.
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM test_runs WHERE test_id = ?`, id); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM tests WHERE id = ?`, id)
 	return err
 }

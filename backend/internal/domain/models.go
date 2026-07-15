@@ -242,25 +242,37 @@ type Test struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+// Step execution statuses (QMetry-compatible). Pass stays as a bool too for the
+// legacy DSL runner + report renderer.
+const (
+	StepPass    = "pass"
+	StepFail    = "fail"
+	StepBlocked = "blocked"
+)
+
 // StepResult is the outcome of one executed test step, with its evidence.
 type StepResult struct {
-	Index      int     `json:"index"`
-	Text       string  `json:"text"`
-	Verb       string  `json:"verb"`
-	Target     string  `json:"target,omitempty"`
-	Value      string  `json:"value,omitempty"`
-	X          int     `json:"x,omitempty"`
-	Y          int     `json:"y,omitempty"`
-	ModelOut   string  `json:"modelOutput,omitempty"`
-	Pass       bool    `json:"pass"`
-	Detail     string  `json:"detail,omitempty"`
-	DurationMs int64   `json:"durationMs"`
-	Screenshot string  `json:"screenshot,omitempty"`
-	Battery    int     `json:"battery,omitempty"`
+	Index      int    `json:"index"`
+	Text       string `json:"text"`
+	Verb       string `json:"verb"`
+	Target     string `json:"target,omitempty"`
+	Value      string `json:"value,omitempty"`
+	X          int    `json:"x,omitempty"`
+	Y          int    `json:"y,omitempty"`
+	ModelOut   string `json:"modelOutput,omitempty"`
+	Pass       bool   `json:"pass"`
+	// Status is the QMetry-style result ("pass"/"fail"/"blocked"); set by the
+	// agent-driven cycle executor. Empty for legacy DSL runs (use Pass instead).
+	Status     string `json:"status,omitempty"`
+	Detail     string `json:"detail,omitempty"`
+	DurationMs int64  `json:"durationMs"`
+	Screenshot string `json:"screenshot,omitempty"`
+	Battery    int    `json:"battery,omitempty"`
 }
 
-// TestRun is one execution of a Test against a device, with per-step results
-// and artifact references (per-step screenshots + a session video).
+// TestRun is one execution of a Test (or, in a cycle, a TestCase) against a
+// device, with per-step results and artifact references (per-step screenshots +
+// a session video).
 type TestRun struct {
 	ID         string       `json:"id"`
 	TestID     string       `json:"testId"`
@@ -273,11 +285,104 @@ type TestRun struct {
 	Error      string       `json:"error,omitempty"`
 	StartedAt  time.Time    `json:"startedAt"`
 	FinishedAt *time.Time   `json:"finishedAt,omitempty"`
+	// Set when this run is a case executed as part of a cycle run.
+	CycleRunID string `json:"cycleRunId,omitempty"`
+	CaseID     string `json:"caseId,omitempty"`
 }
 
 type CreateTestRequest struct {
 	Name  string   `json:"name"`
 	Steps []string `json:"steps"`
+}
+
+// TestStep is one QMetry-style step of a test case: an action to perform, the
+// input data, and the expected result to verify.
+type TestStep struct {
+	Index    int    `json:"index"`
+	Action   string `json:"action"`
+	TestData string `json:"testData,omitempty"`
+	Expected string `json:"expected,omitempty"`
+}
+
+// TestCase is a reusable, QMetry-compatible test definition executed by the
+// agent. Steps are free-form (action + expected) and interpreted per run.
+type TestCase struct {
+	ID           string     `json:"id"`
+	Summary      string     `json:"summary"`
+	Description  string     `json:"description,omitempty"`
+	Precondition string     `json:"precondition,omitempty"`
+	Priority     string     `json:"priority,omitempty"`
+	Status       string     `json:"status,omitempty"`
+	Labels       []string   `json:"labels"`
+	Components   []string   `json:"components"`
+	FolderPath   string     `json:"folderPath,omitempty"`
+	Steps        []TestStep `json:"steps"`
+	ExternalKey  string     `json:"externalKey,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
+}
+
+// Cycle trigger sources.
+const (
+	CycleTriggerManual = "manual"
+	CycleTriggerCron   = "cron"
+	CycleTriggerBuild  = "build"
+)
+
+// TestCycle is a named, user-selected + ordered set of test cases targeting a
+// platform, optionally bound to a build + environment, with a cron schedule and
+// an on-new-build trigger.
+type TestCycle struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Platform    string     `json:"platform"`
+	BuildID     string     `json:"buildId,omitempty"`
+	Environment string     `json:"environment,omitempty"`
+	CaseIDs     []string   `json:"caseIds"`
+	Cron        string     `json:"cron,omitempty"`
+	OnNewBuild  bool       `json:"onNewBuild"`
+	Enabled     bool       `json:"enabled"`
+	LastRunAt   *time.Time `json:"lastRunAt,omitempty"`
+	NextRunAt   *time.Time `json:"nextRunAt,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
+}
+
+// CycleTotals is the per-status rollup of a cycle run's case results.
+type CycleTotals struct {
+	Cases   int `json:"cases"`
+	Pass    int `json:"pass"`
+	Fail    int `json:"fail"`
+	Blocked int `json:"blocked"`
+	NotRun  int `json:"notRun"`
+}
+
+// CycleRun is one execution of a test cycle: it fans out to a TestRun per case
+// and aggregates their results.
+type CycleRun struct {
+	ID         string      `json:"id"`
+	CycleID    string      `json:"cycleId"`
+	CycleName  string      `json:"cycleName,omitempty"`
+	Trigger    string      `json:"trigger"`
+	BuildID    string      `json:"buildId,omitempty"`
+	InstanceID string      `json:"instanceId,omitempty"`
+	Status     string      `json:"status"`
+	Totals     CycleTotals `json:"totals"`
+	StartedAt  time.Time   `json:"startedAt"`
+	FinishedAt *time.Time  `json:"finishedAt,omitempty"`
+}
+
+// Build is an uploaded app-under-test artifact (APK for Android, installer for a
+// desktop) that Testral installs on the target before running a cycle.
+type Build struct {
+	ID        string    `json:"id"`
+	Platform  string    `json:"platform"`
+	Filename  string    `json:"filename"`
+	Path      string    `json:"path"`
+	SizeBytes int64     `json:"sizeBytes"`
+	Version   string    `json:"version,omitempty"`
+	Status    string    `json:"status"`
+	Note      string    `json:"note,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type CreateInstanceRequest struct {

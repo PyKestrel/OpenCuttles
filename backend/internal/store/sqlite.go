@@ -166,9 +166,11 @@ func (s *SQLite) migrate(ctx context.Context) error {
 			steps TEXT NOT NULL,
 			created_at TEXT NOT NULL
 		)`,
+		// test_id has no FK to tests: cycle case-runs set test_id='' (no parent
+		// test) and reference a case_id instead. DeleteTest cascades runs in code.
 		`CREATE TABLE IF NOT EXISTS test_runs (
 			id TEXT PRIMARY KEY,
-			test_id TEXT NOT NULL,
+			test_id TEXT NOT NULL DEFAULT '',
 			instance_id TEXT NOT NULL,
 			status TEXT NOT NULL,
 			passed INTEGER NOT NULL DEFAULT 0,
@@ -176,10 +178,65 @@ func (s *SQLite) migrate(ctx context.Context) error {
 			video TEXT NOT NULL DEFAULT '',
 			error TEXT NOT NULL DEFAULT '',
 			started_at TEXT NOT NULL,
-			finished_at TEXT,
-			FOREIGN KEY(test_id) REFERENCES tests(id) ON DELETE CASCADE
+			finished_at TEXT
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_test_runs_started_at ON test_runs(started_at DESC)`,
+		// v4: QMetry-style test management — cases, cycles, cycle runs, builds.
+		`CREATE TABLE IF NOT EXISTS test_cases (
+			id TEXT PRIMARY KEY,
+			summary TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			precondition TEXT NOT NULL DEFAULT '',
+			priority TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT '',
+			labels TEXT NOT NULL DEFAULT '[]',
+			components TEXT NOT NULL DEFAULT '[]',
+			folder_path TEXT NOT NULL DEFAULT '',
+			steps TEXT NOT NULL DEFAULT '[]',
+			external_key TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_test_cases_folder ON test_cases(folder_path)`,
+		`CREATE TABLE IF NOT EXISTS test_cycles (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			platform TEXT NOT NULL DEFAULT 'android',
+			build_id TEXT NOT NULL DEFAULT '',
+			environment TEXT NOT NULL DEFAULT '',
+			case_ids TEXT NOT NULL DEFAULT '[]',
+			cron TEXT NOT NULL DEFAULT '',
+			on_new_build INTEGER NOT NULL DEFAULT 0,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			last_run_at TEXT,
+			next_run_at TEXT,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS cycle_runs (
+			id TEXT PRIMARY KEY,
+			cycle_id TEXT NOT NULL,
+			trigger TEXT NOT NULL DEFAULT 'manual',
+			build_id TEXT NOT NULL DEFAULT '',
+			instance_id TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'running',
+			totals TEXT NOT NULL DEFAULT '{}',
+			started_at TEXT NOT NULL,
+			finished_at TEXT,
+			FOREIGN KEY(cycle_id) REFERENCES test_cycles(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_cycle_runs_started_at ON cycle_runs(started_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS builds (
+			id TEXT PRIMARY KEY,
+			platform TEXT NOT NULL,
+			filename TEXT NOT NULL,
+			path TEXT NOT NULL,
+			size_bytes INTEGER NOT NULL DEFAULT 0,
+			version TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'uploaded',
+			note TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_builds_platform ON builds(platform, created_at DESC)`,
 	}
 
 	for _, statement := range statements {
@@ -205,11 +262,20 @@ func (s *SQLite) migrate(ctx context.Context) error {
 		{"instances", "platform", `ALTER TABLE instances ADD COLUMN platform TEXT NOT NULL DEFAULT 'android'`},
 		{"instances", "control_endpoint", `ALTER TABLE instances ADD COLUMN control_endpoint TEXT NOT NULL DEFAULT ''`},
 		{"instances", "control_token_ciphertext", `ALTER TABLE instances ADD COLUMN control_token_ciphertext TEXT NOT NULL DEFAULT ''`},
+		// v4: per-case executions within a cycle run reuse the test_runs table.
+		{"test_runs", "cycle_run_id", `ALTER TABLE test_runs ADD COLUMN cycle_run_id TEXT NOT NULL DEFAULT ''`},
+		{"test_runs", "case_id", `ALTER TABLE test_runs ADD COLUMN case_id TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, column := range additive {
 		if err := s.ensureColumn(ctx, column.table, column.column, column.ddl); err != nil {
 			return err
 		}
+	}
+
+	// v4: drop the test_runs→tests foreign key on existing DBs so cycle case-runs
+	// (test_id='') are allowed. Idempotent — only rebuilds if the FK is present.
+	if err := s.rebuildTestRunsIfFK(ctx); err != nil {
+		return err
 	}
 
 	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (1, ?)`, formatTime(time.Now().UTC()))
@@ -223,6 +289,53 @@ func (s *SQLite) migrate(ctx context.Context) error {
 	_, err = s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (3, ?)`, formatTime(time.Now().UTC()))
 	if err != nil {
 		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (4, ?)`, formatTime(time.Now().UTC()))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// rebuildTestRunsIfFK recreates test_runs without the tests foreign key when an
+// older schema still carries it, preserving all rows. Runs after the v4 additive
+// columns so the copy includes cycle_run_id/case_id.
+func (s *SQLite) rebuildTestRunsIfFK(ctx context.Context) error {
+	var ddl string
+	if err := s.db.QueryRowContext(ctx, `SELECT sql FROM sqlite_master WHERE type='table' AND name='test_runs'`).Scan(&ddl); err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	if !strings.Contains(ddl, "FOREIGN KEY") {
+		return nil // already FK-free
+	}
+	stmts := []string{
+		`CREATE TABLE test_runs_new (
+			id TEXT PRIMARY KEY,
+			test_id TEXT NOT NULL DEFAULT '',
+			instance_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			passed INTEGER NOT NULL DEFAULT 0,
+			steps TEXT NOT NULL DEFAULT '[]',
+			video TEXT NOT NULL DEFAULT '',
+			error TEXT NOT NULL DEFAULT '',
+			started_at TEXT NOT NULL,
+			finished_at TEXT,
+			cycle_run_id TEXT NOT NULL DEFAULT '',
+			case_id TEXT NOT NULL DEFAULT ''
+		)`,
+		`INSERT INTO test_runs_new (id, test_id, instance_id, status, passed, steps, video, error, started_at, finished_at, cycle_run_id, case_id)
+			SELECT id, test_id, instance_id, status, passed, steps, video, error, started_at, finished_at, cycle_run_id, case_id FROM test_runs`,
+		`DROP TABLE test_runs`,
+		`ALTER TABLE test_runs_new RENAME TO test_runs`,
+		`CREATE INDEX IF NOT EXISTS idx_test_runs_started_at ON test_runs(started_at DESC)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("rebuild test_runs: %w", err)
+		}
 	}
 	return nil
 }
