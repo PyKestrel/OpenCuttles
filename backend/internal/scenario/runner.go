@@ -88,7 +88,11 @@ func (r *Runner) execute(ctx context.Context, test domain.Test, instance domain.
 		return
 	}
 
-	recording := r.devices.StartRecording(ctx, instance.ID) == nil
+	// screenrecord is adb-only; desktop runs rely on per-step screenshots.
+	recording := instance.Platform == "" || instance.Platform == domain.PlatformAndroid
+	if recording {
+		recording = r.devices.StartRecording(ctx, instance.ID) == nil
+	}
 
 	passed := true
 	for i, text := range test.Steps {

@@ -20,6 +20,8 @@ import (
 	png2 "image/png"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +40,21 @@ type InstanceStore interface {
 	GetInstance(ctx context.Context, id string) (domain.Instance, error)
 }
 
+// RunSink receives per-step results captured by report_step_result during an
+// agent-driven cycle case run (implemented by *store.SQLite).
+type RunSink interface {
+	AppendStep(ctx context.Context, runID string, step domain.StepResult) error
+}
+
+// boundRun ties a device to the cycle case-run currently executing on it, so
+// report_step_result knows where to write evidence.
+type boundRun struct {
+	runID     string
+	runDir    string
+	steps     int
+	stepTexts []string
+}
+
 // Service wires the devicecontrol service to an MCP server and tracks the active
 // device shared across tool calls.
 type Service struct {
@@ -46,9 +63,11 @@ type Service struct {
 	vision  *vision.Client
 	logger  *slog.Logger
 	server  *mcpsdk.Server
+	sink    RunSink
 
 	mu     sync.Mutex
 	active string
+	runs   map[string]*boundRun // deviceID → in-flight cycle case run
 }
 
 // New builds the MCP service and registers all device tools. vision may be nil,
@@ -60,9 +79,36 @@ func New(devices *devicecontrol.Service, store InstanceStore, vis *vision.Client
 		vision:  vis,
 		logger:  logger,
 		server:  mcpsdk.NewServer(&mcpsdk.Implementation{Name: "opencuttles", Version: "0.1.0"}, nil),
+		runs:    map[string]*boundRun{},
 	}
 	s.registerTools()
 	return s
+}
+
+// SetSink wires the store that receives report_step_result evidence.
+func (s *Service) SetSink(sink RunSink) { s.sink = sink }
+
+// SetActive sets the device that tool calls operate on. Used by the headless
+// cycle executor before dispatching an agent run for a case.
+func (s *Service) SetActive(id string) {
+	s.mu.Lock()
+	s.active = id
+	s.mu.Unlock()
+}
+
+// BindRun ties a device to a cycle case-run so report_step_result records
+// evidence into it; stepTexts[i] labels the i-th (1-based) reported step.
+func (s *Service) BindRun(deviceID, runID, runDir string, stepTexts []string) {
+	s.mu.Lock()
+	s.runs[deviceID] = &boundRun{runID: runID, runDir: runDir, stepTexts: stepTexts}
+	s.mu.Unlock()
+}
+
+// UnbindRun clears the device→run binding after a case completes.
+func (s *Service) UnbindRun(deviceID string) {
+	s.mu.Lock()
+	delete(s.runs, deviceID)
+	s.mu.Unlock()
 }
 
 // Handler returns the streamable HTTP handler for the MCP endpoint. The same
@@ -519,6 +565,69 @@ func (s *Service) registerTools() {
 			return nil, out, err
 		}
 		out.Answer = answer
+		return nil, out, nil
+	})
+
+	// report_step_result is how an automated test cycle captures per-step results.
+	// It is a safe no-op during interactive agent chat (no run is bound), so it
+	// never disrupts the AgentTab.
+	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+		Name:        "report_step_result",
+		Description: "Report the outcome of the test-case step you just performed and verified. Call this exactly once per numbered step, right after checking its Expected Result. status must be 'pass', 'fail', or 'blocked'; note briefly states what you observed. Only meaningful while running an automated test cycle — a harmless no-op otherwise.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
+		Index  int    `json:"index" jsonschema:"the 1-based step number being reported"`
+		Status string `json:"status" jsonschema:"pass, fail, or blocked"`
+		Note   string `json:"note,omitempty" jsonschema:"what you observed that decided the result"`
+	}) (*mcpsdk.CallToolResult, struct {
+		Recorded bool `json:"recorded"`
+	}, error) {
+		var out struct {
+			Recorded bool `json:"recorded"`
+		}
+		id, err := s.resolveDevice(ctx, "")
+		if err != nil {
+			return nil, out, nil // no device to attribute to; do not error the agent
+		}
+		s.mu.Lock()
+		bound := s.runs[id]
+		s.mu.Unlock()
+		if bound == nil || s.sink == nil {
+			return nil, out, nil // interactive chat: nothing to record
+		}
+
+		status := strings.ToLower(strings.TrimSpace(in.Status))
+		if status != domain.StepFail && status != domain.StepBlocked {
+			status = domain.StepPass
+		}
+		text := fmt.Sprintf("Step %d", in.Index)
+		if in.Index >= 1 && in.Index <= len(bound.stepTexts) {
+			text = bound.stepTexts[in.Index-1]
+		}
+		step := domain.StepResult{
+			Text:   text,
+			Status: status,
+			Pass:   status == domain.StepPass,
+			Detail: strings.TrimSpace(in.Note),
+		}
+
+		// Best-effort screenshot evidence into the run directory.
+		s.mu.Lock()
+		n := bound.steps
+		bound.steps++
+		runDir, runID := bound.runDir, bound.runID
+		s.mu.Unlock()
+		if runDir != "" {
+			if png, shotErr := s.devices.Screenshot(ctx, id); shotErr == nil {
+				name := fmt.Sprintf("step-%02d.png", n)
+				if os.WriteFile(filepath.Join(runDir, name), png, 0o644) == nil {
+					step.Screenshot = name
+				}
+			}
+		}
+		if err := s.sink.AppendStep(ctx, runID, step); err != nil {
+			return nil, out, err
+		}
+		out.Recorded = true
 		return nil, out, nil
 	})
 }

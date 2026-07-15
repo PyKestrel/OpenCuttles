@@ -52,9 +52,11 @@ type Server struct {
 	webAssets     fs.FS
 	operatorPort  int
 	mcpHandler    http.Handler
+	mcp           *mcpserver.Service
 	mcpToken      string
 	agentTarget   string
 	tests         *scenario.Runner
+	cycles        *scenario.CycleExecutor
 	secrets       *secretbox.Box
 	runners       *runnerhub.Hub
 }
@@ -88,7 +90,9 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	}
 	server.operatorPort = operatorPortFromEnv()
 	visionClient := vision.NewFromEnv()
-	server.mcpHandler = mcpserver.New(devices, store, visionClient, logger).Handler()
+	server.mcp = mcpserver.New(devices, store, visionClient, logger)
+	server.mcp.SetSink(store) // report_step_result → store.AppendStep
+	server.mcpHandler = server.mcp.Handler()
 	server.tests = scenario.New(store, devices, visionClient, logger)
 	// Desktop runner tunnel: authenticate runners by enrollment token, flip the
 	// device online/offline as they connect/drop, and let devicecontrol drive
@@ -117,6 +121,9 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	if server.agentTarget == "" {
 		server.agentTarget = "http://127.0.0.1:8790"
 	}
+	// Agent-driven test-cycle executor: fans a cycle out to a headless agent run
+	// per case, capturing per-step evidence via the report_step_result MCP tool.
+	server.cycles = scenario.NewCycleExecutor(store, devices, server.mcp, server.agentTarget, logger)
 	server.routes()
 	return server.withMiddleware(server.mux)
 }
