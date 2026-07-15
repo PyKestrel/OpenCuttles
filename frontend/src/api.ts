@@ -4,18 +4,23 @@ import type {
   AndroidVersion,
   AuditEvent,
   BootstrapStatus,
+  Build,
   CreateImagePayload,
   CreateInstancePayload,
+  CycleRun,
   DeviceTest,
   HealthReport,
   Host,
   Image,
+  ImportResult,
   Instance,
   LoginResponse,
   Operation,
   PerfSnapshot,
   Platform,
   Principal,
+  TestCase,
+  TestCycle,
   TestRun,
   UINode,
 } from "./types";
@@ -176,6 +181,47 @@ export const api = {
   testRun: (id: string) => request<TestRun>(`/api/v1/tests/runs/${id}`),
   testArtifactUrl: (runId: string, name: string) =>
     `/api/v1/tests/runs/${runId}/artifacts/${encodeURIComponent(name)}`,
+
+  // QMetry-style test cases, cycles, cycle runs, and builds.
+  cases: () => request<TestCase[]>("/api/v1/cases"),
+  caseFolders: () => request<string[]>("/api/v1/cases/folders"),
+  createCase: (c: Partial<TestCase>) =>
+    request<TestCase>("/api/v1/cases", { method: "POST", headers: jsonHeaders, body: JSON.stringify(c) }),
+  updateCase: (id: string, c: Partial<TestCase>) =>
+    request<TestCase>(`/api/v1/cases/${id}`, { method: "PUT", headers: jsonHeaders, body: JSON.stringify(c) }),
+  deleteCase: (id: string) => request<{ status: string }>(`/api/v1/cases/${id}`, { method: "DELETE" }),
+  importCases: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<ImportResult>("/api/v1/cases/import", { method: "POST", body: form });
+  },
+
+  cycles: () => request<TestCycle[]>("/api/v1/cycles"),
+  createCycle: (c: Partial<TestCycle>) =>
+    request<TestCycle>("/api/v1/cycles", { method: "POST", headers: jsonHeaders, body: JSON.stringify(c) }),
+  updateCycle: (id: string, c: Partial<TestCycle>) =>
+    request<TestCycle>(`/api/v1/cycles/${id}`, { method: "PUT", headers: jsonHeaders, body: JSON.stringify(c) }),
+  deleteCycle: (id: string) => request<{ status: string }>(`/api/v1/cycles/${id}`, { method: "DELETE" }),
+  updateCycleCases: (id: string, caseIds: string[]) =>
+    request<TestCycle>(`/api/v1/cycles/${id}/cases`, { method: "PUT", headers: jsonHeaders, body: JSON.stringify({ caseIds }) }),
+  updateCycleSchedule: (id: string, sched: { cron: string; onNewBuild: boolean; enabled: boolean }) =>
+    request<TestCycle>(`/api/v1/cycles/${id}/schedule`, { method: "PUT", headers: jsonHeaders, body: JSON.stringify(sched) }),
+  runCycle: (id: string, opts?: { instanceId?: string; buildId?: string }) =>
+    request<CycleRun>(`/api/v1/cycles/${id}/run`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(opts ?? {}) }),
+
+  cycleRuns: () => request<CycleRun[]>("/api/v1/cycle-runs"),
+  cycleRun: (id: string) => request<{ run: CycleRun; cases: TestRun[] }>(`/api/v1/cycle-runs/${id}`),
+
+  builds: (platform?: Platform) =>
+    request<Build[]>(`/api/v1/builds${platform ? `?platform=${platform}` : ""}`),
+  uploadBuild: (platform: Platform, file: File, version?: string, note?: string) => {
+    const form = new FormData();
+    form.append("platform", platform);
+    form.append("artifact", file);
+    if (version) form.append("version", version);
+    if (note) form.append("note", note);
+    return request<Build>("/api/v1/builds", { method: "POST", body: form });
+  },
 
   // Agent model configuration (admin only). The API key is write-only: it is
   // never returned by GET; POST with apiFieldset omitted keeps the stored key.

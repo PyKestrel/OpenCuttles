@@ -257,6 +257,13 @@ export type Build = {
   createdAt: string;
 };
 
+export type ImportResult = {
+  casesParsed: number;
+  stepsParsed: number;
+  rowsSkipped: number;
+  warnings: string[];
+};
+
 export type AgentModelPreset = {
   label: string;
   providerId: string;

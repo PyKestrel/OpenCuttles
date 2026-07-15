@@ -12,6 +12,11 @@ import { DeviceWorkspace } from "@/components/device/DeviceWorkspace";
 import { ImagesView } from "@/components/views/ImagesView";
 import { ActivityView } from "@/components/views/ActivityView";
 import { TestsPanel } from "@/components/tests/TestsPanel";
+import { CasesView } from "@/components/views/CasesView";
+import { CyclesView } from "@/components/views/CyclesView";
+import { CycleRunsView } from "@/components/views/CycleRunsView";
+import { BuildsView } from "@/components/views/BuildsView";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
@@ -160,6 +165,7 @@ export default function App() {
           selectDevice(instance.id);
         }}
       />
+      <Toaster position="bottom-right" />
     </div>
   );
 }
@@ -189,6 +195,10 @@ function MainContent({
 }) {
   if (view === "images") return <ImagesView principal={principal} />;
   if (view === "activity") return <ActivityView principal={principal} host={host} />;
+  if (view === "cases") return <CasesView principal={principal} />;
+  if (view === "cycles") return <CyclesView principal={principal} />;
+  if (view === "runs") return <CycleRunsView />;
+  if (view === "builds") return <BuildsView principal={principal} />;
   if (view === "tests")
     return (
       <div className="mx-auto w-full max-w-6xl p-5">

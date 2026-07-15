@@ -1,14 +1,18 @@
 import { useState } from "react";
-import { Activity, ChevronDown, ChevronRight, FlaskConical, ImageIcon, Laptop, Monitor, MonitorSmartphone, Plus, Server, Smartphone, Terminal } from "lucide-react";
+import { Activity, BookMarked, ChevronDown, ChevronRight, FlaskConical, History, ImageIcon, Laptop, ListChecks, Monitor, MonitorSmartphone, Package, Plus, Server, Smartphone, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusDot } from "@/components/StatusDot";
 import type { Host, Instance, Platform } from "@/types";
 
-export type InventoryView = "devices" | "tests" | "images" | "activity";
+export type InventoryView = "devices" | "cases" | "cycles" | "runs" | "builds" | "tests" | "images" | "activity";
 
 const VIEWS: { id: InventoryView; label: string; Icon: typeof MonitorSmartphone }[] = [
   { id: "devices", label: "Devices", Icon: MonitorSmartphone },
-  { id: "tests", label: "Tests", Icon: FlaskConical },
+  { id: "cases", label: "Test cases", Icon: BookMarked },
+  { id: "cycles", label: "Test cycles", Icon: ListChecks },
+  { id: "runs", label: "Cycle runs", Icon: History },
+  { id: "builds", label: "Builds", Icon: Package },
+  { id: "tests", label: "Ad-hoc tests", Icon: FlaskConical },
   { id: "images", label: "Images", Icon: ImageIcon },
   { id: "activity", label: "Activity", Icon: Activity },
 ];
