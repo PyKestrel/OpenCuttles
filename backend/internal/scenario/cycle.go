@@ -262,9 +262,9 @@ func (e *CycleExecutor) installBuild(ctx context.Context, instance domain.Instan
 		}
 		return
 	}
-	// Desktop artifact install lands in a later phase (net-new runner capability).
-	if e.logger != nil {
-		e.logger.Info("desktop build install not yet supported; running against current state", "build", buildID, "platform", instance.Platform)
+	// Desktop: the runner fetches the artifact and installs it silently.
+	if err := e.devices.InstallDesktopBuild(ctx, instance.ID, build.ID, build.Filename, ""); err != nil && e.logger != nil {
+		e.logger.Warn("desktop build install failed; running against current state", "build", buildID, "error", err)
 	}
 }
 

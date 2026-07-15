@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -308,6 +309,24 @@ Write-Output $app.Name`
 		return "", fmt.Errorf("could not open %q: %s — call list_apps for exact names", name, detail)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// RunInstaller runs an app-under-test installer silently. .msi goes through
+// msiexec /qn; other files (.exe) are run with a silent flag (/S by default,
+// covering NSIS/Inno). args overrides the flags for installers that differ.
+func (winScreen) RunInstaller(path, args string) error {
+	if strings.EqualFold(filepath.Ext(path), ".msi") {
+		a := []string{"/i", path, "/qn", "/norestart"}
+		if args != "" {
+			a = append([]string{"/i", path}, strings.Fields(args)...)
+		}
+		return hidden("msiexec", a...).Run()
+	}
+	flags := "/S"
+	if args != "" {
+		flags = args
+	}
+	return hidden(path, strings.Fields(flags)...).Run()
 }
 
 func (winScreen) CurrentActivity() (string, error) {

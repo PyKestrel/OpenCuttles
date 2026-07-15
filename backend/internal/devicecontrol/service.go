@@ -368,6 +368,41 @@ func (s *Service) InstallAPK(ctx context.Context, id, hostPath string) error {
 	return err
 }
 
+// InstallDesktopBuild installs an uploaded build on a desktop target over the
+// runner tunnel. The runner fetches the artifact from the appliance and runs it
+// silently; installs run longer than the tunnel call timeout, so this triggers
+// asynchronously and polls install_status until it completes.
+func (s *Service) InstallDesktopBuild(ctx context.Context, id, buildID, filename, args string) error {
+	if _, err := s.resolve(ctx, id); err != nil {
+		return err
+	}
+	if err := s.callRunner(ctx, id, "install_app", map[string]string{"buildId": buildID, "filename": filename, "args": args}, nil); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(6 * time.Minute)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
+		var st struct {
+			Status string `json:"status"`
+			Detail string `json:"detail"`
+		}
+		if err := s.callRunner(ctx, id, "install_status", map[string]string{"buildId": buildID}, &st); err != nil {
+			return err
+		}
+		switch st.Status {
+		case "done":
+			return nil
+		case "error":
+			return fmt.Errorf("desktop install failed: %s", st.Detail)
+		}
+	}
+	return fmt.Errorf("desktop install timed out")
+}
+
 // Rotate sets a fixed display orientation (0,1,2,3 = 0/90/180/270 degrees) and
 // disables auto-rotation so the orientation sticks.
 func (s *Service) Rotate(ctx context.Context, id string, orientation int) error {

@@ -29,7 +29,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("desktop control unavailable: %v", err)
 	}
-	ctrl := &controller{screen: screen}
+	ctrl := &controller{screen: screen, base: appliance, token: token, installs: map[string]*installState{}}
 	log.Printf("OpenCuttles runner starting — appliance=%s", appliance)
 
 	for {

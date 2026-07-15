@@ -165,6 +165,7 @@ func (s *Server) routes() {
 	// stream and POSTs command results back.
 	s.mux.HandleFunc("GET /api/v1/runner/stream", s.runners.StreamHandler)
 	s.mux.HandleFunc("POST /api/v1/runner/result", s.runners.ResultHandler)
+	s.mux.HandleFunc("GET /api/v1/runner/build/{id}", s.runnerBuildArtifact)
 	// Flue agent sidecar: reverse-proxy its HTTP endpoints (POST invoke + GET
 	// event stream at /agents/<name>/<id>) so the SPA reaches it same-origin.
 	// Guarded by the control permission; SSE streaming is flushed immediately.
@@ -531,6 +532,26 @@ func (s *Server) authenticateRunner(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return inst.ID, true
+}
+
+// runnerBuildArtifact serves an uploaded build artifact to an authenticated
+// runner so it can install it locally (desktop build-install pull path).
+func (s *Server) runnerBuildArtifact(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authenticateRunner(r); !ok {
+		writeError(w, clientError{status: http.StatusUnauthorized, message: "runner token required"})
+		return
+	}
+	build, err := s.store.GetBuild(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if build.Path == "" {
+		writeError(w, badRequest("build has no stored artifact"))
+		return
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+build.Filename+"\"")
+	http.ServeFile(w, r, build.Path)
 }
 
 func runnerTokenFromRequest(r *http.Request) string {
