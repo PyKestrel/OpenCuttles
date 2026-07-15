@@ -33,6 +33,7 @@ import (
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/runnerhub"
 	"github.com/opencuttles/opencuttles/backend/internal/scenario"
+	"github.com/opencuttles/opencuttles/backend/internal/scheduler"
 	"github.com/opencuttles/opencuttles/backend/internal/secretbox"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
 	"github.com/opencuttles/opencuttles/backend/internal/vision"
@@ -124,6 +125,8 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	// Agent-driven test-cycle executor: fans a cycle out to a headless agent run
 	// per case, capturing per-step evidence via the report_step_result MCP tool.
 	server.cycles = scenario.NewCycleExecutor(store, devices, server.mcp, server.agentTarget, logger)
+	// Cron scheduler: fires due cycles for the lifetime of the process.
+	go scheduler.New(store, server.cycles, logger).Run(context.Background())
 	server.routes()
 	return server.withMiddleware(server.mux)
 }
