@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { BookMarked, FolderTree, Plus, Trash2, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BookMarked, ChevronDown, ChevronRight, Copy, FolderTree, MoreHorizontal, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { api } from "@/api";
 import type { Principal, TestCase, TestStep } from "@/types";
@@ -15,9 +16,40 @@ import { can } from "@/lib/permissions";
 
 const emptyCase: Partial<TestCase> = { summary: "", labels: [], components: [], steps: [] };
 
+type FolderNode = { name: string; path: string; children: FolderNode[] };
+
+function buildFolderTree(paths: string[]): FolderNode[] {
+  const root: FolderNode = { name: "", path: "", children: [] };
+  for (const p of paths) {
+    if (!p) continue;
+    let node = root;
+    let acc = "";
+    for (const seg of p.split("/").filter(Boolean)) {
+      acc = acc ? `${acc}/${seg}` : seg;
+      let child = node.children.find((c) => c.name === seg);
+      if (!child) {
+        child = { name: seg, path: acc, children: [] };
+        node.children.push(child);
+      }
+      node = child;
+    }
+  }
+  const sortRec = (n: FolderNode) => {
+    n.children.sort((a, b) => a.name.localeCompare(b.name));
+    n.children.forEach(sortRec);
+  };
+  sortRec(root);
+  return root.children;
+}
+
+const inFolder = (casePath: string | undefined, folder: string) =>
+  !folder || casePath === folder || (casePath ?? "").startsWith(folder + "/");
+
 export function CasesView({ principal }: { principal: Principal }) {
   const [cases, setCases] = useState<TestCase[]>([]);
   const [folder, setFolder] = useState<string>("");
+  const [query, setQuery] = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Partial<TestCase> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const canTest = can(principal, "test");
@@ -33,8 +65,20 @@ export function CasesView({ principal }: { principal: Principal }) {
     refresh();
   }, [refresh]);
 
-  const folders = Array.from(new Set(cases.map((c) => c.folderPath).filter(Boolean))) as string[];
-  const visible = folder ? cases.filter((c) => c.folderPath === folder) : cases;
+  const tree = useMemo(() => buildFolderTree(cases.map((c) => c.folderPath || "").filter(Boolean)), [cases]);
+  const folderCount = useCallback((path: string) => cases.filter((c) => inFolder(c.folderPath, path)).length, [cases]);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return cases.filter((c) => {
+      if (!inFolder(c.folderPath, folder)) return false;
+      if (!q) return true;
+      const hay = [c.summary, c.folderPath, c.priority, c.externalKey, ...(c.labels ?? []), ...c.steps.flatMap((s) => [s.action, s.expected])]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [cases, folder, query]);
 
   async function onImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -62,55 +106,107 @@ export function CasesView({ principal }: { principal: Principal }) {
     }
   }
 
-  async function remove(id: string) {
-    await api.deleteCase(id);
+  async function clone(c: TestCase) {
+    try {
+      await api.createCase({
+        summary: `${c.summary} (copy)`,
+        description: c.description,
+        precondition: c.precondition,
+        priority: c.priority,
+        status: c.status,
+        labels: c.labels,
+        components: c.components,
+        folderPath: c.folderPath,
+        steps: c.steps.map((s) => ({ ...s })),
+      });
+      toast.success("Case cloned");
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Clone failed");
+    }
+  }
+
+  async function remove(c: TestCase) {
+    await api.deleteCase(c.id);
     refresh();
+  }
+
+  function toggleExpand(path: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
+  }
+
+  function renderFolder(node: FolderNode, depth: number): React.ReactNode {
+    const hasChildren = node.children.length > 0;
+    const open = expanded.has(node.path);
+    return (
+      <div key={node.path}>
+        <div className={cn("flex items-center gap-1 rounded-md pr-2 hover:bg-accent", folder === node.path && "bg-accent")} style={{ paddingLeft: 4 + depth * 12 }}>
+          <button onClick={() => hasChildren && toggleExpand(node.path)} className="grid size-5 shrink-0 place-items-center text-muted-foreground">
+            {hasChildren ? open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" /> : null}
+          </button>
+          <button onClick={() => setFolder(node.path)} className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left">
+            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            <span className="font-mono text-[10.5px] text-muted-foreground/70">{folderCount(node.path)}</span>
+          </button>
+        </div>
+        {open && node.children.map((c) => renderFolder(c, depth + 1))}
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto w-full max-w-6xl p-5">
-      <div className="mb-4 flex items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <div>
           <h1 className="text-[18px] font-semibold tracking-tight">Test cases</h1>
           <p className="text-[13px] text-muted-foreground">Reusable, QMetry-compatible test definitions executed by the agent.</p>
         </div>
+        <div className="relative ml-auto w-64">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search cases…" className="pl-8" />
+        </div>
         {canTest && (
-          <div className="ml-auto flex gap-2">
+          <div className="flex gap-2">
             <input ref={fileRef} type="file" accept=".csv,.xlsx,.xlsm,.tsv" hidden onChange={onImport} />
             <Button variant="secondary" onClick={() => fileRef.current?.click()}>
               <Upload className="size-3.5" /> Import QMetry
             </Button>
-            <Button variant="primary" onClick={() => setEditing({ ...emptyCase })}>
+            <Button variant="primary" onClick={() => setEditing({ ...emptyCase, folderPath: folder })}>
               <Plus className="size-3.5" /> New case
             </Button>
           </div>
         )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[200px_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
         <Card>
           <CardHeader icon={<FolderTree className="size-[15px]" />} title="Folders" />
           <div className="p-1.5 text-[13px]">
-            <FolderRow label="All cases" count={cases.length} active={folder === ""} onClick={() => setFolder("")} />
-            {folders.map((f) => (
-              <FolderRow key={f} label={f} count={cases.filter((c) => c.folderPath === f).length} active={folder === f} onClick={() => setFolder(f)} />
-            ))}
+            <button onClick={() => setFolder("")} className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent", folder === "" && "bg-accent text-foreground")}>
+              <span className="min-w-0 flex-1 truncate">All cases</span>
+              <span className="font-mono text-[10.5px] text-muted-foreground/70">{cases.length}</span>
+            </button>
+            {tree.map((n) => renderFolder(n, 0))}
           </div>
         </Card>
 
         <Card>
-          <CardHeader icon={<BookMarked className="size-[15px]" />} title={folder || "All cases"} action={<span className="text-[12px] text-muted-foreground/70">{visible.length}</span>} />
+          <CardHeader icon={<BookMarked className="size-[15px]" />} title={folder || "All cases"} action={<span className="text-[12px] text-muted-foreground/70">{visible.length}{query || folder ? ` / ${cases.length}` : ""}</span>} />
           {visible.length === 0 ? (
-            <div className="px-4 py-10 text-center text-[13px] text-muted-foreground/70">No cases here yet. Import a QMetry export or author one.</div>
+            <div className="px-4 py-10 text-center text-[13px] text-muted-foreground/70">{query ? "No cases match your search." : "No cases here yet. Import a QMetry export or author one."}</div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Summary</TableHead>
-                    <TableHead className="w-24">Priority</TableHead>
-                    <TableHead className="w-16 text-right">Steps</TableHead>
-                    <TableHead>Labels</TableHead>
+                    <TableHead className="w-40">Folder</TableHead>
+                    <TableHead className="w-20">Priority</TableHead>
+                    <TableHead className="w-14 text-right">Steps</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
@@ -120,21 +216,26 @@ export function CasesView({ principal }: { principal: Principal }) {
                       <TableCell className="font-medium">
                         {c.summary}
                         {c.externalKey && <span className="ml-2 font-mono text-[10.5px] text-muted-foreground/60">{c.externalKey}</span>}
+                        {(c.labels?.length ?? 0) > 0 && (
+                          <span className="ml-2 inline-flex gap-1">{c.labels.slice(0, 3).map((l) => <Badge key={l} variant="secondary" className="text-[10px]">{l}</Badge>)}</span>
+                        )}
                       </TableCell>
+                      <TableCell className="truncate text-[12px] text-muted-foreground">{c.folderPath || "—"}</TableCell>
                       <TableCell>{c.priority ? <Badge variant="outline" className="text-[10.5px] capitalize">{c.priority}</Badge> : <span className="text-muted-foreground/50">—</span>}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{c.steps.length}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {c.labels.slice(0, 3).map((l) => (
-                            <Badge key={l} variant="secondary" className="text-[10px]">{l}</Badge>
-                          ))}
-                        </div>
-                      </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         {canTest && (
-                          <button onClick={() => remove(c.id)} title="Delete" className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-[var(--destructive)]">
-                            <Trash2 className="size-3.5" />
-                          </button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><MoreHorizontal className="size-4" /></button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setEditing(c)}><Pencil className="size-3.5" /> Edit</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => clone(c)}><Copy className="size-3.5" /> Clone</DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem variant="destructive" onClick={() => remove(c)}><Trash2 className="size-3.5" /> Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </TableCell>
                     </TableRow>
@@ -148,15 +249,6 @@ export function CasesView({ principal }: { principal: Principal }) {
 
       {editing && <CaseEditor initial={editing} onClose={() => setEditing(null)} onSave={save} />}
     </div>
-  );
-}
-
-function FolderRow({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className={cn("flex w-full items-center gap-2 truncate rounded-md px-2.5 py-1.5 text-left hover:bg-accent", active && "bg-accent text-foreground")}>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      <span className="font-mono text-[10.5px] text-muted-foreground/70">{count}</span>
-    </button>
   );
 }
 
