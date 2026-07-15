@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Cpu, FlaskConical, Info, Smartphone, Sparkles } from "lucide-react";
+import { Cpu, FlaskConical, Info, Laptop, Monitor, Plug, Smartphone, Sparkles, Terminal } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/StatusDot";
 import { api } from "@/api";
 import type { DeviceTab } from "@/components/device/DeviceWorkspace";
-import type { Instance, TestRun } from "@/types";
+import type { Instance, Platform, TestRun } from "@/types";
 
 export function SummaryTab({
   instance,
@@ -16,32 +16,35 @@ export function SummaryTab({
   latestRun?: TestRun;
   onOpenTab: (tab: DeviceTab, pane?: "controls" | "agent") => void;
 }) {
-  const running = instance.state === "running";
+  const platform = instance.platform || "android";
+  const isDesktop = platform !== "android";
+  // Desktops are "live" when the runner is online; Android VMs when running.
+  const live = isDesktop ? instance.state === "online" : instance.state === "running";
+  const ScreenIcon = platformIcon(platform);
   const [shotToken, setShotToken] = useState(() => Date.now());
   const [shotFailed, setShotFailed] = useState(false);
 
-  // Gentle live screenshot while running (heavier auto-refresh lives on the Controls tab).
+  // Gentle live screenshot while the device is live (heavier auto-refresh lives on the Controls tab).
   useEffect(() => {
-    if (!running) {
-      return;
-    }
+    if (!live) return;
     const t = window.setInterval(() => {
-      if (!document.hidden) {
-        setShotToken(Date.now());
-      }
+      if (!document.hidden) setShotToken(Date.now());
     }, 4000);
     return () => window.clearInterval(t);
-  }, [running]);
+  }, [live]);
 
   return (
     <div className="space-y-4">
       <div className="grid items-start gap-4 lg:grid-cols-[1fr_1.15fr]">
         {/* Screen */}
         <Card>
-          <CardHeader icon={<Smartphone className="size-[15px]" />} title="Screen" />
+          <CardHeader icon={<ScreenIcon className="size-[15px]" />} title="Screen" />
           <div className="p-4">
-            <div className="mx-auto aspect-[9/17.6] max-w-[160px] overflow-hidden rounded-xl border bg-[#06090c]" style={{ borderColor: "var(--border-strong)" }}>
-              {running && !shotFailed ? (
+            <div
+              className={`mx-auto overflow-hidden rounded-xl border bg-[#06090c] ${isDesktop ? "aspect-[16/10] w-full" : "aspect-[9/17.6] max-w-[160px]"}`}
+              style={{ borderColor: "var(--border-strong)" }}
+            >
+              {live && !shotFailed ? (
                 <img
                   src={api.controlScreenshotSrc(instance.id, shotToken)}
                   alt={`${instance.name} screen`}
@@ -51,22 +54,25 @@ export function SummaryTab({
                 />
               ) : (
                 <div className="grid size-full place-items-center px-4 text-center text-[12px] text-muted-foreground/70">
-                  {running ? "Loading screen…" : "Device is not running"}
+                  {live ? "Loading screen…" : isDesktop ? "Runner is offline" : "Device is not running"}
                 </div>
               )}
             </div>
             <div className="mt-3.5 flex gap-2">
-              <a
-                href={running ? instance.consoleUrl : undefined}
-                target="_blank"
-                rel="noreferrer"
-                aria-disabled={!running}
-                className="flex-1 rounded-lg px-3 py-2 text-center text-[12px] font-medium text-primary-foreground data-[off=true]:pointer-events-none data-[off=true]:opacity-50"
-                data-off={!running}
-                style={{ background: "var(--primary-strong)" }}
-              >
-                Launch console
-              </a>
+              {/* WebRTC console is Android-only; desktops jump straight to the in-app panes. */}
+              {!isDesktop && (
+                <a
+                  href={live ? instance.consoleUrl : undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-disabled={!live}
+                  className="flex-1 rounded-lg px-3 py-2 text-center text-[12px] font-medium text-primary-foreground data-[off=true]:pointer-events-none data-[off=true]:opacity-50"
+                  data-off={!live}
+                  style={{ background: "var(--primary-strong)" }}
+                >
+                  Launch console
+                </a>
+              )}
               <button
                 onClick={() => onOpenTab("console", "controls")}
                 className="flex-1 rounded-lg border bg-secondary px-3 py-2 text-[12px] font-medium hover:bg-accent"
@@ -74,6 +80,15 @@ export function SummaryTab({
               >
                 Open controls
               </button>
+              {isDesktop && (
+                <button
+                  onClick={() => onOpenTab("console", "agent")}
+                  className="flex-1 rounded-lg border bg-secondary px-3 py-2 text-[12px] font-medium hover:bg-accent"
+                  style={{ borderColor: "var(--border-strong)" }}
+                >
+                  Open agent
+                </button>
+              )}
             </div>
           </div>
         </Card>
@@ -92,19 +107,34 @@ export function SummaryTab({
                 {cap(instance.state)}
               </span>
             </Detail>
-            <Detail k="Android" sans>{instance.androidVersion || "—"}</Detail>
-            <Detail k="Device ID">{instance.deviceId || "—"}</Detail>
-            <Detail k="ADB">127.0.0.1:{instance.adbPort}</Detail>
-            <Detail k="WebRTC console">operator :{instance.webrtcPort}</Detail>
-            <Detail k="Display">
-              {instance.displayWidth && instance.displayHeight
-                ? `${instance.displayWidth} × ${instance.displayHeight} · ${instance.dpi} dpi`
-                : "—"}
-            </Detail>
-            <Detail k="Resources">
-              {instance.cpuCores} vCPU · {instance.memoryMb} MB
-            </Detail>
-            <Detail k="Image" sans>{instance.imageId || "—"}</Detail>
+            {isDesktop ? (
+              <>
+                <Detail k="Platform" sans>{platformLabel(platform)}</Detail>
+                <Detail k="Control endpoint">{instance.controlEndpoint || "dial-home tunnel"}</Detail>
+                {instance.displayWidth ? (
+                  <Detail k="Display">
+                    {instance.displayWidth} × {instance.displayHeight}
+                    {instance.dpi ? ` · ${instance.dpi} dpi` : ""}
+                  </Detail>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Detail k="Android" sans>{instance.androidVersion || "—"}</Detail>
+                <Detail k="Device ID">{instance.deviceId || "—"}</Detail>
+                <Detail k="ADB">127.0.0.1:{instance.adbPort}</Detail>
+                <Detail k="WebRTC console">operator :{instance.webrtcPort}</Detail>
+                <Detail k="Display">
+                  {instance.displayWidth && instance.displayHeight
+                    ? `${instance.displayWidth} × ${instance.displayHeight} · ${instance.dpi} dpi`
+                    : "—"}
+                </Detail>
+                <Detail k="Resources">
+                  {instance.cpuCores} vCPU · {instance.memoryMb} MB
+                </Detail>
+                <Detail k="Image" sans>{instance.imageId || "—"}</Detail>
+              </>
+            )}
             {instance.state === "error" && instance.lastError && (
               <Detail k="Last error" sans>
                 <span style={{ color: "var(--destructive)" }}>{instance.lastError}</span>
@@ -153,16 +183,30 @@ export function SummaryTab({
           </div>
         </Card>
 
-        <Card>
-          <CardHeader icon={<Cpu className="size-[15px]" />} title="Resources" />
-          <div className="p-4">
-            <div className="font-mono text-[22px] font-bold tabular-nums tracking-tight">
-              {instance.cpuCores}
-              <span className="ml-1 text-[14px] font-medium text-muted-foreground">vCPU</span>
+        {/* Cuttlefish VM resources (Android) vs. runner connection (desktop) */}
+        {isDesktop ? (
+          <Card>
+            <CardHeader icon={<Plug className="size-[15px]" />} title="Connection" />
+            <div className="p-4">
+              <div className="inline-flex items-center gap-1.5 text-[13px] font-medium" style={{ color: stateTextColor(instance.state) }}>
+                <StatusDot state={instance.state} />
+                {instance.state === "online" ? "Runner connected" : "Runner offline"}
+              </div>
+              <div className="mt-1 truncate font-mono text-[12px] text-muted-foreground/80">{instance.controlEndpoint || "dial-home tunnel"}</div>
             </div>
-            <div className="text-[12px] text-muted-foreground/80">{instance.memoryMb} MB memory</div>
-          </div>
-        </Card>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader icon={<Cpu className="size-[15px]" />} title="Resources" />
+            <div className="p-4">
+              <div className="font-mono text-[22px] font-bold tabular-nums tracking-tight">
+                {instance.cpuCores}
+                <span className="ml-1 text-[14px] font-medium text-muted-foreground">vCPU</span>
+              </div>
+              <div className="text-[12px] text-muted-foreground/80">{instance.memoryMb} MB memory</div>
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -177,14 +221,31 @@ function Detail({ k, sans, children }: { k: string; sans?: boolean; children: Re
   );
 }
 
+function platformIcon(platform: Platform) {
+  switch (platform) {
+    case "windows":
+      return Monitor;
+    case "linux":
+      return Terminal;
+    case "macos":
+      return Laptop;
+    default:
+      return Smartphone;
+  }
+}
+function platformLabel(platform: Platform) {
+  return platform === "macos" ? "macOS" : platform.charAt(0).toUpperCase() + platform.slice(1);
+}
 function cap(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 function stateTextColor(state: Instance["state"]) {
-  if (state === "running") return "var(--running)";
+  if (state === "running" || state === "online") return "var(--running)";
   if (state === "error") return "var(--destructive)";
+  if (state === "offline" || state === "stopped") return "var(--stopped)";
   return "var(--foreground)";
 }
+
 // Latest-test status as a shadcn Badge, tinted by the semantic status color
 // (running / passed / failed) rather than the neutral UI palette.
 function RunStatusBadge({ run }: { run: TestRun }) {
