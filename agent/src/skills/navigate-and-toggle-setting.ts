@@ -18,10 +18,14 @@ open_app {name:"Settings"} -> wait {seconds:1} -> ask_screen {question:"Is the S
 - To CHANGE a toggle: ask_screen FIRST to read the current state. Only tap the toggle if it is not already in the desired state (so you never flip it the wrong way).
 - For a slider: tap or drag toward the target, then re-read.
 
-## 4. Verify
-wait {seconds:1} -> ask_screen again to confirm the new state matches the request. Report the before -> after.
+## 4. Verify and retry (do NOT jump to a different element)
+wait {seconds:1} -> ask_screen again to confirm the new state matches the request.
+- If it did NOT change, the tap most likely missed or failed to register - it does NOT mean you picked the wrong control. Retry the SAME toggle once.
+- If it still hasn't changed on Android, switch to the deterministic path: get_ui_tree, find the switch (it is a Switch, often with a resource-id ending in ...Switch), read its bounds [x1,y1][x2,y2], and tap {x:(x1+x2)/2, y:(y1+y2)/2}. This taps the exact control with no vision ambiguity - the usual cause of a toggle that "won't flip" is vision hitting an adjacent label or status text instead of the switch.
+Report the before -> after.
 
 ## Rules
 - Read the current state before changing it - never assume a toggle's position.
-- Use only setting names and labels you actually see on screen.`,
+- Use only setting names and labels you actually see on screen.
+- A toggle that appears not to respond is a missed/ambiguous tap, not proof you have the wrong element - retry the same control (and use get_ui_tree bounds + tap on Android) before looking elsewhere.`,
 });

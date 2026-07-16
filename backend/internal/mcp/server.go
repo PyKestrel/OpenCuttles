@@ -510,6 +510,24 @@ func (s *Service) registerTools() {
 	})
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+		Name:        "tap",
+		Description: "Tap exact screen coordinates (pixels) in the device's input space — the SAME space get_ui_tree bounds use. Deterministic (no vision), so it never mis-identifies which element you meant. Use it when tap_element keeps hitting the wrong thing: call get_ui_tree, take the target element's bounds [x1,y1][x2,y2], and tap its center x=(x1+x2)/2, y=(y1+y2)/2. Prefer tap_element for anything you can describe by sight.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
+		deviceRef
+		X int `json:"x" jsonschema:"x pixel coordinate in the device's input space (e.g. the horizontal center of a get_ui_tree element's bounds)"`
+		Y int `json:"y" jsonschema:"y pixel coordinate in the device's input space (e.g. the vertical center of a get_ui_tree element's bounds)"`
+	}) (*mcpsdk.CallToolResult, statusOut, error) {
+		id, err := s.resolveDevice(ctx, in.DeviceID)
+		if err != nil {
+			return nil, statusOut{}, err
+		}
+		if err := s.devices.Tap(ctx, id, in.X, in.Y); err != nil {
+			return nil, statusOut{}, err
+		}
+		return nil, statusOut{Status: "ok", Device: id}, nil
+	})
+
+	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "find_element",
 		Description: "Locate an on-screen element by description without tapping it. Returns whether it was found and its screen coordinates (useful as a swipe endpoint or to check that something is present).",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
