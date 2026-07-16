@@ -4,8 +4,11 @@
 	#     so the dashboard is reachable by IP or hostname with no DNS/TLS setup.
 	#   - HTTPS mode (real FQDN): becomes "https://your.domain" for automatic TLS.
 	encode gzip zstd
+	# APKs and desktop installers uploaded through the dashboard can be large
+	# (100MB+), so allow generous request bodies. This caps abuse without
+	# blocking legitimate build/app-under-test uploads.
 	request_body {
-		max_size 100MB
+		max_size 2GB
 	}
 
 	header {

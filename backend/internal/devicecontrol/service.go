@@ -422,7 +422,15 @@ func (s *Service) InstallAPK(ctx context.Context, id, hostPath string) error {
 	if err != nil {
 		return err
 	}
+	// Bound the install: a wedged package manager or an unresponsive device can
+	// make `adb install` block indefinitely, which would otherwise hang the HTTP
+	// request forever. Cap it so callers get a clear error instead.
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+	defer cancel()
 	_, err = s.adb(ctx, instance, "install", "-r", hostPath)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("adb install timed out after 4m — the device may be busy or the APK is incompatible")
+	}
 	return err
 }
 

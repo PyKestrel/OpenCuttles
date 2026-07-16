@@ -75,9 +75,16 @@ export function ControlsTab({ instance }: { instance: Instance }) {
     if (!file) return;
     setInstallStatus(`Installing ${file.name}…`);
     run(async () => {
-      const result = await api.controlInstallApp(id, file);
-      setInstallStatus(`Installed ${result.file}`);
-    }).catch(() => setInstallStatus(""));
+      try {
+        const result = await api.controlInstallApp(id, file);
+        setInstallStatus(`Installed ${result.file}`);
+      } catch (err) {
+        // run() surfaces the error via setError; clear the "Installing…" status
+        // so a failed install doesn't look like it's hanging forever.
+        setInstallStatus("");
+        throw err;
+      }
+    });
   }
 
   function runShell(event: FormEvent) {
