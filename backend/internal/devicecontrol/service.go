@@ -357,6 +357,64 @@ func (s *Service) callRunner(ctx context.Context, id, method string, params, out
 	return nil
 }
 
+// InputSize returns the device's input coordinate space (the resolution
+// `input tap` expects), which can differ from the screenshot resolution when the
+// display size is overridden. For Android it reads `wm size` (preferring the
+// override); for desktops it returns 0,0 so callers fall back to the screenshot
+// dimensions (the runner clicks in screenshot-pixel space).
+func (s *Service) InputSize(ctx context.Context, id string) (w, h int, err error) {
+	instance, err := s.resolve(ctx, id)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !isAndroid(instance.Platform) {
+		return 0, 0, nil
+	}
+	out, err := s.adbShell(ctx, instance, "wm", "size")
+	if err != nil {
+		return 0, 0, err
+	}
+	return parseWmSize(out)
+}
+
+// parseWmSize reads `wm size` output, preferring an "Override size" over the
+// "Physical size" (the override is the active input coordinate space).
+func parseWmSize(out string) (int, int, error) {
+	var physW, physH, ovrW, ovrH int
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if w, h, ok := sizeAfter(line, "Override size:"); ok {
+			ovrW, ovrH = w, h
+		} else if w, h, ok := sizeAfter(line, "Physical size:"); ok {
+			physW, physH = w, h
+		}
+	}
+	if ovrW > 0 && ovrH > 0 {
+		return ovrW, ovrH, nil
+	}
+	if physW > 0 && physH > 0 {
+		return physW, physH, nil
+	}
+	return 0, 0, fmt.Errorf("could not parse wm size: %q", out)
+}
+
+func sizeAfter(line, prefix string) (int, int, bool) {
+	if !strings.HasPrefix(line, prefix) {
+		return 0, 0, false
+	}
+	val := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	parts := strings.SplitN(val, "x", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	w, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	h, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || w <= 0 || h <= 0 {
+		return 0, 0, false
+	}
+	return w, h, true
+}
+
 // InstallAPK installs an APK from a path on the OpenCuttles host, replacing any
 // existing install (-r).
 func (s *Service) InstallAPK(ctx context.Context, id, hostPath string) error {

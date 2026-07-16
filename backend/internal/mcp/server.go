@@ -656,6 +656,15 @@ func (s *Service) locate(ctx context.Context, id, description string) (x, y int,
 	if len(points) == 0 {
 		return 0, 0, false, nil
 	}
-	x, y = points[0].Pixels(cfg.Width, cfg.Height)
+	// Scale the normalized point by the INPUT coordinate space, not the screenshot
+	// resolution: on Android `input tap` uses `wm size`, which can differ from the
+	// `screencap` resolution (a display-size override), which would otherwise land
+	// the tap off-target. Fall back to the screenshot dimensions (desktops, or if
+	// wm size is unavailable).
+	w, h := cfg.Width, cfg.Height
+	if iw, ih, e := s.devices.InputSize(ctx, id); e == nil && iw > 0 && ih > 0 {
+		w, h = iw, ih
+	}
+	x, y = points[0].Pixels(w, h)
 	return x, y, true, nil
 }
