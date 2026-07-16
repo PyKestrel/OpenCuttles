@@ -185,6 +185,10 @@ export const api = {
   // QMetry-style test cases, cycles, cycle runs, and builds.
   cases: () => request<TestCase[]>("/api/v1/cases"),
   caseFolders: () => request<string[]>("/api/v1/cases/folders"),
+  createCaseFolder: (path: string) =>
+    request<{ status: string }>("/api/v1/cases/folders", { method: "POST", headers: jsonHeaders, body: JSON.stringify({ path }) }),
+  deleteCaseFolder: (path: string) =>
+    request<{ status: string }>("/api/v1/cases/folders", { method: "DELETE", headers: jsonHeaders, body: JSON.stringify({ path }) }),
   createCase: (c: Partial<TestCase>) =>
     request<TestCase>("/api/v1/cases", { method: "POST", headers: jsonHeaders, body: JSON.stringify(c) }),
   updateCase: (id: string, c: Partial<TestCase>) =>

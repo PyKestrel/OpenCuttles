@@ -24,6 +24,8 @@ func (s *Server) registerCaseRoutes() {
 	m.HandleFunc("GET /api/v1/cases", t(s.listCases))
 	m.HandleFunc("POST /api/v1/cases", t(s.createCase))
 	m.HandleFunc("GET /api/v1/cases/folders", t(s.listCaseFolders))
+	m.HandleFunc("POST /api/v1/cases/folders", t(s.createCaseFolder))
+	m.HandleFunc("DELETE /api/v1/cases/folders", t(s.deleteCaseFolder))
 	m.HandleFunc("POST /api/v1/cases/import", t(s.importCases))
 	m.HandleFunc("GET /api/v1/cases/{id}", t(s.getCase))
 	m.HandleFunc("PUT /api/v1/cases/{id}", t(s.updateCase))
@@ -66,6 +68,36 @@ func (s *Server) listCaseFolders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, folders)
+}
+
+func (s *Server) createCaseFolder(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := s.store.CreateCaseFolder(r.Context(), req.Path); err != nil {
+		writeError(w, badRequest(err.Error()))
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
+}
+
+func (s *Server) deleteCaseFolder(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := s.store.DeleteCaseFolder(r.Context(), req.Path); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) createCase(w http.ResponseWriter, r *http.Request) {

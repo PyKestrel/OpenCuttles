@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookMarked, ChevronDown, ChevronRight, Copy, FolderTree, MoreHorizontal, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { BookMarked, ChevronDown, ChevronRight, Copy, FolderPlus, FolderTree, ListPlus, MoreHorizontal, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { api } from "@/api";
-import type { Principal, TestCase, TestStep } from "@/types";
+import type { Principal, TestCase, TestCycle, TestStep } from "@/types";
 import { can } from "@/lib/permissions";
 
 const emptyCase: Partial<TestCase> = { summary: "", labels: [], components: [], steps: [] };
@@ -48,17 +48,23 @@ const inFolder = (casePath: string | undefined, folder: string) =>
 
 export function CasesView({ principal }: { principal: Principal }) {
   const [cases, setCases] = useState<TestCase[]>([]);
+  const [folders, setFolders] = useState<string[]>([]);
+  const [cycles, setCycles] = useState<TestCycle[]>([]);
   const [folder, setFolder] = useState<string>("");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Partial<TestCase> | null>(null);
+  const [addToCycleIds, setAddToCycleIds] = useState<string[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const canTest = can(principal, "test");
 
   const refresh = useCallback(async () => {
     try {
-      setCases((await api.cases()) ?? []);
+      const [c, f, cy] = await Promise.all([api.cases(), api.caseFolders().catch(() => []), api.cycles().catch(() => [])]);
+      setCases(c ?? []);
+      setFolders(f ?? []);
+      setCycles(cy ?? []);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load cases");
     }
@@ -67,7 +73,7 @@ export function CasesView({ principal }: { principal: Principal }) {
     refresh();
   }, [refresh]);
 
-  const tree = useMemo(() => buildFolderTree(cases.map((c) => c.folderPath || "").filter(Boolean)), [cases]);
+  const tree = useMemo(() => buildFolderTree(folders), [folders]);
   const folderCount = useCallback((path: string) => cases.filter((c) => inFolder(c.folderPath, path)).length, [cases]);
 
   const visible = useMemo(() => {
@@ -172,6 +178,43 @@ export function CasesView({ principal }: { principal: Principal }) {
     refresh();
   }
 
+  async function newFolder() {
+    const path = window.prompt("New folder path (e.g. Auth/Login):", folder ? folder + "/" : "");
+    if (!path || !path.trim()) return;
+    try {
+      await api.createCaseFolder(path.trim());
+      setFolder(path.trim().replace(/^\/+|\/+$/g, ""));
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not create folder");
+    }
+  }
+
+  async function deleteFolder(path: string) {
+    if (cases.some((c) => inFolder(c.folderPath, path))) {
+      toast.error("Folder still has cases — move or delete them first.");
+      return;
+    }
+    await api.deleteCaseFolder(path);
+    if (folder === path) setFolder("");
+    refresh();
+  }
+
+  async function addToCycle(cycleId: string, ids: string[]) {
+    const cyc = cycles.find((c) => c.id === cycleId);
+    if (!cyc) return;
+    const merged = Array.from(new Set([...(cyc.caseIds ?? []), ...ids]));
+    try {
+      await api.updateCycleCases(cycleId, merged);
+      toast.success(`Added ${ids.length} case${ids.length === 1 ? "" : "s"} to ${cyc.name}`);
+      setAddToCycleIds(null);
+      setSelected(new Set());
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add to cycle");
+    }
+  }
+
   function toggleExpand(path: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -185,7 +228,7 @@ export function CasesView({ principal }: { principal: Principal }) {
     const open = expanded.has(node.path);
     return (
       <div key={node.path}>
-        <div className={cn("flex items-center gap-1 rounded-md pr-2 hover:bg-accent", folder === node.path && "bg-accent")} style={{ paddingLeft: 4 + depth * 12 }}>
+        <div className={cn("group flex items-center gap-1 rounded-md pr-1 hover:bg-accent", folder === node.path && "bg-accent")} style={{ paddingLeft: 4 + depth * 12 }}>
           <button onClick={() => hasChildren && toggleExpand(node.path)} className="grid size-5 shrink-0 place-items-center text-muted-foreground">
             {hasChildren ? open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" /> : null}
           </button>
@@ -193,6 +236,11 @@ export function CasesView({ principal }: { principal: Principal }) {
             <span className="min-w-0 flex-1 truncate">{node.name}</span>
             <span className="font-mono text-[10.5px] text-muted-foreground/70">{folderCount(node.path)}</span>
           </button>
+          {canTest && (
+            <button onClick={(e) => { e.stopPropagation(); deleteFolder(node.path); }} title="Delete folder" className="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-[var(--destructive)] group-hover:opacity-100">
+              <X className="size-3" />
+            </button>
+          )}
         </div>
         {open && node.children.map((c) => renderFolder(c, depth + 1))}
       </div>
@@ -225,7 +273,11 @@ export function CasesView({ principal }: { principal: Principal }) {
 
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
         <Card>
-          <CardHeader icon={<FolderTree className="size-[15px]" />} title="Folders" />
+          <CardHeader
+            icon={<FolderTree className="size-[15px]" />}
+            title="Folders"
+            action={canTest ? <button onClick={newFolder} title="New folder" className="grid size-5 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-primary"><FolderPlus className="size-3.5" /></button> : undefined}
+          />
           <div className="p-1.5 text-[13px]">
             <button onClick={() => setFolder("")} className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent", folder === "" && "bg-accent text-foreground")}>
               <span className="min-w-0 flex-1 truncate">All cases</span>
@@ -240,6 +292,7 @@ export function CasesView({ principal }: { principal: Principal }) {
           {selected.size > 0 && canTest && (
             <div className="flex items-center gap-2 border-b bg-secondary/60 px-4 py-2 text-[13px]" style={{ borderColor: "var(--hairline)" }}>
               <span className="font-medium">{selected.size} selected</span>
+              <Button size="sm" variant="secondary" onClick={() => setAddToCycleIds(Array.from(selected))}><ListPlus className="size-3.5" /> Add to cycle</Button>
               <Button size="sm" variant="secondary" onClick={bulkClone}><Copy className="size-3.5" /> Clone</Button>
               <Button size="sm" variant="danger" onClick={bulkDelete}><Trash2 className="size-3.5" /> Delete</Button>
               <button onClick={() => setSelected(new Set())} className="ml-auto text-[12px] text-muted-foreground hover:text-foreground">Clear</button>
@@ -284,6 +337,7 @@ export function CasesView({ principal }: { principal: Principal }) {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => setEditing(c)}><Pencil className="size-3.5" /> Edit</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setAddToCycleIds([c.id])}><ListPlus className="size-3.5" /> Add to cycle</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => clone(c)}><Copy className="size-3.5" /> Clone</DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem variant="destructive" onClick={() => remove(c)}><Trash2 className="size-3.5" /> Delete</DropdownMenuItem>
@@ -301,7 +355,34 @@ export function CasesView({ principal }: { principal: Principal }) {
       </div>
 
       {editing && <CaseEditor initial={editing} onClose={() => setEditing(null)} onSave={save} />}
+      {addToCycleIds && (
+        <AddToCycleDialog count={addToCycleIds.length} cycles={cycles} onClose={() => setAddToCycleIds(null)} onPick={(id) => addToCycle(id, addToCycleIds)} />
+      )}
     </div>
+  );
+}
+
+function AddToCycleDialog({ count, cycles, onClose, onPick }: { count: number; cycles: TestCycle[]; onClose: () => void; onPick: (cycleId: string) => void }) {
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add {count} case{count === 1 ? "" : "s"} to a cycle</DialogTitle>
+        </DialogHeader>
+        {cycles.length === 0 ? (
+          <div className="py-6 text-center text-[13px] text-muted-foreground/70">No cycles yet — create one first.</div>
+        ) : (
+          <div className="max-h-72 space-y-1 overflow-y-auto">
+            {cycles.map((c) => (
+              <button key={c.id} onClick={() => onPick(c.id)} className="flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-[13px] hover:bg-accent" style={{ borderColor: "var(--border)" }}>
+                <span className="min-w-0 flex-1 truncate font-medium">{c.name}</span>
+                <span className="font-mono text-[11px] text-muted-foreground/70">{c.caseIds.length} cases</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

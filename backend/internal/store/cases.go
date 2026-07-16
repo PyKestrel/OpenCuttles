@@ -92,9 +92,12 @@ func (s *SQLite) ListTestCases(ctx context.Context) ([]domain.TestCase, error) {
 	return cases, rows.Err()
 }
 
-// ListCaseFolders returns the distinct non-empty folder paths for the tree.
+// ListCaseFolders returns folder paths for the tree: the union of explicitly
+// created folders and the distinct folders cases live in.
 func (s *SQLite) ListCaseFolders(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT folder_path FROM test_cases WHERE folder_path != '' ORDER BY folder_path`)
+	rows, err := s.db.QueryContext(ctx, `SELECT path FROM case_folders
+		UNION SELECT DISTINCT folder_path FROM test_cases WHERE folder_path != ''
+		ORDER BY path`)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +111,23 @@ func (s *SQLite) ListCaseFolders(ctx context.Context) ([]string, error) {
 		folders = append(folders, f)
 	}
 	return folders, rows.Err()
+}
+
+// CreateCaseFolder records an explicit (possibly empty) folder path.
+func (s *SQLite) CreateCaseFolder(ctx context.Context, path string) error {
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	if path == "" {
+		return fmt.Errorf("folder path is required")
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO case_folders (path, created_at) VALUES (?, ?)`, path, formatTime(time.Now().UTC()))
+	return err
+}
+
+// DeleteCaseFolder removes an explicit folder entry. Cases keep their folder_path
+// (a folder still in use by cases stays derived).
+func (s *SQLite) DeleteCaseFolder(ctx context.Context, path string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM case_folders WHERE path = ?`, strings.Trim(strings.TrimSpace(path), "/"))
+	return err
 }
 
 func (s *SQLite) UpdateTestCase(ctx context.Context, c domain.TestCase) error {

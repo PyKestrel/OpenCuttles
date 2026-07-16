@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, ListChecks, MoreHorizontal, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { Copy, ListChecks, ListPlus, MoreHorizontal, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ export function CyclesView({ principal }: { principal: Principal }) {
   const [builds, setBuilds] = useState<Build[]>([]);
   const [editing, setEditing] = useState<Partial<TestCycle> | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [addCasesFor, setAddCasesFor] = useState<TestCycle | null>(null);
   const canTest = can(principal, "test");
 
   const refresh = useCallback(async () => {
@@ -116,6 +117,18 @@ export function CyclesView({ principal }: { principal: Principal }) {
     refresh();
   }
 
+  async function addCasesToCycle(cycle: TestCycle, ids: string[]) {
+    const merged = Array.from(new Set([...(cycle.caseIds ?? []), ...ids]));
+    try {
+      await api.updateCycleCases(cycle.id, merged);
+      toast.success(`Added ${ids.length} case${ids.length === 1 ? "" : "s"} to ${cycle.name}`);
+      setAddCasesFor(null);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add cases");
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl p-5">
       <div className="mb-4 flex items-center">
@@ -179,6 +192,7 @@ export function CyclesView({ principal }: { principal: Principal }) {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => setEditing(c)}><Pencil className="size-3.5" /> Edit</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setAddCasesFor(c)}><ListPlus className="size-3.5" /> Add cases</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => clone(c)}><Copy className="size-3.5" /> Clone</DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem variant="destructive" onClick={() => remove(c.id)}><Trash2 className="size-3.5" /> Delete</DropdownMenuItem>
@@ -196,7 +210,46 @@ export function CyclesView({ principal }: { principal: Principal }) {
       </Card>
 
       {editing && <CycleEditor initial={editing} cases={cases} builds={builds} onClose={() => setEditing(null)} onSave={save} />}
+      {addCasesFor && <AddCasesDialog cycle={addCasesFor} cases={cases} onClose={() => setAddCasesFor(null)} onSave={(ids) => addCasesToCycle(addCasesFor, ids)} />}
     </div>
+  );
+}
+
+function AddCasesDialog({ cycle, cases, onClose, onSave }: { cycle: TestCycle; cases: TestCase[]; onClose: () => void; onSave: (ids: string[]) => void }) {
+  const existing = new Set(cycle.caseIds ?? []);
+  const candidates = cases.filter((c) => !existing.has(c.id));
+  const [pick, setPick] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setPick((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add cases to {cycle.name}</DialogTitle>
+        </DialogHeader>
+        {candidates.length === 0 ? (
+          <div className="py-6 text-center text-[13px] text-muted-foreground/70">All cases are already in this cycle.</div>
+        ) : (
+          <div className="max-h-72 space-y-0.5 overflow-y-auto rounded-lg border p-1.5" style={{ borderColor: "var(--border)" }}>
+            {candidates.map((tc) => (
+              <label key={tc.id} className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px] hover:bg-accent">
+                <Checkbox checked={pick.has(tc.id)} onCheckedChange={() => toggle(tc.id)} />
+                <span className="min-w-0 flex-1 truncate">{tc.summary}</span>
+                {tc.folderPath && <span className="truncate text-[11px] text-muted-foreground/60">{tc.folderPath}</span>}
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={pick.size === 0} onClick={() => onSave(Array.from(pick))}>Add {pick.size || ""}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

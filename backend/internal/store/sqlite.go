@@ -237,6 +237,12 @@ func (s *SQLite) migrate(ctx context.Context) error {
 			created_at TEXT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_builds_platform ON builds(platform, created_at DESC)`,
+		// Explicit case folders so empty folders persist (the tree otherwise derives
+		// folders only from cases' folder_path).
+		`CREATE TABLE IF NOT EXISTS case_folders (
+			path TEXT PRIMARY KEY,
+			created_at TEXT NOT NULL
+		)`,
 	}
 
 	for _, statement := range statements {
