@@ -427,11 +427,28 @@ func (s *Service) InstallAPK(ctx context.Context, id, hostPath string) error {
 	// request forever. Cap it so callers get a clear error instead.
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
+	s.disableInstallVerification(ctx, instance)
 	_, err = s.adb(ctx, instance, "install", "-r", hostPath)
 	if errors.Is(err, context.DeadlineExceeded) {
 		return fmt.Errorf("adb install timed out after 4m — the device may be busy or the APK is incompatible")
 	}
 	return err
+}
+
+// disableInstallVerification turns off Play Protect / package verification for
+// adb installs. On a device with no or broken network access, verification
+// makes `adb install` hang phoning home, so we clear it before every install.
+// Best-effort: settings are idempotent and persist on the device, and a device
+// that rejects the setting should still install, so errors are only logged.
+func (s *Service) disableInstallVerification(ctx context.Context, instance domain.Instance) {
+	for _, kv := range [2][2]string{
+		{"verifier_verify_adb_installs", "0"},
+		{"package_verifier_enable", "0"},
+	} {
+		if _, err := s.adbShell(ctx, instance, "settings", "put", "global", kv[0], kv[1]); err != nil {
+			s.logger.Debug("disable install verification failed", "setting", kv[0], "error", err)
+		}
+	}
 }
 
 // InstallDesktopBuild installs an uploaded build on a desktop target over the
