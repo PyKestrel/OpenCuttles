@@ -14,6 +14,13 @@ EnvironmentFile=-/etc/opencuttles/opencuttles.env
 ExecStart=/opt/opencuttles/bin/opencuttles-api
 Restart=on-failure
 RestartSec=5s
+# The API launches Cuttlefish AVDs (launch_cvd/crosvm) as child processes, so
+# they live in this unit's cgroup. With the default KillMode=control-group, a
+# stop/restart (e.g. a binary upgrade) would SIGKILL the whole cgroup and take
+# every running AVD down with it. KillMode=process signals only the main API
+# process on stop, leaving the AVDs running; the API reconnects to them over ADB
+# on restart.
+KillMode=process
 LimitNOFILE=65536
 NoNewPrivileges=true
 PrivateTmp=true
