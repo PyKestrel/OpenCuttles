@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ListChecks, Play, Plus, Trash2 } from "lucide-react";
+import { Copy, ListChecks, MoreHorizontal, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { api } from "@/api";
 import { platformLabel } from "@/lib/platform";
 import type { Build, Platform, Principal, TestCase, TestCycle } from "@/types";
@@ -23,6 +24,7 @@ export function CyclesView({ principal }: { principal: Principal }) {
   const [cases, setCases] = useState<TestCase[]>([]);
   const [builds, setBuilds] = useState<Build[]>([]);
   const [editing, setEditing] = useState<Partial<TestCycle> | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const canTest = can(principal, "test");
 
   const refresh = useCallback(async () => {
@@ -56,6 +58,64 @@ export function CyclesView({ principal }: { principal: Principal }) {
     }
   }
 
+  // A clone starts disabled so a copied schedule doesn't fire unexpectedly.
+  const cloneFields = (c: TestCycle): Partial<TestCycle> => ({
+    name: `${c.name} (copy)`,
+    platform: c.platform,
+    buildId: c.buildId,
+    environment: c.environment,
+    caseIds: c.caseIds,
+    cron: c.cron,
+    onNewBuild: c.onNewBuild,
+    enabled: false,
+  });
+
+  async function clone(c: TestCycle) {
+    try {
+      await api.createCycle(cloneFields(c));
+      toast.success("Cycle cloned (disabled)");
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Clone failed");
+    }
+  }
+
+  async function remove(id: string) {
+    await api.deleteCycle(id);
+    setSelected((prev) => {
+      const n = new Set(prev);
+      n.delete(id);
+      return n;
+    });
+    refresh();
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  }
+  const allSelected = cycles.length > 0 && cycles.every((c) => selected.has(c.id));
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(cycles.map((c) => c.id)));
+  }
+  async function bulkDelete() {
+    const ids = Array.from(selected);
+    await Promise.all(ids.map((id) => api.deleteCycle(id).catch(() => undefined)));
+    setSelected(new Set());
+    toast.success(`Deleted ${ids.length} cycle${ids.length === 1 ? "" : "s"}`);
+    refresh();
+  }
+  async function bulkClone() {
+    const picked = cycles.filter((c) => selected.has(c.id));
+    await Promise.all(picked.map((c) => api.createCycle(cloneFields(c)).catch(() => undefined)));
+    setSelected(new Set());
+    toast.success(`Cloned ${picked.length} cycle${picked.length === 1 ? "" : "s"}`);
+    refresh();
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl p-5">
       <div className="mb-4 flex items-center">
@@ -72,6 +132,14 @@ export function CyclesView({ principal }: { principal: Principal }) {
 
       <Card>
         <CardHeader icon={<ListChecks className="size-[15px]" />} title="Cycles" action={<span className="text-[12px] text-muted-foreground/70">{cycles.length}</span>} />
+        {selected.size > 0 && canTest && (
+          <div className="flex items-center gap-2 border-b bg-secondary/60 px-4 py-2 text-[13px]" style={{ borderColor: "var(--hairline)" }}>
+            <span className="font-medium">{selected.size} selected</span>
+            <Button size="sm" variant="secondary" onClick={bulkClone}><Copy className="size-3.5" /> Clone</Button>
+            <Button size="sm" variant="danger" onClick={bulkDelete}><Trash2 className="size-3.5" /> Delete</Button>
+            <button onClick={() => setSelected(new Set())} className="ml-auto text-[12px] text-muted-foreground hover:text-foreground">Clear</button>
+          </div>
+        )}
         {cycles.length === 0 ? (
           <div className="px-4 py-10 text-center text-[13px] text-muted-foreground/70">No cycles yet. Compose one from your test cases.</div>
         ) : (
@@ -79,6 +147,7 @@ export function CyclesView({ principal }: { principal: Principal }) {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8"><Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" /></TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead className="w-24">Platform</TableHead>
                   <TableHead className="w-16 text-right">Cases</TableHead>
@@ -88,7 +157,8 @@ export function CyclesView({ principal }: { principal: Principal }) {
               </TableHeader>
               <TableBody>
                 {cycles.map((c) => (
-                  <TableRow key={c.id}>
+                  <TableRow key={c.id} data-state={selected.has(c.id) ? "selected" : undefined}>
+                    <TableCell><Checkbox checked={selected.has(c.id)} onCheckedChange={() => toggleSelect(c.id)} aria-label="Select cycle" /></TableCell>
                     <TableCell className="cursor-pointer font-medium" onClick={() => setEditing(c)}>
                       {c.name}
                       {!c.enabled && <Badge variant="outline" className="ml-2 text-[10px]">disabled</Badge>}
@@ -100,12 +170,20 @@ export function CyclesView({ principal }: { principal: Principal }) {
                       {c.onNewBuild && <Badge variant="outline" className="ml-2 text-[10px]">on build</Badge>}
                     </TableCell>
                     <TableCell>
-                      <div className="flex justify-end gap-1">
+                      <div className="flex items-center justify-end gap-1">
                         <Button size="sm" variant="primary" disabled={c.caseIds.length === 0} onClick={() => run(c.id)}><Play className="size-3" /> Run</Button>
                         {canTest && (
-                          <button onClick={() => api.deleteCycle(c.id).then(refresh)} title="Delete" className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-[var(--destructive)]">
-                            <Trash2 className="size-3.5" />
-                          </button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><MoreHorizontal className="size-4" /></button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setEditing(c)}><Pencil className="size-3.5" /> Edit</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => clone(c)}><Copy className="size-3.5" /> Clone</DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem variant="destructive" onClick={() => remove(c.id)}><Trash2 className="size-3.5" /> Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </div>
                     </TableCell>
