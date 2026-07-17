@@ -29,6 +29,26 @@ func NewService(store *store.SQLite, runner Runner, logger *slog.Logger) *Servic
 	return &Service{store: store, runner: runner, logger: logger}
 }
 
+// setState persists an instance's state. A dropped write here is how the
+// dashboard silently starts lying about a device (DB says running, reality
+// disagrees), so the error is always logged rather than discarded. The returned
+// instance is zero-valued on failure — callers that use it should tolerate that.
+func (s *Service) setState(ctx context.Context, id, state, message string) domain.Instance {
+	instance, err := s.store.UpdateInstanceState(ctx, id, state, message)
+	if err != nil && s.logger != nil {
+		s.logger.Error("persist instance state failed", "instance", id, "state", state, "detail", message, "error", err)
+	}
+	return instance
+}
+
+// finishOp marks an operation terminal, logging (never swallowing) a failed
+// write — otherwise an operation sticks at "running" forever with no trace.
+func (s *Service) finishOp(ctx context.Context, operationID, status, message string) {
+	if _, err := s.store.FinishOperation(ctx, operationID, status, message); err != nil && s.logger != nil {
+		s.logger.Error("persist operation status failed", "operation", operationID, "status", status, "detail", message, "error", err)
+	}
+}
+
 func (s *Service) Host(ctx context.Context) domain.Host {
 	hostName, _ := os.Hostname()
 	return domain.Host{
@@ -81,17 +101,17 @@ func (s *Service) Reconcile(ctx context.Context) error {
 		case domain.StateStarting, domain.StateBooting:
 			if realCuttlefishExecutionEnabled() {
 				if err := s.waitReady(ctx, instance); err == nil {
-					_, _ = s.store.UpdateInstanceState(ctx, instance.ID, domain.StateRunning, "")
+					s.setState(ctx, instance.ID, domain.StateRunning, "")
 					continue
 				}
 			}
-			_, _ = s.store.UpdateInstanceState(ctx, instance.ID, domain.StateError, "startup reconciliation found interrupted launch")
+			s.setState(ctx, instance.ID, domain.StateError, "startup reconciliation found interrupted launch")
 		case domain.StateRunning:
 			if realCuttlefishExecutionEnabled() && !s.isADBReachable(ctx, instance) {
-				_, _ = s.store.UpdateInstanceState(ctx, instance.ID, domain.StateError, "startup reconciliation could not reach ADB")
+				s.setState(ctx, instance.ID, domain.StateError, "startup reconciliation could not reach ADB")
 			}
 		case domain.StateStopping, domain.StateDeleting:
-			_, _ = s.store.UpdateInstanceState(ctx, instance.ID, domain.StateError, "startup reconciliation found interrupted operation")
+			s.setState(ctx, instance.ID, domain.StateError, "startup reconciliation found interrupted operation")
 		}
 	}
 	return nil
@@ -125,34 +145,34 @@ func (s *Service) runStart(id, operationID string) {
 
 	instance, err := s.store.GetInstance(ctx, id)
 	if err != nil {
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 		return
 	}
 	if err := s.launch(ctx, instance); err != nil {
-		instance, _ = s.store.UpdateInstanceState(ctx, id, domain.StateError, err.Error())
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		instance = s.setState(ctx, id, domain.StateError, err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 		return
 	}
 
 	instance, err = s.store.UpdateInstanceState(ctx, id, domain.StateBooting, "")
 	if err != nil {
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 		return
 	}
 
 	if err := s.waitReady(ctx, instance); err != nil {
-		_, _ = s.store.UpdateInstanceState(ctx, id, domain.StateError, err.Error())
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		s.setState(ctx, id, domain.StateError, err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 		return
 	}
 
 	instance, err = s.store.UpdateInstanceState(ctx, id, domain.StateRunning, "")
 	if err != nil {
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 		return
 	}
 	s.finalizeConsole(ctx, instance)
-	_, _ = s.store.FinishOperation(ctx, operationID, "succeeded", "instance is running")
+	s.finishOp(ctx, operationID, "succeeded", "instance is running")
 }
 
 // Deploy provisions an instance end to end: it fetches the backing Android
@@ -183,13 +203,13 @@ func (s *Service) runDeploy(id, operationID string) {
 	defer cancel()
 
 	fail := func(err error) {
-		_, _ = s.store.UpdateInstanceState(ctx, id, domain.StateError, err.Error())
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		s.setState(ctx, id, domain.StateError, err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 	}
 
 	instance, err := s.store.GetInstance(ctx, id)
 	if err != nil {
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 		return
 	}
 	image, err := s.store.GetImage(ctx, instance.ImageID)
@@ -223,7 +243,7 @@ func (s *Service) runDeploy(id, operationID string) {
 		return
 	}
 	s.finalizeConsole(ctx, instance)
-	_, _ = s.store.FinishOperation(ctx, operationID, "succeeded", "instance is running")
+	s.finishOp(ctx, operationID, "succeeded", "instance is running")
 }
 
 // finalizeConsole asks the cuttlefish-operator for the device id it assigned to
@@ -238,7 +258,10 @@ func (s *Service) finalizeConsole(ctx context.Context, instance domain.Instance)
 	if !ok {
 		return
 	}
-	_, _ = s.store.UpdateInstanceConsole(ctx, instance.ID, deviceID, store.ConsoleClientURL(instance.ID, deviceID))
+	if _, err := s.store.UpdateInstanceConsole(ctx, instance.ID, deviceID, store.ConsoleClientURL(instance.ID, deviceID)); err != nil && s.logger != nil {
+		// Losing this write leaves the device without a working console URL.
+		s.logger.Error("persist instance console failed", "instance", instance.ID, "device", deviceID, "error", err)
+	}
 }
 
 // discoverDeviceID resolves the operator's device id for this instance via the
@@ -303,7 +326,7 @@ func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
 		return err
 	}
 	if err := os.MkdirAll(image.Path, 0o750); err != nil {
-		_ = s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusError, 0, err.Error())
+		s.markImageError(ctx, image.ID, err.Error())
 		return fmt.Errorf("create image dir: %w", err)
 	}
 	// cvd downloads artifacts to a cache (hardcoded at /var/tmp/cvd) and then
@@ -317,10 +340,18 @@ func (s *Service) ensureImage(ctx context.Context, image domain.Image) error {
 	)
 	if err != nil {
 		msg := fmt.Sprintf("cvd fetch failed: %v: %s", err, result.Output)
-		_ = s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusError, 0, msg)
+		s.markImageError(ctx, image.ID, msg)
 		return fmt.Errorf("%s", msg)
 	}
 	return s.store.UpdateImageStatus(ctx, image.ID, domain.ImageStatusReady, 0, "")
+}
+
+// markImageError records an image's failure. A dropped write would strand the
+// image at "fetching" forever with no trace, so the error is logged.
+func (s *Service) markImageError(ctx context.Context, imageID, message string) {
+	if err := s.store.UpdateImageStatus(ctx, imageID, domain.ImageStatusError, 0, message); err != nil && s.logger != nil {
+		s.logger.Error("persist image error status failed", "image", imageID, "detail", message, "error", err)
+	}
 }
 
 // ensureCvdCacheColocated makes cvd's download cache (/var/tmp/cvd) live on the
@@ -388,17 +419,17 @@ func (s *Service) runStop(id, operationID string, instance domain.Instance) {
 	defer cancel()
 
 	if err := s.stop(ctx, instance); err != nil {
-		instance, _ = s.store.UpdateInstanceState(ctx, id, domain.StateError, err.Error())
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		instance = s.setState(ctx, id, domain.StateError, err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 		return
 	}
 
 	_, err := s.store.UpdateInstanceState(ctx, id, domain.StateStopped, "")
 	if err != nil {
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 		return
 	}
-	_, _ = s.store.FinishOperation(ctx, operationID, "succeeded", "instance is stopped")
+	s.finishOp(ctx, operationID, "succeeded", "instance is stopped")
 }
 
 func (s *Service) DeleteInstance(ctx context.Context, id string) (domain.Operation, error) {
@@ -429,8 +460,8 @@ func (s *Service) runDelete(id, operationID string, instance domain.Instance) {
 
 	if isPossiblyLive(instance.State) {
 		if err := s.stop(ctx, instance); err != nil {
-			_, _ = s.store.UpdateInstanceState(ctx, id, domain.StateError, err.Error())
-			_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+			s.setState(ctx, id, domain.StateError, err.Error())
+			s.finishOp(ctx, operationID, "failed", err.Error())
 			return
 		}
 	}
@@ -444,10 +475,10 @@ func (s *Service) runDelete(id, operationID string, instance domain.Instance) {
 	}
 
 	if err := s.store.DeleteInstance(ctx, id); err != nil {
-		_, _ = s.store.FinishOperation(ctx, operationID, "failed", err.Error())
+		s.finishOp(ctx, operationID, "failed", err.Error())
 		return
 	}
-	_, _ = s.store.FinishOperation(ctx, operationID, "succeeded", "instance deleted")
+	s.finishOp(ctx, operationID, "succeeded", "instance deleted")
 }
 
 func (s *Service) launch(ctx context.Context, instance domain.Instance) error {
