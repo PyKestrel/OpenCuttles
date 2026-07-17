@@ -4,11 +4,14 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	"github.com/opencuttles/opencuttles/backend/internal/qmetry"
+	"github.com/opencuttles/opencuttles/backend/internal/scenario"
 	"github.com/opencuttles/opencuttles/backend/internal/scheduler"
 )
 
@@ -27,6 +30,7 @@ func (s *Server) registerCaseRoutes() {
 	m.HandleFunc("POST /api/v1/cases/folders", t(s.createCaseFolder))
 	m.HandleFunc("DELETE /api/v1/cases/folders", t(s.deleteCaseFolder))
 	m.HandleFunc("POST /api/v1/cases/import", t(s.importCases))
+	m.HandleFunc("GET /api/v1/cases/export", t(s.exportCases))
 	m.HandleFunc("GET /api/v1/cases/{id}", t(s.getCase))
 	m.HandleFunc("PUT /api/v1/cases/{id}", t(s.updateCase))
 	m.HandleFunc("DELETE /api/v1/cases/{id}", t(s.deleteCase))
@@ -44,6 +48,8 @@ func (s *Server) registerCaseRoutes() {
 	// Cycle runs (reports)
 	m.HandleFunc("GET /api/v1/cycle-runs", t(s.listCycleRuns))
 	m.HandleFunc("GET /api/v1/cycle-runs/{id}", t(s.getCycleRun))
+	m.HandleFunc("GET /api/v1/cycle-runs/{id}/export", t(s.exportCycleRun))
+	m.HandleFunc("DELETE /api/v1/cycle-runs/{id}", t(s.deleteCycleRun))
 
 	// Builds
 	m.HandleFunc("GET /api/v1/builds", t(s.listBuilds))
@@ -347,7 +353,12 @@ func (s *Server) runCycle(w http.ResponseWriter, r *http.Request) {
 		InstanceID string `json:"instanceId,omitempty"`
 		BuildID    string `json:"buildId,omitempty"`
 	}
-	_ = decodeJSON(w, r, &req)
+	// Body is optional (both fields default), but a malformed body must not be
+	// silently ignored — that would run the cycle against a zero-value target.
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, err)
+		return
+	}
 	cycle, err := s.store.GetTestCycle(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeError(w, err)
@@ -427,4 +438,26 @@ func (s *Server) getCycleRun(w http.ResponseWriter, r *http.Request) {
 		Run   domain.CycleRun  `json:"run"`
 		Cases []domain.TestRun `json:"cases"`
 	}{Run: run, Cases: cases})
+}
+
+// deleteCycleRun removes a cycle run, its child case runs, and their on-disk
+// artifact directories.
+func (s *Server) deleteCycleRun(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	cases, err := s.store.ListTestRunsByCycleRun(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := s.store.DeleteCycleRun(r.Context(), id); err != nil {
+		writeError(w, err)
+		return
+	}
+	root := scenario.ArtifactRoot()
+	for _, cr := range cases {
+		_ = os.RemoveAll(filepath.Join(root, cr.ID))
+	}
+	principal, _ := principalFromContext(r.Context())
+	s.audit(r, principal, "delete_cycle_run", "cycle-run", id, "succeeded", "")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

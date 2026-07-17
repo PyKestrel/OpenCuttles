@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Activity, HeartPulse, ListChecks, ShieldCheck, UserRound } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { AgentModelSettings } from "@/components/views/AgentModelSettings";
+import { NotificationSettings } from "@/components/views/NotificationSettings";
 import { api } from "@/api";
 import type { AuditEvent, HealthReport, Host, Operation, Principal } from "@/types";
 import { can } from "@/lib/permissions";
@@ -43,6 +44,7 @@ export function ActivityView({ principal, host }: { principal: Principal; host?:
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-5">
       {isAdmin && <AgentModelSettings />}
+      {isAdmin && <NotificationSettings />}
       <div className="grid items-start gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader icon={<HeartPulse className="size-[15px]" />} title="Host health" action={<StatusPill ok={health?.status === "ok"} label={health?.status ?? "unknown"} />} />

@@ -40,6 +40,13 @@ type Binder interface {
 	UnbindRun(deviceID string)
 }
 
+// Notifier is an optional sink notified when a cycle run finishes (e.g. a
+// webhook). It must not block; implementations run their own delivery
+// asynchronously.
+type Notifier interface {
+	CycleFinished(run domain.CycleRun)
+}
+
 // CycleExecutor runs a test cycle by driving the headless Flue agent once per
 // case: the agent interprets each case's steps, verifies expected results, and
 // reports per-step outcomes back through the report_step_result MCP tool.
@@ -51,10 +58,14 @@ type CycleExecutor struct {
 	logger   *slog.Logger
 	artifact string
 	http     *http.Client
+	notifier Notifier // optional; set via SetNotifier
 
 	mu      sync.Mutex
 	running map[string]bool // deviceID → a cycle run is in flight (serialize per device)
 }
+
+// SetNotifier installs an optional completion notifier (e.g. a webhook sink).
+func (e *CycleExecutor) SetNotifier(n Notifier) { e.notifier = n }
 
 // NewCycleExecutor builds the executor. agentURL is the Flue sidecar base (e.g.
 // http://127.0.0.1:8790); the executor calls it directly, bypassing the
@@ -186,7 +197,7 @@ func (e *CycleExecutor) runCase(ctx context.Context, cycle domain.TestCycle, cyc
 	if reloaded, err := e.store.GetTestRun(ctx, caseRun.ID); err == nil {
 		caseRun = reloaded
 	}
-	category, passed, detail := classifyCase(caseRun.Steps, agentErr, terminal)
+	category, passed, detail := classifyCase(caseRun.Steps, len(tc.Steps), agentErr, terminal)
 
 	now := time.Now().UTC()
 	caseRun.FinishedAt = &now
@@ -206,20 +217,16 @@ func (e *CycleExecutor) runCase(ctx context.Context, cycle domain.TestCycle, cyc
 }
 
 // classifyCase derives a rollup category, the run pass flag, and an optional
-// detail from the captured steps + the agent's terminal summary.
-func classifyCase(steps []domain.StepResult, agentErr error, terminal string) (category string, passed bool, detail string) {
+// detail from the captured steps + the agent's terminal summary. expected is the
+// number of steps the case defines. A case is only PASS when every expected step
+// was reported and all passed; missing or partial evidence is never treated as a
+// pass — a test tool must not manufacture a green from an ambiguous summary.
+func classifyCase(steps []domain.StepResult, expected int, agentErr error, terminal string) (category string, passed bool, detail string) {
 	if agentErr != nil {
+		// Covers the per-case context timeout as well as transport/agent errors.
 		return "fail", false, agentErr.Error()
 	}
-	if len(steps) == 0 {
-		// Agent under-reported: synthesize from its terminal summary so the report
-		// is never empty.
-		low := strings.ToLower(terminal)
-		if strings.Contains(low, "fail") || strings.Contains(low, "block") || strings.Contains(low, "could not") {
-			return "fail", false, "no per-step reports; agent summary indicated failure"
-		}
-		return domain.StepPass, true, "no per-step reports; treated the agent summary as pass"
-	}
+
 	hasFail, hasBlocked := false, false
 	for _, s := range steps {
 		switch s.Status {
@@ -229,14 +236,30 @@ func classifyCase(steps []domain.StepResult, agentErr error, terminal string) (c
 			hasBlocked = true
 		}
 	}
-	switch {
-	case hasFail:
+	if hasFail {
 		return "fail", false, ""
-	case hasBlocked:
-		return domain.StepBlocked, false, ""
-	default:
-		return domain.StepPass, true, ""
 	}
+
+	// No per-step evidence at all: do NOT trust the terminal summary. If it clearly
+	// says failure, fail; otherwise mark blocked (unverified), never pass.
+	if len(steps) == 0 {
+		low := strings.ToLower(terminal)
+		if strings.Contains(low, "fail") || strings.Contains(low, "block") || strings.Contains(low, "could not") {
+			return "fail", false, "no per-step results reported; agent summary indicated failure"
+		}
+		return domain.StepBlocked, false, "no per-step results reported; case could not be verified"
+	}
+
+	// Under-reported: fewer non-failing steps than the case defines means we can't
+	// confirm every expected result — treat as blocked, not pass.
+	if expected > 0 && len(steps) < expected {
+		return domain.StepBlocked, false, fmt.Sprintf("incomplete: %d of %d steps verified", len(steps), expected)
+	}
+
+	if hasBlocked {
+		return domain.StepBlocked, false, ""
+	}
+	return domain.StepPass, true, ""
 }
 
 func (e *CycleExecutor) finishCycle(ctx context.Context, run domain.CycleRun, status, errMsg string) {
@@ -248,6 +271,9 @@ func (e *CycleExecutor) finishCycle(ctx context.Context, run domain.CycleRun, st
 	}
 	if errMsg != "" && e.logger != nil {
 		e.logger.Warn("cycle run ended with error", "run", run.ID, "error", errMsg)
+	}
+	if e.notifier != nil {
+		e.notifier.CycleFinished(run)
 	}
 }
 

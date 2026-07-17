@@ -15,6 +15,8 @@ import type {
   ImportResult,
   Instance,
   LoginResponse,
+  NotificationConfig,
+  NotificationUpdate,
   Operation,
   PerfSnapshot,
   Platform,
@@ -36,6 +38,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(body.error ?? response.statusText);
   }
   return response.json() as Promise<T>;
+}
+
+// download fetches a file endpoint and triggers a browser save, honoring the
+// server's Content-Disposition filename when present.
+async function download(path: string, fallbackName: string): Promise<void> {
+  const response = await fetch(path, { credentials: "include" });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(body.error ?? response.statusText);
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = match?.[1] ?? fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export const api = {
@@ -199,6 +222,11 @@ export const api = {
     form.append("file", file);
     return request<ImportResult>("/api/v1/cases/import", { method: "POST", body: form });
   },
+  exportCases: (format: "csv" | "xlsx", folder?: string) =>
+    download(
+      `/api/v1/cases/export?format=${format}${folder ? `&folder=${encodeURIComponent(folder)}` : ""}`,
+      `cases-export.${format}`,
+    ),
 
   cycles: () => request<TestCycle[]>("/api/v1/cycles"),
   createCycle: (c: Partial<TestCycle>) =>
@@ -215,6 +243,12 @@ export const api = {
 
   cycleRuns: () => request<CycleRun[]>("/api/v1/cycle-runs"),
   cycleRun: (id: string) => request<{ run: CycleRun; cases: TestRun[] }>(`/api/v1/cycle-runs/${id}`),
+  deleteCycleRun: (id: string) => request<{ status: string }>(`/api/v1/cycle-runs/${id}`, { method: "DELETE" }),
+  exportCycleRun: (id: string, format: "junit" | "csv" | "xlsx") =>
+    download(
+      `/api/v1/cycle-runs/${id}/export?format=${format}`,
+      `cyclerun-${id}.${format === "junit" ? "xml" : format}`,
+    ),
 
   builds: (platform?: Platform) =>
     request<Build[]>(`/api/v1/builds${platform ? `?platform=${platform}` : ""}`),
@@ -239,6 +273,14 @@ export const api = {
   testAgentModel: (payload: AgentModelUpdate) =>
     request<{ ok: boolean; message: string }>("/api/v1/agent/model/test", {
       method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+
+  notifications: () => request<NotificationConfig>("/api/v1/settings/notifications"),
+  saveNotifications: (payload: NotificationUpdate) =>
+    request<NotificationConfig>("/api/v1/settings/notifications", {
+      method: "PUT",
       headers: jsonHeaders,
       body: JSON.stringify(payload),
     }),

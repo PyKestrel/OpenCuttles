@@ -347,6 +347,16 @@ func (s *SQLite) ListCycleRuns(ctx context.Context) ([]domain.CycleRun, error) {
 	return runs, rows.Err()
 }
 
+// DeleteCycleRun removes a cycle run and its per-case test_runs rows. On-disk
+// artifacts are removed by the caller (the store doesn't own the filesystem).
+func (s *SQLite) DeleteCycleRun(ctx context.Context, id string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM test_runs WHERE cycle_run_id = ?`, id); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM cycle_runs WHERE id = ?`, id)
+	return err
+}
+
 func scanCycleRun(row scanner) (domain.CycleRun, error) {
 	var r domain.CycleRun
 	var name sql.NullString

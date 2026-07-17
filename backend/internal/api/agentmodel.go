@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/opencuttles/opencuttles/backend/internal/llmvision"
 )
 
 // agentModelSettingKey is the settings row that stores the agent LLM config.
@@ -264,4 +266,33 @@ func probeProvider(ctx context.Context, api, baseURL, key string) (bool, string)
 	default:
 		return false, fmt.Sprintf("endpoint returned HTTP %d", resp.StatusCode)
 	}
+}
+
+// llmVisionQuerier answers ask_screen questions using the admin-configured LLM.
+// It reloads the config per call so a model change takes effect immediately, and
+// returns an error (letting ask_screen fall back to the caption model) when no
+// model is configured or the provider can't be driven for vision.
+type llmVisionQuerier struct{ s *Server }
+
+func (q llmVisionQuerier) Query(ctx context.Context, png []byte, question string) (string, error) {
+	cfg, err := q.s.loadAgentModel(ctx)
+	if err != nil {
+		return "", err
+	}
+	if cfg.ProviderID == "" || cfg.Model == "" {
+		return "", llmvision.ErrUnsupported
+	}
+	key := ""
+	if cfg.KeyCiphertext != "" && q.s.secrets != nil {
+		if k, e := q.s.secrets.Open(cfg.KeyCiphertext); e == nil {
+			key = k
+		}
+	}
+	return llmvision.Query(ctx, llmvision.Config{
+		API:     cfg.API,
+		BaseURL: cfg.BaseURL,
+		Model:   cfg.Model,
+		Key:     key,
+		Headers: cfg.Headers,
+	}, png, question)
 }

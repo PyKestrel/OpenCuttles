@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookMarked, ChevronDown, ChevronRight, Copy, FolderPlus, FolderTree, ListPlus, MoreHorizontal, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { BookMarked, ChevronDown, ChevronRight, Copy, Download, FolderPlus, FolderTree, ListPlus, MoreHorizontal, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -100,6 +100,14 @@ export function CasesView({ principal }: { principal: Principal }) {
       refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Import failed");
+    }
+  }
+
+  async function exportCases(format: "csv" | "xlsx") {
+    try {
+      await api.exportCases(format, folder || undefined);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
     }
   }
 
@@ -264,6 +272,17 @@ export function CasesView({ principal }: { principal: Principal }) {
             <Button variant="secondary" onClick={() => fileRef.current?.click()}>
               <Upload className="size-3.5" /> Import QMetry
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="secondary" disabled={cases.length === 0}>
+                  <Download className="size-3.5" /> Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => exportCases("csv")}>CSV{folder ? ` (${folder})` : ""}</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportCases("xlsx")}>XLSX{folder ? ` (${folder})` : ""}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button variant="primary" onClick={() => setEditing({ ...emptyCase, folderPath: folder })}>
               <Plus className="size-3.5" /> New case
             </Button>

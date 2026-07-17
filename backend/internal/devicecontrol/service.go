@@ -162,8 +162,18 @@ func (s *Service) adbShell(ctx context.Context, instance domain.Instance, args .
 	return strings.TrimSpace(string(out)), err
 }
 
+// Per-operation bounds for interactive control. A wedged adb/runner call would
+// otherwise hang the request goroutine indefinitely (only InstallAPK and the
+// recording pull set their own, longer bounds and must not route through these).
+const (
+	interactiveTimeout = 30 * time.Second // fast input/query ops
+	shellTimeout       = 60 * time.Second // arbitrary shell + logcat + perf
+)
+
 // Screenshot captures the current screen as PNG bytes.
 func (s *Service) Screenshot(ctx context.Context, id string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return nil, err
@@ -177,6 +187,8 @@ func (s *Service) Screenshot(ctx context.Context, id string) ([]byte, error) {
 
 // Tap injects a single tap at the given screen coordinates (pixels).
 func (s *Service) Tap(ctx context.Context, id string, x, y int) error {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
@@ -192,6 +204,8 @@ func (s *Service) Tap(ctx context.Context, id string, x, y int) error {
 // of 0 lets the platform pick its default. A swipe to the same point with a long
 // duration acts as a long press.
 func (s *Service) Swipe(ctx context.Context, id string, x1, y1, x2, y2, durationMs int) error {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
@@ -213,6 +227,8 @@ func (s *Service) LongPress(ctx context.Context, id string, x, y, durationMs int
 
 // Text types a UTF-8 string.
 func (s *Service) Text(ctx context.Context, id, text string) error {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
@@ -228,6 +244,8 @@ func (s *Service) Text(ctx context.Context, id, text string) error {
 // HOME, BACK, ENTER, APP_SWITCH (recents), VOLUME_UP, POWER (Android); desktop
 // drivers map common names to their own key syntax.
 func (s *Service) Key(ctx context.Context, id, keycode string) error {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
@@ -243,6 +261,8 @@ func (s *Service) Key(ctx context.Context, id, keycode string) error {
 // (resource-id, text, content-desc, class, bounds, clickability, center point).
 // This is the primary "eyes" for a text-only agent.
 func (s *Service) UITree(ctx context.Context, id string) (*UINode, error) {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return nil, err
@@ -257,6 +277,8 @@ func (s *Service) UITree(ctx context.Context, id string) (*UINode, error) {
 // ListApps returns installed package names. thirdPartyOnly limits the result to
 // user-installed apps (pm list packages -3).
 func (s *Service) ListApps(ctx context.Context, id string, thirdPartyOnly bool) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return nil, err
@@ -290,6 +312,8 @@ func (s *Service) ListApps(ctx context.Context, id string, thirdPartyOnly bool) 
 
 // LaunchApp starts an app's launcher activity by package name.
 func (s *Service) LaunchApp(ctx context.Context, id, pkg string) error {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
@@ -301,6 +325,8 @@ func (s *Service) LaunchApp(ctx context.Context, id, pkg string) error {
 // CurrentActivity returns the package/activity (Android) or the foreground window
 // title (desktop) that currently has focus.
 func (s *Service) CurrentActivity(ctx context.Context, id string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return "", err
@@ -326,6 +352,8 @@ func (s *Service) CurrentActivity(ctx context.Context, id string) (string, error
 // actually launched, so the caller can confirm the right one opened. Android
 // app-opening goes through LaunchApp with a resolved package instead.
 func (s *Service) OpenApp(ctx context.Context, id, name string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	if _, err := s.resolve(ctx, id); err != nil {
 		return "", err
 	}
@@ -363,6 +391,8 @@ func (s *Service) callRunner(ctx context.Context, id, method string, params, out
 // override); for desktops it returns 0,0 so callers fall back to the screenshot
 // dimensions (the runner clicks in screenshot-pixel space).
 func (s *Service) InputSize(ctx context.Context, id string) (w, h int, err error) {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return 0, 0, err
@@ -489,6 +519,8 @@ func (s *Service) InstallDesktopBuild(ctx context.Context, id, buildID, filename
 // Rotate sets a fixed display orientation (0,1,2,3 = 0/90/180/270 degrees) and
 // disables auto-rotation so the orientation sticks.
 func (s *Service) Rotate(ctx context.Context, id string, orientation int) error {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return err
@@ -505,6 +537,8 @@ func (s *Service) Rotate(ctx context.Context, id string, orientation int) error 
 
 // Shell runs an arbitrary shell command on the device and returns its output.
 func (s *Service) Shell(ctx context.Context, id, command string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, shellTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return "", err
@@ -515,6 +549,8 @@ func (s *Service) Shell(ctx context.Context, id, command string) (string, error)
 // Logcat returns a snapshot of the most recent log lines (adb logcat -d -t N).
 // Live streaming is layered on top of this in a later phase.
 func (s *Service) Logcat(ctx context.Context, id string, lines int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, shellTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return "", err
@@ -570,6 +606,8 @@ func (s *Service) StopRecording(ctx context.Context, id string) ([]byte, error) 
 // Perf collects a lightweight performance snapshot. When pkg is empty, only
 // system-wide battery/memory summaries are gathered.
 func (s *Service) Perf(ctx context.Context, id, pkg string) (PerfSnapshot, error) {
+	ctx, cancel := context.WithTimeout(ctx, shellTimeout)
+	defer cancel()
 	instance, err := s.resolve(ctx, id)
 	if err != nil {
 		return PerfSnapshot{}, err

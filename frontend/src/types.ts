@@ -296,6 +296,23 @@ export type AgentModelUpdate = {
   apiKey?: string;
 };
 
+export type NotificationConfig = {
+  url: string;
+  onlyOnFailure: boolean;
+  secretHeader: string;
+  secretSet: boolean;
+  secretStorageEnabled: boolean;
+};
+
+// secret is tri-state on the wire: omit to keep the stored secret, "" to clear
+// it, a value to set it.
+export type NotificationUpdate = {
+  url: string;
+  onlyOnFailure: boolean;
+  secretHeader: string;
+  secret?: string;
+};
+
 export type CreateImagePayload = {
   name: string;
   path: string;

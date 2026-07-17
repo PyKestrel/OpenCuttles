@@ -46,6 +46,13 @@ type RunSink interface {
 	AppendStep(ctx context.Context, runID string, step domain.StepResult) error
 }
 
+// VisionQuerier answers a natural-language question about a screenshot. When set
+// (via SetVQA), ask_screen prefers it over the local caption model for real
+// visual question answering, falling back to the caption on any error.
+type VisionQuerier interface {
+	Query(ctx context.Context, png []byte, question string) (string, error)
+}
+
 // boundRun ties a device to the cycle case-run currently executing on it, so
 // report_step_result knows where to write evidence.
 type boundRun struct {
@@ -61,6 +68,7 @@ type Service struct {
 	devices *devicecontrol.Service
 	store   InstanceStore
 	vision  *vision.Client
+	vqa     VisionQuerier
 	logger  *slog.Logger
 	server  *mcpsdk.Server
 	sink    RunSink
@@ -87,6 +95,10 @@ func New(devices *devicecontrol.Service, store InstanceStore, vis *vision.Client
 
 // SetSink wires the store that receives report_step_result evidence.
 func (s *Service) SetSink(sink RunSink) { s.sink = sink }
+
+// SetVQA wires an optional visual-question-answering backend (the configured
+// LLM) that ask_screen prefers over the local caption model.
+func (s *Service) SetVQA(v VisionQuerier) { s.vqa = v }
 
 // SetActive sets the device that tool calls operate on. Used by the headless
 // cycle executor before dispatching an agent run for a case.
@@ -571,12 +583,25 @@ func (s *Service) registerTools() {
 		if err != nil {
 			return nil, out, err
 		}
-		if s.vision == nil {
+		if s.vqa == nil && s.vision == nil {
 			return nil, out, errVisionUnavailable
 		}
 		png, err := s.devices.Screenshot(ctx, id)
 		if err != nil {
 			return nil, out, err
+		}
+		// Prefer real visual Q&A via the configured LLM; fall back to the local
+		// caption model on any error (unsupported provider, network, bad config).
+		if s.vqa != nil {
+			if answer, qErr := s.vqa.Query(ctx, png, in.Question); qErr == nil && strings.TrimSpace(answer) != "" {
+				out.Answer = answer
+				return nil, out, nil
+			} else if qErr != nil && s.logger != nil {
+				s.logger.Debug("ask_screen VQA failed; falling back to caption", "error", qErr)
+			}
+		}
+		if s.vision == nil {
+			return nil, out, errVisionUnavailable
 		}
 		answer, err := s.vision.Query(ctx, png, in.Question)
 		if err != nil {

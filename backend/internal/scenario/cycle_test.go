@@ -166,3 +166,40 @@ func TestCycleExecutorFanOutAndAggregate(t *testing.T) {
 		t.Fatalf("case2 run wrong: %+v", r2)
 	}
 }
+
+func TestClassifyCase(t *testing.T) {
+	step := func(status string) domain.StepResult { return domain.StepResult{Status: status} }
+	agentErr := errString("agent boom")
+
+	tests := []struct {
+		name     string
+		steps    []domain.StepResult
+		expected int
+		agentErr error
+		terminal string
+		wantCat  string
+		wantPass bool
+	}{
+		{name: "agent error is fail", steps: nil, expected: 2, agentErr: agentErr, wantCat: "fail", wantPass: false},
+		{name: "timeout (agent error) is fail", steps: []domain.StepResult{step(domain.StepPass)}, expected: 1, agentErr: context.DeadlineExceeded, wantCat: "fail", wantPass: false},
+		{name: "zero steps is blocked not pass", steps: nil, expected: 2, terminal: "all done, looks good", wantCat: domain.StepBlocked, wantPass: false},
+		{name: "zero steps with failure summary is fail", steps: nil, expected: 2, terminal: "could not open the app", wantCat: "fail", wantPass: false},
+		{name: "under-reported is blocked", steps: []domain.StepResult{step(domain.StepPass)}, expected: 3, wantCat: domain.StepBlocked, wantPass: false},
+		{name: "any fail is fail", steps: []domain.StepResult{step(domain.StepPass), step(domain.StepFail)}, expected: 2, wantCat: "fail", wantPass: false},
+		{name: "any blocked is blocked", steps: []domain.StepResult{step(domain.StepPass), step(domain.StepBlocked)}, expected: 2, wantCat: domain.StepBlocked, wantPass: false},
+		{name: "all expected pass is pass", steps: []domain.StepResult{step(domain.StepPass), step(domain.StepPass)}, expected: 2, wantCat: domain.StepPass, wantPass: true},
+		{name: "expected unknown all pass is pass", steps: []domain.StepResult{step(domain.StepPass)}, expected: 0, wantCat: domain.StepPass, wantPass: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cat, pass, _ := classifyCase(tt.steps, tt.expected, tt.agentErr, tt.terminal)
+			if cat != tt.wantCat || pass != tt.wantPass {
+				t.Fatalf("got (%q,%v), want (%q,%v)", cat, pass, tt.wantCat, tt.wantPass)
+			}
+		})
+	}
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }

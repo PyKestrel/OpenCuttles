@@ -68,14 +68,15 @@ func TestMCPToolsAndDeviceSelection(t *testing.T) {
 	for _, tool := range tools.Tools {
 		got[tool.Name] = true
 	}
-	for _, want := range []string{"list_devices", "select_device", "get_active_device", "get_ui_tree", "scroll", "type_text", "press_key", "launch_app", "tap_element", "find_element", "ask_screen"} {
+	for _, want := range []string{"list_devices", "select_device", "get_active_device", "get_ui_tree", "scroll", "type_text", "press_key", "launch_app", "tap_element", "tap", "find_element", "ask_screen"} {
 		if !got[want] {
 			t.Errorf("missing tool %q", want)
 		}
 	}
-	// The coordinate-based and image tools are intentionally not exposed to the
-	// text-only agent (it uses tap_element/scroll/ask_screen instead).
-	for _, gone := range []string{"tap", "swipe", "screenshot"} {
+	// tap_element (vision) is the default, and tap {x,y} is the deterministic
+	// fallback for get_ui_tree bounds; swipe and the raw screenshot tool are
+	// intentionally not exposed to the agent.
+	for _, gone := range []string{"swipe", "screenshot"} {
 		if got[gone] {
 			t.Errorf("tool %q should no longer be exposed to the agent", gone)
 		}

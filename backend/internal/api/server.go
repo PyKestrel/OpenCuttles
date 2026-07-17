@@ -31,6 +31,7 @@ import (
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	mcpserver "github.com/opencuttles/opencuttles/backend/internal/mcp"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
+	"github.com/opencuttles/opencuttles/backend/internal/retention"
 	"github.com/opencuttles/opencuttles/backend/internal/runnerhub"
 	"github.com/opencuttles/opencuttles/backend/internal/scenario"
 	"github.com/opencuttles/opencuttles/backend/internal/scheduler"
@@ -92,7 +93,8 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	server.operatorPort = operatorPortFromEnv()
 	visionClient := vision.NewFromEnv()
 	server.mcp = mcpserver.New(devices, store, visionClient, logger)
-	server.mcp.SetSink(store) // report_step_result → store.AppendStep
+	server.mcp.SetSink(store)                     // report_step_result → store.AppendStep
+	server.mcp.SetVQA(llmVisionQuerier{s: server}) // ask_screen → configured LLM vision (caption fallback)
 	server.mcpHandler = server.mcp.Handler()
 	server.tests = scenario.New(store, devices, visionClient, logger)
 	// Desktop runner tunnel: authenticate runners by enrollment token, flip the
@@ -125,8 +127,13 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	// Agent-driven test-cycle executor: fans a cycle out to a headless agent run
 	// per case, capturing per-step evidence via the report_step_result MCP tool.
 	server.cycles = scenario.NewCycleExecutor(store, devices, server.mcp, server.agentTarget, logger)
+	// Deliver finished cycle runs to the optional generic webhook.
+	server.cycles.SetNotifier(webhookNotifier{s: server})
 	// Cron scheduler: fires due cycles for the lifetime of the process.
 	go scheduler.New(store, server.cycles, logger).Run(context.Background())
+	// Retention: prune stale run artifact directories so evidence doesn't grow
+	// without bound (window from the retention.days setting; default 30, 0=off).
+	go retention.New(scenario.ArtifactRoot(), store, logger).Run(context.Background())
 	server.routes()
 	return server.withMiddleware(server.mux)
 }
@@ -177,6 +184,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/agent/model", s.require(domain.PermissionAdmin, s.getAgentModel))
 	s.mux.HandleFunc("POST /api/v1/agent/model", s.require(domain.PermissionAdmin, s.putAgentModel))
 	s.mux.HandleFunc("POST /api/v1/agent/model/test", s.require(domain.PermissionAdmin, s.testAgentModel))
+	s.mux.HandleFunc("GET /api/v1/settings/notifications", s.require(domain.PermissionAdmin, s.getNotifications))
+	s.mux.HandleFunc("PUT /api/v1/settings/notifications", s.require(domain.PermissionAdmin, s.putNotifications))
 	s.mux.HandleFunc("GET /api/v1/agent/runtime", s.serviceTokenOnly(s.getAgentRuntime))
 	s.mux.HandleFunc("GET /api/v1/operations", s.require(domain.PermissionView, s.listOperations))
 	s.mux.HandleFunc("GET /api/v1/audit", s.require(domain.PermissionAdmin, s.listAudit))

@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
-import { History } from "lucide-react";
+import { Download, History, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { TestReport } from "@/components/tests/TestReport";
 import { cn } from "@/lib/utils";
 import { api } from "@/api";
 import type { CycleRun, CycleTotals, TestRun } from "@/types";
+
+async function exportRun(id: string, format: "junit" | "csv" | "xlsx") {
+  try {
+    await api.exportCycleRun(id, format);
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "Export failed");
+  }
+}
 
 export function CycleRunsView() {
   const [runs, setRuns] = useState<CycleRun[]>([]);
@@ -39,6 +50,18 @@ export function CycleRunsView() {
     api.cycleRun(id).then(setDetail).catch(() => setDetail(null));
   }
 
+  async function remove(id: string) {
+    if (!window.confirm("Delete this cycle run and its stored screenshots/video? This can't be undone.")) return;
+    try {
+      await api.deleteCycleRun(id);
+      setSelectedId("");
+      setDetail(null);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-6xl p-5">
       <h1 className="mb-4 text-[18px] font-semibold tracking-tight">Cycle runs</h1>
@@ -70,7 +93,27 @@ export function CycleRunsView() {
         {detail ? (
           <div className="space-y-4">
             <Card>
-              <CardHeader title={detail.run.cycleName || "Cycle run"} action={<Badge variant="outline" className="uppercase" style={badgeStyle(statusColor(detail.run.status))}>{detail.run.status}</Badge>} />
+              <CardHeader
+                title={detail.run.cycleName || "Cycle run"}
+                action={
+                  <div className="flex items-center gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button size="sm" variant="secondary"><Download className="size-3.5" /> Export</Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => exportRun(detail.run.id, "junit")}>JUnit XML (CI)</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => exportRun(detail.run.id, "csv")}>Results CSV</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => exportRun(detail.run.id, "xlsx")}>Results XLSX</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    {detail.run.status !== "running" && (
+                      <Button size="sm" variant="danger" onClick={() => remove(detail.run.id)}><Trash2 className="size-3.5" /> Delete</Button>
+                    )}
+                    <Badge variant="outline" className="uppercase" style={badgeStyle(statusColor(detail.run.status))}>{detail.run.status}</Badge>
+                  </div>
+                }
+              />
               <div className="flex flex-wrap gap-2 p-4">
                 <Totals totals={detail.run.totals} />
               </div>
