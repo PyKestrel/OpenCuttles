@@ -1,11 +1,15 @@
-//go:build !windows
+//go:build !windows && !linux && !darwin
 
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+)
 
-// newScreen on non-Windows builds compiles but reports that control isn't
-// implemented yet. Linux (X11) and macOS controllers land on this same seam.
+// newScreen on platforms without a controller compiles but reports that control
+// isn't implemented. Windows, Linux (X11), and macOS have real implementations;
+// this is the fallback for everything else (e.g. BSD).
 func newScreen() (screen, error) {
-	return nil, fmt.Errorf("desktop control is only implemented for Windows in this build")
+	return nil, fmt.Errorf("desktop control is not implemented for %s — supported: windows, linux (X11), macos", runtime.GOOS)
 }
