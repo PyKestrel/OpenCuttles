@@ -104,6 +104,22 @@ opencuttles-runner uninstall
 The dashboard's onboarding dialog generates a one-line command that downloads
 and runs `install` for you.
 
+## Windows agent (tray + wizard)
+
+On Windows the runner behaves like a proper desktop agent:
+
+- **System tray icon.** While running it shows a tray icon whose tooltip
+  reflects connection status (connected / reconnecting). Right-click for a menu:
+  *Open dashboard*, *View log*, *Reconnect*, *Start at login* (toggles the
+  autostart entry), and *Quit*.
+- **Install wizard.** Double-clicking `opencuttles-runner.exe` with no arguments
+  opens a small window to paste the appliance URL + enrollment token and click
+  *Install* — the GUI equivalent of `install`.
+
+Both are built in with no extra dependencies (native Win32). Logs are written to
+`%LOCALAPPDATA%\OpenCuttles\runner.log` so *View log* and auto-started runs (no
+console) both have a trail.
+
 ## What it exposes
 
 The appliance drives the desktop through a small, server-agnostic vocabulary:

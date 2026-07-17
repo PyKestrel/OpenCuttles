@@ -19,8 +19,9 @@ type command struct {
 }
 
 // runTunnel opens the dial-home SSE stream and dispatches commands until the
-// connection drops. Each command's result is POSTed back, correlated by id.
-func runTunnel(base, token string, ctrl *controller) error {
+// connection drops. Each command's result is POSTed back, correlated by id. It
+// reports connect/disconnect into st so the UI (system tray) can reflect status.
+func runTunnel(base, token string, ctrl *controller, st *agentState) error {
 	req, err := http.NewRequest(http.MethodGet, base+"/api/v1/runner/stream", nil)
 	if err != nil {
 		return err
@@ -35,6 +36,10 @@ func runTunnel(base, token string, ctrl *controller) error {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("stream returned HTTP %d (check the appliance URL and token)", resp.StatusCode)
+	}
+	if st != nil {
+		st.setActive(resp)
+		st.setConnected(true)
 	}
 	log.Printf("connected — awaiting commands")
 

@@ -46,11 +46,8 @@ func runInstall(appliance, token string) error {
 		return fmt.Errorf("copy runner to %s: %w", binPath, err)
 	}
 
-	// /f overwrites an existing value so re-running install just updates the token.
-	add := exec.Command("reg", "add", runKey, "/v", winRunValueName,
-		"/t", "REG_SZ", "/d", winRunCommand(binPath, appliance, token), "/f")
-	if out, err := add.CombinedOutput(); err != nil {
-		return fmt.Errorf("set autostart registry value: %w: %s", err, out)
+	if err := autostartRegister(binPath, appliance, token); err != nil {
+		return err
 	}
 
 	if err := startDetached(binPath, appliance, token); err != nil {
@@ -63,15 +60,36 @@ func runInstall(appliance, token string) error {
 }
 
 func runUninstall() error {
+	return autostartUnregister()
+}
+
+// autostartRegister writes the HKCU\...\Run value pointing at binPath. Shared by
+// the CLI install and the tray's "Start at login" toggle.
+func autostartRegister(binPath, appliance, token string) error {
+	// /f overwrites an existing value so re-running install just updates the token.
+	add := exec.Command("reg", "add", runKey, "/v", winRunValueName,
+		"/t", "REG_SZ", "/d", winRunCommand(binPath, appliance, token), "/f")
+	if out, err := add.CombinedOutput(); err != nil {
+		return fmt.Errorf("set autostart registry value: %w: %s", err, out)
+	}
+	return nil
+}
+
+func autostartUnregister() error {
 	// Ignore "value not found" so uninstall is idempotent.
 	del := exec.Command("reg", "delete", runKey, "/v", winRunValueName, "/f")
 	if out, err := del.CombinedOutput(); err != nil {
-		// reg delete exits non-zero when the value is absent; treat that as done.
 		if !isRegValueMissing(out) {
 			return fmt.Errorf("remove autostart registry value: %w: %s", err, out)
 		}
 	}
 	return nil
+}
+
+// autostartEnabled reports whether the HKCU\...\Run value is present.
+func autostartEnabled() bool {
+	q := exec.Command("reg", "query", runKey, "/v", winRunValueName)
+	return q.Run() == nil
 }
 
 func isRegValueMissing(out []byte) bool {

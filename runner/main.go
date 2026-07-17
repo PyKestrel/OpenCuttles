@@ -19,7 +19,6 @@ import (
 	"log"
 	"os"
 	"strings"
-	"time"
 )
 
 func main() {
@@ -51,7 +50,14 @@ func main() {
 			log.Fatalf("install failed: %v", err)
 		}
 	case "":
-		requireCreds(appl, tok)
+		if appl == "" || tok == "" {
+			// Launched with no credentials (e.g. double-clicked from Explorer):
+			// on Windows offer the install wizard; otherwise print the usage.
+			if maybeShowWizard() {
+				return
+			}
+			requireCreds(appl, tok)
+		}
 		runAgent(appl, tok)
 	default:
 		log.Fatalf("unknown command %q (expected: install, uninstall, or no command to run)", sub)
@@ -64,20 +70,11 @@ func requireCreds(appliance, token string) {
 	}
 }
 
-// runAgent opens the dial-home tunnel and serves control commands, reconnecting
-// forever. This is the foreground/auto-start run loop.
+// runAgent runs the tunnel. On Windows it also shows the system-tray UI; on
+// other platforms it just runs the reconnecting loop (runAgentUI is defined
+// per-platform).
 func runAgent(appliance, token string) {
-	screen, err := newScreen()
-	if err != nil {
-		log.Fatalf("desktop control unavailable: %v", err)
-	}
-	ctrl := &controller{screen: screen, base: appliance, token: token, installs: map[string]*installState{}}
-	log.Printf("OpenCuttles runner starting — appliance=%s", appliance)
-
-	for {
-		if err := runTunnel(appliance, token, ctrl); err != nil {
-			log.Printf("tunnel closed: %v — reconnecting in 5s", err)
-		}
-		time.Sleep(5 * time.Second)
-	}
+	logPath := setupFileLog()
+	st := newAgentState(appliance, logPath)
+	runAgentUI(appliance, token, st)
 }
