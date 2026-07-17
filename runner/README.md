@@ -77,6 +77,33 @@ $env:OPENCUTTLES_ENROLL_TOKEN = "<enrollment-token>"
 The device flips to **online** in the dashboard once connected; the runner
 reconnects automatically if the link drops.
 
+## Auto-start at login
+
+To have the runner start automatically after a reboot or logout, install it
+instead of running it directly (no admin required — it's a per-user autostart):
+
+```powershell
+.\opencuttles-runner.exe install --appliance http://YOUR-APPLIANCE --token <enrollment-token>
+```
+
+`install` copies the runner to a stable per-user location, registers a login
+autostart, and starts it immediately:
+
+| OS | Mechanism | Location |
+|---|---|---|
+| Windows | `HKCU\…\Run` registry value | `%LOCALAPPDATA%\OpenCuttles\` |
+| Linux | XDG autostart `.desktop` | `~/.config/autostart/` (runs at graphical login) |
+| macOS | LaunchAgent (`RunAtLoad`) | `~/Library/LaunchAgents/` |
+
+Remove it with:
+
+```
+opencuttles-runner uninstall
+```
+
+The dashboard's onboarding dialog generates a one-line command that downloads
+and runs `install` for you.
+
 ## What it exposes
 
 The appliance drives the desktop through a small, server-agnostic vocabulary:
@@ -100,7 +127,8 @@ never Ctrl+Shift+C.
 - Typing handles the Basic Multilingual Plane (ASCII + most accented text) via
   the active keyboard layout.
 - Primary display only (multi-monitor virtual-desktop capture is a follow-up).
-- No auto-start/installer yet: the runner is launched by hand in an interactive
-  session and does not survive a reboot or logout.
+- Auto-start via `install` (per-user, no admin) survives reboot/logout; there is
+  no signed installer package or code-signing yet, so the downloaded binary may
+  trip SmartScreen/Gatekeeper on first run.
 - macOS gaps are listed in the platform table above (no middle click; wheel,
   right-click, and drag need `cliclick`).
