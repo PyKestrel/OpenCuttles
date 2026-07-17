@@ -68,7 +68,7 @@ func TestMCPToolsAndDeviceSelection(t *testing.T) {
 	for _, tool := range tools.Tools {
 		got[tool.Name] = true
 	}
-	for _, want := range []string{"list_devices", "select_device", "get_active_device", "get_ui_tree", "scroll", "type_text", "press_key", "launch_app", "tap_element", "tap", "find_element", "ask_screen"} {
+	for _, want := range []string{"list_devices", "select_device", "get_active_device", "get_ui_tree", "scroll", "type_text", "press_key", "press_chord", "launch_app", "tap_element", "tap", "click", "find_element", "ask_screen"} {
 		if !got[want] {
 			t.Errorf("missing tool %q", want)
 		}

@@ -150,6 +150,9 @@ Pick the tool by intent:
 | type into the focused field | type_text {text} |
 | press a key | press_key {key} |
 | reveal off-screen content | scroll {direction: up/down/left/right} |
+| open a context menu (DESKTOP) | click {x, y, button:"right"} |
+| double-click an item (DESKTOP) | click {x, y, count:2} |
+| a keyboard shortcut, e.g. copy (DESKTOP) | press_chord {keys:["CTRL","C"]} |
 | let the UI settle | wait {seconds} |
 | list installed / launchable apps | list_apps |
 | see the foreground app or window | current_activity |
@@ -169,7 +172,7 @@ Stop when the goal is visibly true on screen (confirm with ask_screen). Then rep
 
 # Platform quick-reference (after get_active_device)
 - ANDROID: open apps with open_app {name} (or launch_app {package} only if you have the exact package). press_key also supports HOME / BACK / APP_SWITCH. get_ui_tree returns the accessibility tree when vision struggles.
-- DESKTOP (windows / linux / macos): open_app {name} opens via the OS launcher (Start menu / Spotlight) and reports which app it opened — verify it. There is NO Home / Back / App-switch. Scroll with press_key {key:"PAGEDOWN"} / "PAGEUP". Two tools are Android-only and WILL error here: launch_app (use open_app) and get_ui_tree (use ask_screen). list_apps shows launcher names; current_activity shows the focused window title.
+- DESKTOP (windows / linux / macos): open_app {name} opens via the OS launcher (Start menu / Spotlight) and reports which app it opened — verify it. There is NO Home / Back / App-switch. scroll turns a REAL mouse wheel here (works on maps/canvases); you also get click {button:"right"} / {count:2} for context menus and double-clicks, and press_chord {keys:["CTRL","C"]} for shortcuts. Two tools are Android-only and WILL error here: launch_app (use open_app) and get_ui_tree (use ask_screen). list_apps shows launcher names; current_activity shows the focused window title.
 
 # Worked example — desktop: "open Settings and tell me the Wi-Fi network"
 1. get_active_device → platform: windows

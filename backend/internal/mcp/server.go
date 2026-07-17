@@ -301,36 +301,90 @@ func (s *Service) registerTools() {
 
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{
 		Name:        "scroll",
-		Description: "Scroll the screen to reveal off-screen content. direction is one of: down, up, left, right (down reveals content further down the page). Use this instead of computing swipe coordinates.",
+		Description: "Scroll the screen to reveal off-screen content. direction is one of: down, up, left, right (down reveals content further down the page). Optionally set amount (default 3) for how far, and x/y to scroll a specific pane rather than the screen centre. Use this instead of computing swipe coordinates.",
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
 		deviceRef
 		Direction string `json:"direction" jsonschema:"one of: down, up, left, right"`
+		Amount    int    `json:"amount,omitempty" jsonschema:"how far to scroll (wheel notches / screen-thirds); default 3"`
+		X         int    `json:"x,omitempty" jsonschema:"optional point to scroll over (e.g. inside a specific pane)"`
+		Y         int    `json:"y,omitempty" jsonschema:"optional point to scroll over"`
 	}) (*mcpsdk.CallToolResult, statusOut, error) {
 		id, err := s.resolveDevice(ctx, in.DeviceID)
 		if err != nil {
 			return nil, statusOut{}, err
 		}
-		inst, err := s.store.GetInstance(ctx, id)
+		amount := in.Amount
+		if amount <= 0 {
+			amount = 3
+		}
+		dx, dy := 0, amount
+		switch strings.ToLower(strings.TrimSpace(in.Direction)) {
+		case "up":
+			dx, dy = 0, -amount
+		case "left":
+			dx, dy = -amount, 0
+		case "right":
+			dx, dy = amount, 0
+		}
+		x, y := in.X, in.Y
+		if x <= 0 && y <= 0 {
+			// Default to the screen centre; the driver resolves this per platform.
+			inst, err := s.store.GetInstance(ctx, id)
+			if err != nil {
+				return nil, statusOut{}, err
+			}
+			w, h := inst.DisplayWidth, inst.DisplayHeight
+			if w <= 0 || h <= 0 {
+				if iw, ih, e := s.devices.InputSize(ctx, id); e == nil && iw > 0 && ih > 0 {
+					w, h = iw, ih
+				} else {
+					w, h = 720, 1280
+				}
+			}
+			x, y = w/2, h/2
+		}
+		// Scroll uses a real wheel on desktop and an equivalent swipe on Android.
+		if err := s.devices.Scroll(ctx, id, x, y, dx, dy); err != nil {
+			return nil, statusOut{}, err
+		}
+		return nil, statusOut{Status: "ok", Device: id}, nil
+	})
+
+	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+		Name:        "click",
+		Description: "Click exact coordinates with a specific mouse button — use for right-click (context menus) and double-click (open an item). button is left/right/middle (default left), count 1 or 2 (default 1). DESKTOP ONLY for right/middle; a touchscreen has no such buttons. For a plain left click prefer tap_element or tap.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
+		deviceRef
+		X      int    `json:"x" jsonschema:"x pixel coordinate"`
+		Y      int    `json:"y" jsonschema:"y pixel coordinate"`
+		Button string `json:"button,omitempty" jsonschema:"left, right, or middle; default left"`
+		Count  int    `json:"count,omitempty" jsonschema:"number of clicks; 2 for a double-click. default 1"`
+	}) (*mcpsdk.CallToolResult, statusOut, error) {
+		id, err := s.resolveDevice(ctx, in.DeviceID)
 		if err != nil {
 			return nil, statusOut{}, err
 		}
-		w, h := inst.DisplayWidth, inst.DisplayHeight
-		if w <= 0 || h <= 0 {
-			w, h = 720, 1280
+		if err := s.devices.Click(ctx, id, in.X, in.Y, in.Button, in.Count); err != nil {
+			return nil, statusOut{}, err
 		}
-		cx, cy := w/2, h/2
-		// The gesture moves opposite to the reading direction: to scroll "down"
-		// (reveal lower content) the finger drags from lower to upper screen.
-		x, y, x2, y2 := cx, h*7/10, cx, h*3/10
-		switch strings.ToLower(strings.TrimSpace(in.Direction)) {
-		case "up":
-			x, y, x2, y2 = cx, h*3/10, cx, h*7/10
-		case "left":
-			x, y, x2, y2 = w*3/10, cy, w*7/10, cy
-		case "right":
-			x, y, x2, y2 = w*7/10, cy, w*3/10, cy
+		return nil, statusOut{Status: "ok", Device: id}, nil
+	})
+
+	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+		Name:        "press_chord",
+		Description: "Press a keyboard combination together, e.g. keys ['CTRL','C'] to copy, ['ALT','TAB'] to switch windows, ['WIN','R'] to open Run, ['ALT','F4'] to close. Modifiers are CTRL/ALT/SHIFT/WIN and must come before the final key. DESKTOP ONLY — Android has no modifier keys, use press_key there.",
+	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in struct {
+		deviceRef
+		Keys []string `json:"keys" jsonschema:"the combination in order, modifiers first, e.g. [\"CTRL\",\"C\"]"`
+	}) (*mcpsdk.CallToolResult, statusOut, error) {
+		id, err := s.resolveDevice(ctx, in.DeviceID)
+		if err != nil {
+			return nil, statusOut{}, err
 		}
-		if err := s.devices.Swipe(ctx, id, x, y, x2, y2, 300); err != nil {
+		if len(in.Keys) == 0 {
+			return nil, statusOut{}, fmt.Errorf("press_chord needs a non-empty keys array, e.g. [\"CTRL\",\"C\"]")
+		}
+		if err := s.devices.Chord(ctx, id, in.Keys); err != nil {
 			return nil, statusOut{}, err
 		}
 		return nil, statusOut{Status: "ok", Device: id}, nil

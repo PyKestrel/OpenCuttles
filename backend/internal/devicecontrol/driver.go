@@ -23,6 +23,13 @@ type Capabilities struct {
 	Logcat       bool `json:"logcat"`
 	InstallApp   bool `json:"installApp"`
 	ScreenRecord bool `json:"screenRecord"`
+	// Wheel reports a real mouse wheel (desktop). Without it, scrolling has to
+	// be faked with a drag, which wheel-only surfaces ignore.
+	Wheel bool `json:"wheel"`
+	// MouseButtons reports right/middle/double click (desktop).
+	MouseButtons bool `json:"mouseButtons"`
+	// Chord reports modifier combinations like Ctrl+C / Alt+Tab (desktop).
+	Chord bool `json:"chord"`
 }
 
 // Driver performs the platform-agnostic control primitives against one device.
@@ -34,6 +41,13 @@ type Driver interface {
 	Swipe(ctx context.Context, x1, y1, x2, y2, durationMs int) error
 	Text(ctx context.Context, text string) error
 	Key(ctx context.Context, key string) error
+	// Click presses a specific mouse button (left/right/middle) count times.
+	// Android supports only left; other buttons return ErrUnsupported.
+	Click(ctx context.Context, x, y int, button string, count int) error
+	// Scroll turns the wheel at (x,y) in notches: dy>0 down, dx>0 right.
+	Scroll(ctx context.Context, x, y, dx, dy int) error
+	// Chord presses a modifier combination (e.g. ctrl+c). Desktop only.
+	Chord(ctx context.Context, keys []string) error
 	Capabilities() Capabilities
 }
 

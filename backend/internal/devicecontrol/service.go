@@ -200,6 +200,53 @@ func (s *Service) Tap(ctx context.Context, id string, x, y int) error {
 	return drv.Tap(ctx, x, y)
 }
 
+// Click presses a specific mouse button ("left"/"right"/"middle") count times at
+// (x,y). Android supports left only; other buttons return ErrUnsupported.
+func (s *Service) Click(ctx context.Context, id string, x, y int, button string, count int) error {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
+	instance, err := s.resolve(ctx, id)
+	if err != nil {
+		return err
+	}
+	drv, err := s.driverFor(instance)
+	if err != nil {
+		return err
+	}
+	return drv.Click(ctx, x, y, button, count)
+}
+
+// Scroll turns the wheel at (x,y) in notches (dy>0 down, dx>0 right). On Android
+// it degrades to an equivalent swipe.
+func (s *Service) Scroll(ctx context.Context, id string, x, y, dx, dy int) error {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
+	instance, err := s.resolve(ctx, id)
+	if err != nil {
+		return err
+	}
+	drv, err := s.driverFor(instance)
+	if err != nil {
+		return err
+	}
+	return drv.Scroll(ctx, x, y, dx, dy)
+}
+
+// Chord presses a modifier combination such as ctrl+c or alt+tab (desktop only).
+func (s *Service) Chord(ctx context.Context, id string, keys []string) error {
+	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
+	defer cancel()
+	instance, err := s.resolve(ctx, id)
+	if err != nil {
+		return err
+	}
+	drv, err := s.driverFor(instance)
+	if err != nil {
+		return err
+	}
+	return drv.Chord(ctx, keys)
+}
+
 // Swipe drags from (x1,y1) to (x2,y2) over durationMs milliseconds. A duration
 // of 0 lets the platform pick its default. A swipe to the same point with a long
 // duration acts as a long press.

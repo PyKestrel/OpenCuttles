@@ -16,10 +16,19 @@ import (
 // screen pixels of the primary display.
 type screen interface {
 	Screenshot() ([]byte, error) // PNG bytes of the current screen
-	Click(x, y int) error
+	// Click presses button ("left"/"right"/"middle") count times at (x,y).
+	// An empty button means left; count <= 0 means one click.
+	Click(x, y int, button string, count int) error
 	Drag(x1, y1, x2, y2, durationMs int) error
+	// Scroll turns the mouse wheel at (x,y) in wheel notches: dy>0 scrolls down,
+	// dx>0 scrolls right. Real wheel events reach surfaces (maps, canvases,
+	// custom lists) that a click-drag cannot scroll.
+	Scroll(x, y, dx, dy int) error
 	Type(text string) error
 	Key(name string) error
+	// Chord presses a combination together, e.g. ["CTRL","C"] or ["ALT","TAB"]:
+	// modifiers are held while the final key is tapped, then released.
+	Chord(keys []string) error
 	ListApps() ([]string, error)         // installed/launchable app display names
 	OpenApp(name string) (string, error) // launch by name; returns the app actually launched
 	CurrentActivity() (string, error)    // foreground window / app title
@@ -53,9 +62,29 @@ func (c *controller) handle(method string, params json.RawMessage) (any, error) 
 		}
 		return map[string]string{"pngBase64": base64.StdEncoding.EncodeToString(png)}, nil
 	case "click":
-		var p struct{ X, Y int }
-		_ = json.Unmarshal(params, &p)
-		return map[string]any{}, c.screen.Click(p.X, p.Y)
+		// Button/Count are optional: an older appliance sends only x/y and still
+		// gets a single left click.
+		var p struct {
+			X, Y   int
+			Button string
+			Count  int
+		}
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("click: %w", err)
+		}
+		return map[string]any{}, c.screen.Click(p.X, p.Y, p.Button, p.Count)
+	case "scroll":
+		var p struct{ X, Y, Dx, Dy int }
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("scroll: %w", err)
+		}
+		return map[string]any{}, c.screen.Scroll(p.X, p.Y, p.Dx, p.Dy)
+	case "chord":
+		var p struct{ Keys []string }
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("chord: %w", err)
+		}
+		return map[string]any{}, c.screen.Chord(p.Keys)
 	case "drag":
 		var p struct{ X1, Y1, X2, Y2, DurationMs int }
 		_ = json.Unmarshal(params, &p)

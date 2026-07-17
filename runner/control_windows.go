@@ -51,11 +51,38 @@ const (
 	srcCopy    = 0x00CC0020
 	biRGB      = 0
 
-	mouseLeftDown = 0x0002
-	mouseLeftUp   = 0x0004
-	keyEventUp    = 0x0002
-	vkShift       = 0x10
+	mouseLeftDown   = 0x0002
+	mouseLeftUp     = 0x0004
+	mouseRightDown  = 0x0008
+	mouseRightUp    = 0x0010
+	mouseMiddleDown = 0x0020
+	mouseMiddleUp   = 0x0040
+	mouseWheel      = 0x0800  // vertical wheel; dwData = notches * wheelDelta
+	mouseHWheel     = 0x01000 // horizontal wheel
+	wheelDelta      = 120     // one notch
+
+	keyEventUp = 0x0002
+	vkShift    = 0x10
+	vkControl  = 0x11
+	vkAlt      = 0x12
+	vkWin      = 0x5B
 )
+
+// modifierKeys maps chord modifier names to virtual-key codes.
+var modifierKeys = map[string]byte{
+	"CTRL": vkControl, "CONTROL": vkControl,
+	"ALT": vkAlt, "OPTION": vkAlt,
+	"SHIFT": vkShift,
+	"WIN":   vkWin, "SUPER": vkWin, "META": vkWin, "CMD": vkWin, "COMMAND": vkWin,
+}
+
+// mouseButtonEvents maps a button name to its (down, up) event flags.
+var mouseButtonEvents = map[string][2]uintptr{
+	"":       {mouseLeftDown, mouseLeftUp},
+	"LEFT":   {mouseLeftDown, mouseLeftUp},
+	"RIGHT":  {mouseRightDown, mouseRightUp},
+	"MIDDLE": {mouseMiddleDown, mouseMiddleUp},
+}
 
 type bitmapInfoHeader struct {
 	Size          uint32
@@ -161,13 +188,103 @@ func (winScreen) Screenshot() ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func (winScreen) Click(x, y int) error {
+func (winScreen) Click(x, y int, button string, count int) error {
+	events, ok := mouseButtonEvents[strings.ToUpper(strings.TrimSpace(button))]
+	if !ok {
+		return fmt.Errorf("unsupported mouse button %q (want left, right, or middle)", button)
+	}
+	if count <= 0 {
+		count = 1
+	}
 	procSetCursorPos.Call(uintptr(x), uintptr(y))
 	time.Sleep(20 * time.Millisecond)
-	procMouseEvent.Call(mouseLeftDown, 0, 0, 0, 0)
-	time.Sleep(20 * time.Millisecond)
-	procMouseEvent.Call(mouseLeftUp, 0, 0, 0, 0)
+	for i := 0; i < count; i++ {
+		if i > 0 {
+			// Well inside the default double-click time (500ms) so consecutive
+			// clicks register as a double-click rather than two singles.
+			time.Sleep(60 * time.Millisecond)
+		}
+		procMouseEvent.Call(events[0], 0, 0, 0, 0)
+		time.Sleep(20 * time.Millisecond)
+		procMouseEvent.Call(events[1], 0, 0, 0, 0)
+	}
 	return nil
+}
+
+// Scroll turns the wheel at (x,y). dwData is a signed notch delta widened to a
+// DWORD, so negatives must round-trip through uint32.
+func (winScreen) Scroll(x, y, dx, dy int) error {
+	procSetCursorPos.Call(uintptr(x), uintptr(y))
+	time.Sleep(20 * time.Millisecond)
+	if dy != 0 {
+		// Positive dy means "scroll down", but Windows' wheel delta is positive
+		// when scrolling *away* from the user (up) — so invert.
+		procMouseEvent.Call(mouseWheel, 0, 0, uintptr(uint32(int32(-dy*wheelDelta))), 0)
+	}
+	if dx != 0 {
+		procMouseEvent.Call(mouseHWheel, 0, 0, uintptr(uint32(int32(dx*wheelDelta))), 0)
+	}
+	return nil
+}
+
+// Chord holds every modifier, taps the final key, then releases in reverse so no
+// modifier is left stuck down.
+func (winScreen) Chord(keys []string) error {
+	if len(keys) == 0 {
+		return fmt.Errorf("chord needs at least one key")
+	}
+	var held []byte
+	release := func() {
+		for i := len(held) - 1; i >= 0; i-- {
+			procKeybdEvent.Call(uintptr(held[i]), 0, keyEventUp, 0)
+		}
+	}
+	defer release()
+
+	for i, raw := range keys {
+		name := strings.ToUpper(strings.TrimSpace(raw))
+		last := i == len(keys)-1
+		if vk, ok := modifierKeys[name]; ok && !last {
+			procKeybdEvent.Call(uintptr(vk), 0, 0, 0)
+			held = append(held, vk)
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		vk, err := virtualKey(name)
+		if err != nil {
+			return err
+		}
+		if !last {
+			// A non-modifier in a non-final position is still held down (e.g.
+			// an unusual 3-key combo), matching chord semantics.
+			procKeybdEvent.Call(uintptr(vk), 0, 0, 0)
+			held = append(held, vk)
+			continue
+		}
+		procKeybdEvent.Call(uintptr(vk), 0, 0, 0)
+		time.Sleep(10 * time.Millisecond)
+		procKeybdEvent.Call(uintptr(vk), 0, keyEventUp, 0)
+	}
+	return nil
+}
+
+// virtualKey resolves a chord key name: a named key, a modifier used alone, or
+// a single printable character.
+func virtualKey(name string) (byte, error) {
+	if vk, ok := keyMap[name]; ok {
+		return vk, nil
+	}
+	if vk, ok := modifierKeys[name]; ok {
+		return vk, nil
+	}
+	runes := []rune(name)
+	if len(runes) == 1 && runes[0] <= 0xFFFF {
+		res, _, _ := procVkKeyScanW.Call(uintptr(uint16(runes[0])))
+		if scan := int16(res); scan != -1 {
+			return byte(scan & 0xFF), nil
+		}
+	}
+	return 0, fmt.Errorf("unsupported key %q in chord", name)
 }
 
 func (winScreen) Drag(x1, y1, x2, y2, durationMs int) error {
@@ -225,6 +342,9 @@ var keyMap = map[string]byte{
 	"UP":    0x26, "DOWN": 0x28, "LEFT": 0x25, "RIGHT": 0x27,
 	"HOME": 0x24, "END": 0x23, "PAGEUP": 0x21, "PAGEDOWN": 0x22,
 	"WIN": 0x5B, "SUPER": 0x5B, "META": 0x5B,
+	"INSERT": 0x2D, "PRINTSCREEN": 0x2C,
+	"F1": 0x70, "F2": 0x71, "F3": 0x72, "F4": 0x73, "F5": 0x74, "F6": 0x75,
+	"F7": 0x76, "F8": 0x77, "F9": 0x78, "F10": 0x79, "F11": 0x7A, "F12": 0x7B,
 }
 
 func (winScreen) Key(name string) error {

@@ -39,7 +39,25 @@ func (d mcpDriver) Screenshot(ctx context.Context) ([]byte, error) {
 }
 
 func (d mcpDriver) Tap(ctx context.Context, x, y int) error {
-	_, err := d.runners.Call(ctx, d.inst.ID, "click", map[string]int{"x": x, "y": y})
+	return d.Click(ctx, x, y, "left", 1)
+}
+
+func (d mcpDriver) Click(ctx context.Context, x, y int, button string, count int) error {
+	_, err := d.runners.Call(ctx, d.inst.ID, "click", map[string]any{
+		"x": x, "y": y, "button": button, "count": count,
+	})
+	return err
+}
+
+func (d mcpDriver) Scroll(ctx context.Context, x, y, dx, dy int) error {
+	_, err := d.runners.Call(ctx, d.inst.ID, "scroll", map[string]int{
+		"x": x, "y": y, "dx": dx, "dy": dy,
+	})
+	return err
+}
+
+func (d mcpDriver) Chord(ctx context.Context, keys []string) error {
+	_, err := d.runners.Call(ctx, d.inst.ID, "chord", map[string]any{"keys": keys})
 	return err
 }
 
@@ -61,8 +79,9 @@ func (d mcpDriver) Key(ctx context.Context, key string) error {
 }
 
 // Capabilities: desktop control supports the core primitives plus app listing/
-// launching and the foreground window (via the runner). The accessibility tree is
-// not exposed yet (the agent uses vision/ask_screen on desktops).
+// launching, the foreground window, and real mouse/keyboard affordances (wheel,
+// right/middle/double click, modifier chords) via the runner. The accessibility
+// tree is not exposed yet (the agent uses vision/ask_screen on desktops).
 func (mcpDriver) Capabilities() Capabilities {
-	return Capabilities{Apps: true}
+	return Capabilities{Apps: true, Wheel: true, MouseButtons: true, Chord: true}
 }
