@@ -6,8 +6,25 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/opencuttles/opencuttles/backend/internal/auth"
+	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	"github.com/opencuttles/opencuttles/backend/internal/runnerdist"
 )
+
+// authorizeRunnerDownload accepts either path that legitimately needs the binary:
+// a dashboard session (the download button) or a valid device enrollment token
+// (the one-line installer, run on the target machine where there is no cookie).
+// The binary is generic — it carries no secret — so this is about gating access,
+// not protecting the artifact.
+func (s *Server) authorizeRunnerDownload(r *http.Request) bool {
+	if _, ok := s.authenticateRunner(r); ok {
+		return true
+	}
+	if principal, _, err := s.auth.AuthenticateRequest(r.Context(), r); err == nil && auth.HasPermission(principal, domain.PermissionOperate) {
+		return true
+	}
+	return false
+}
 
 // listRunnerDownloads reports which prebuilt runner binaries this server bundles,
 // so the onboarding UI can offer only the ones actually available (and prompt to
@@ -17,9 +34,13 @@ func (s *Server) listRunnerDownloads(w http.ResponseWriter, r *http.Request) {
 }
 
 // downloadRunner streams the embedded runner binary for a platform (+ optional
-// arch) as an attachment. The binary is generic — it carries no enrollment token
-// — so it is not sensitive, but the endpoint still requires a session.
+// arch) as an attachment. Authorized by a session (button) or an enrollment
+// token (one-line installer) — see authorizeRunnerDownload.
 func (s *Server) downloadRunner(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeRunnerDownload(r) {
+		writeError(w, clientError{status: http.StatusUnauthorized, message: "a dashboard session or a device enrollment token is required"})
+		return
+	}
 	platform := strings.TrimSpace(r.URL.Query().Get("platform"))
 	arch := strings.TrimSpace(r.URL.Query().Get("arch"))
 	if platform == "" {

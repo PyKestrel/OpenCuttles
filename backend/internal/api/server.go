@@ -154,8 +154,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/instances", s.require(domain.PermissionView, s.listInstances))
 	s.mux.HandleFunc("POST /api/v1/instances", s.require(domain.PermissionOperate, s.createInstance))
 	// Prebuilt desktop-runner binaries, offered as a download during onboarding.
+	// The download does its own auth (session OR enrollment token) so the
+	// one-line installer works on the target machine, which has no cookie.
 	s.mux.HandleFunc("GET /api/v1/runner/downloads", s.require(domain.PermissionOperate, s.listRunnerDownloads))
-	s.mux.HandleFunc("GET /api/v1/runner/download", s.require(domain.PermissionOperate, s.downloadRunner))
+	s.mux.HandleFunc("GET /api/v1/runner/download", s.downloadRunner)
 	s.mux.HandleFunc("GET /api/v1/instances/", s.require(domain.PermissionView, s.instanceRoute))
 	s.mux.HandleFunc("POST /api/v1/instances/", s.require(domain.PermissionOperate, s.instanceRoute))
 	s.mux.HandleFunc("DELETE /api/v1/instances/", s.require(domain.PermissionOperate, s.instanceRoute))

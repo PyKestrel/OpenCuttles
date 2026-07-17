@@ -234,16 +234,15 @@ export function CreateDeviceDialog({
 function EnrolledView({ instance, token, onDone }: { instance: Instance; token: string; onDone: () => void }) {
   const origin = window.location.origin;
   const isWindows = instance.platform === "windows";
-  const cmd = isWindows
-    ? `.\\opencuttles-runner.exe --appliance ${origin} --token ${token}`
-    : `./opencuttles-runner --appliance ${origin} --token ${token}`;
 
   const [runners, setRunners] = useState<RunnerDownload[] | null>(null);
+  const [showManual, setShowManual] = useState(false);
   useEffect(() => {
     api.runnerDownloads().then(setRunners).catch(() => setRunners([]));
   }, []);
   // Only the builds for this device's platform are relevant (macOS has two archs).
   const forPlatform = (runners ?? []).filter((r) => r.platform === instance.platform);
+  const oneLine = oneLineInstall(instance.platform, origin, token);
 
   async function grab(arch: string) {
     try {
@@ -259,40 +258,74 @@ function EnrolledView({ instance, token, onDone }: { instance: Instance; token: 
         <Check className="size-4" /> <span className="font-medium">{instance.name}</span> registered — now start its runner.
       </div>
 
-      <div>
-        <div className="mb-1.5 text-[12px] text-muted-foreground">1. Download the runner for this machine</div>
-        {runners === null ? (
-          <div className="text-[12px] text-muted-foreground/70">Checking available builds…</div>
-        ) : forPlatform.length === 0 ? (
-          <p className="rounded-lg border px-3 py-2 text-[11.5px] text-muted-foreground" style={{ borderColor: "var(--border-strong)" }}>
-            No prebuilt runner is bundled with this server. Build it from <code className="font-mono">runner/</code> in the repo (<code className="font-mono">go build .</code>) — see its README for the per-OS dependencies.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {forPlatform.map((r) => (
-              <Button key={r.arch} variant="secondary" onClick={() => grab(r.arch)}>
-                <Download className="size-3.5" /> {forPlatform.length > 1 ? archLabel(r.arch) : "Download runner"}
-                <span className="text-[11px] text-muted-foreground/70">{formatMB(r.sizeBytes)}</span>
-              </Button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <div className="mb-1.5 text-[12px] text-muted-foreground">2. Run it on the target machine</div>
-        <p className="mb-2 text-[11.5px] leading-relaxed text-muted-foreground/90">
-          In an interactive desktop session (not as a service). The token is shown only once; the device flips to <strong>online</strong> once it connects.
+      {forPlatform.length === 0 && runners !== null ? (
+        <p className="rounded-lg border px-3 py-2 text-[11.5px] text-muted-foreground" style={{ borderColor: "var(--border-strong)" }}>
+          No prebuilt runner is bundled with this server. Build it from <code className="font-mono">runner/</code> in the repo (<code className="font-mono">go build .</code>) — see its README for the per-OS dependencies — then run it with the token below.
         </p>
-        <CopyField label="Enrollment token" value={token} mono />
-        <div className="h-2" />
-        <CopyField label="Run command" value={cmd} mono />
-      </div>
+      ) : (
+        <div>
+          <div className="mb-1.5 text-[12px] text-muted-foreground">
+            One-line install — paste into an interactive {isWindows ? "PowerShell" : "terminal"} on {instance.name}
+          </div>
+          <CopyField label={isWindows ? "PowerShell" : "bash / zsh"} value={oneLine} mono />
+          <p className="mt-1.5 text-[11px] text-muted-foreground/80">
+            Downloads the runner and connects it — the device flips to <strong>online</strong> in a moment. Run in a logged-in desktop session, not as a service. The token is shown only once.
+          </p>
+        </div>
+      )}
+
+      <button
+        onClick={() => setShowManual((v) => !v)}
+        className="text-[11.5px] font-medium text-muted-foreground hover:text-foreground"
+      >
+        {showManual ? "Hide" : "Prefer to download manually?"}
+      </button>
+
+      {showManual && (
+        <div className="space-y-2.5 rounded-lg border p-3" style={{ borderColor: "var(--border-strong)" }}>
+          {forPlatform.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {forPlatform.map((r) => (
+                <Button key={r.arch} variant="secondary" size="sm" onClick={() => grab(r.arch)}>
+                  <Download className="size-3.5" /> {forPlatform.length > 1 ? archLabel(r.arch) : "Download runner"}
+                  <span className="text-[11px] text-muted-foreground/70">{formatMB(r.sizeBytes)}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+          <CopyField label="Enrollment token" value={token} mono />
+          <CopyField
+            label="Run command"
+            value={isWindows ? `.\\opencuttles-runner.exe --appliance ${origin} --token ${token}` : `./opencuttles-runner --appliance ${origin} --token ${token}`}
+            mono
+          />
+        </div>
+      )}
 
       <div className="flex justify-end pt-1">
         <Button variant="primary" onClick={onDone}>Done</Button>
       </div>
     </div>
+  );
+}
+
+// oneLineInstall builds a copy-paste command that downloads the runner (via the
+// enrollment token, so it works on the target machine with no browser session)
+// and starts it. The token goes in the Authorization header, never the URL.
+function oneLineInstall(platform: string, origin: string, token: string): string {
+  const url = (arch: string) => `${origin}/api/v1/runner/download?platform=${platform}&arch=${arch}`;
+  if (platform === "windows") {
+    return (
+      `$t='${token}'; ` +
+      `iwr '${url("amd64")}' -Headers @{Authorization="Bearer $t"} -OutFile opencuttles-runner.exe; ` +
+      `.\\opencuttles-runner.exe --appliance '${origin}' --token $t`
+    );
+  }
+  // Linux/macOS: detect the arch (Apple Silicon vs Intel) so one command covers both.
+  return (
+    `T='${token}'; A=$(uname -m); [ "$A" = x86_64 ] && A=amd64; [ "$A" = aarch64 ] && A=arm64; ` +
+    `curl -fsSL -H "Authorization: Bearer $T" '${origin}/api/v1/runner/download?platform=${platform}&arch='"$A" -o opencuttles-runner && ` +
+    `chmod +x opencuttles-runner && ./opencuttles-runner --appliance '${origin}' --token "$T"`
   );
 }
 
