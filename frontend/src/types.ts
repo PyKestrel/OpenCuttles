@@ -343,6 +343,16 @@ export type NotificationUpdate = {
   secret?: string;
 };
 
+/** A prebuilt desktop-runner binary the dashboard can hand out. */
+export type RunnerDownload = {
+  /** windows | linux | macos */
+  platform: string;
+  /** amd64 | arm64 */
+  arch: string;
+  downloadName: string;
+  sizeBytes: number;
+};
+
 export type CreateImagePayload = {
   name: string;
   path: string;

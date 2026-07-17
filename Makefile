@@ -1,8 +1,12 @@
 SHELL := bash
 
 WEB_EMBED := backend/internal/web/dist
+RUNNER_EMBED := backend/internal/runnerdist/bin
+# OS/arch pairs offered as dashboard downloads. Windows is amd64; macOS ships
+# both Apple Silicon (arm64) and Intel (amd64).
+RUNNER_TARGETS := windows/amd64 linux/amd64 darwin/amd64 darwin/arm64
 
-.PHONY: all dev test test-backend test-frontend build build-backend build-frontend embed-frontend build-agent lint package update clean
+.PHONY: all dev test test-backend test-frontend build build-backend build-frontend embed-frontend build-runners build-agent lint package update clean
 
 all: test build
 
@@ -32,7 +36,21 @@ embed-frontend: build-frontend
 	find $(WEB_EMBED) -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
 	cp -R frontend/dist/. $(WEB_EMBED)/
 
-build-backend: embed-frontend
+# Cross-compile the desktop runner for each target into the embed directory, so
+# the API can serve them as dashboard downloads. Named opencuttles-runner-<os>-
+# <arch>[.exe] for runnerdist to parse. Runs before build-backend so `go build`
+# of the API embeds them.
+build-runners:
+	find $(RUNNER_EMBED) -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
+	@set -e; for target in $(RUNNER_TARGETS); do \
+		os=$${target%/*}; arch=$${target#*/}; \
+		out=opencuttles-runner-$$os-$$arch; \
+		[ "$$os" = "windows" ] && out=$$out.exe || true; \
+		echo "  runner -> $$out"; \
+		( cd runner && GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../$(RUNNER_EMBED)/$$out . ); \
+	done
+
+build-backend: embed-frontend build-runners
 	mkdir -p dist
 	cd backend && go build -trimpath -ldflags="-s -w" -o ../dist/opencuttles-api ./cmd/opencuttles-api
 
@@ -64,3 +82,4 @@ update:
 clean:
 	rm -rf dist frontend/dist
 	find $(WEB_EMBED) -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
+	find $(RUNNER_EMBED) -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true

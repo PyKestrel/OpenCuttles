@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Check, Copy, X } from "lucide-react";
+import { Check, Copy, Download, X } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/api";
-import type { AndroidVersion, Image, Instance, Platform } from "@/types";
+import type { AndroidVersion, Image, Instance, Platform, RunnerDownload } from "@/types";
 
 const RESOLUTION_PRESETS = [
   { id: "phone", label: "Phone · 720 × 1280 (320 dpi)", width: 720, height: 1280, dpi: 320 },
@@ -237,27 +238,73 @@ function EnrolledView({ instance, token, onDone }: { instance: Instance; token: 
     ? `.\\opencuttles-runner.exe --appliance ${origin} --token ${token}`
     : `./opencuttles-runner --appliance ${origin} --token ${token}`;
 
+  const [runners, setRunners] = useState<RunnerDownload[] | null>(null);
+  useEffect(() => {
+    api.runnerDownloads().then(setRunners).catch(() => setRunners([]));
+  }, []);
+  // Only the builds for this device's platform are relevant (macOS has two archs).
+  const forPlatform = (runners ?? []).filter((r) => r.platform === instance.platform);
+
+  async function grab(arch: string) {
+    try {
+      await api.downloadRunner(instance.platform, arch);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Download failed");
+    }
+  }
+
   return (
     <div className="space-y-4 p-5">
       <div className="flex items-center gap-2 text-[13.5px]" style={{ color: "var(--running)" }}>
         <Check className="size-4" /> <span className="font-medium">{instance.name}</span> registered — now start its runner.
       </div>
-      <p className="text-[12px] leading-relaxed text-muted-foreground">
-        Run this in an interactive session on the target machine (not as a service). The device shows <strong>online</strong> once it connects. The token is shown only once.
-      </p>
 
-      <CopyField label="Enrollment token" value={token} mono />
-      <CopyField label="Run command" value={cmd} mono />
+      <div>
+        <div className="mb-1.5 text-[12px] text-muted-foreground">1. Download the runner for this machine</div>
+        {runners === null ? (
+          <div className="text-[12px] text-muted-foreground/70">Checking available builds…</div>
+        ) : forPlatform.length === 0 ? (
+          <p className="rounded-lg border px-3 py-2 text-[11.5px] text-muted-foreground" style={{ borderColor: "var(--border-strong)" }}>
+            No prebuilt runner is bundled with this server. Build it from <code className="font-mono">runner/</code> in the repo (<code className="font-mono">go build .</code>) — see its README for the per-OS dependencies.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {forPlatform.map((r) => (
+              <Button key={r.arch} variant="secondary" onClick={() => grab(r.arch)}>
+                <Download className="size-3.5" /> {forPlatform.length > 1 ? archLabel(r.arch) : "Download runner"}
+                <span className="text-[11px] text-muted-foreground/70">{formatMB(r.sizeBytes)}</span>
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
 
-      <p className="text-[11.5px] text-muted-foreground/80">
-        Build the runner from <code className="font-mono">runner/</code> in the repo (<code className="font-mono">go build .</code>). Linux/macOS controllers are on the roadmap.
-      </p>
+      <div>
+        <div className="mb-1.5 text-[12px] text-muted-foreground">2. Run it on the target machine</div>
+        <p className="mb-2 text-[11.5px] leading-relaxed text-muted-foreground/90">
+          In an interactive desktop session (not as a service). The token is shown only once; the device flips to <strong>online</strong> once it connects.
+        </p>
+        <CopyField label="Enrollment token" value={token} mono />
+        <div className="h-2" />
+        <CopyField label="Run command" value={cmd} mono />
+      </div>
 
       <div className="flex justify-end pt-1">
         <Button variant="primary" onClick={onDone}>Done</Button>
       </div>
     </div>
   );
+}
+
+function archLabel(arch: string): string {
+  if (arch === "arm64") return "Apple Silicon";
+  if (arch === "amd64") return "Intel / x64";
+  return arch;
+}
+
+function formatMB(bytes: number): string {
+  if (!bytes) return "";
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function CopyField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {

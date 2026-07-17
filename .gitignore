@@ -18,6 +18,10 @@ frontend/node_modules/
 backend/internal/web/dist/*
 !backend/internal/web/dist/.gitkeep
 
+# Embedded runner binaries (cross-compiled by the Makefile, keep the placeholder)
+backend/internal/runnerdist/bin/*
+!backend/internal/runnerdist/bin/.gitkeep
+
 # Local editor and OS files
 .DS_Store
 Thumbs.db

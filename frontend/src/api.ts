@@ -19,6 +19,7 @@ import type {
   NotificationConfig,
   NotificationUpdate,
   Operation,
+  RunnerDownload,
   PerfSnapshot,
   Platform,
   Principal,
@@ -207,6 +208,14 @@ export const api = {
     `/api/v1/tests/runs/${runId}/artifacts/${encodeURIComponent(name)}`,
 
   // QMetry-style test cases, cycles, cycle runs, and builds.
+  runnerDownloads: () =>
+    request<{ runners: RunnerDownload[] }>("/api/v1/runner/downloads").then((r) => r.runners ?? []),
+  downloadRunner: (platform: string, arch: string) =>
+    download(
+      `/api/v1/runner/download?platform=${encodeURIComponent(platform)}&arch=${encodeURIComponent(arch)}`,
+      platform === "windows" ? "opencuttles-runner.exe" : "opencuttles-runner",
+    ),
+
   cases: () => request<TestCase[]>("/api/v1/cases"),
   caseFolders: () => request<string[]>("/api/v1/cases/folders"),
   createCaseFolder: (path: string) =>
