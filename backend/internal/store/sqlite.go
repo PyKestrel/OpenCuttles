@@ -206,6 +206,7 @@ func (s *SQLite) migrate(ctx context.Context) error {
 			environment TEXT NOT NULL DEFAULT '',
 			case_ids TEXT NOT NULL DEFAULT '[]',
 			cron TEXT NOT NULL DEFAULT '',
+			timezone TEXT NOT NULL DEFAULT '',
 			on_new_build INTEGER NOT NULL DEFAULT 0,
 			enabled INTEGER NOT NULL DEFAULT 1,
 			last_run_at TEXT,
@@ -271,6 +272,9 @@ func (s *SQLite) migrate(ctx context.Context) error {
 		// v4: per-case executions within a cycle run reuse the test_runs table.
 		{"test_runs", "cycle_run_id", `ALTER TABLE test_runs ADD COLUMN cycle_run_id TEXT NOT NULL DEFAULT ''`},
 		{"test_runs", "case_id", `ALTER TABLE test_runs ADD COLUMN case_id TEXT NOT NULL DEFAULT ''`},
+		// v5: cron schedules interpret their wall-clock fields in this IANA zone.
+		// Empty preserves the previous UTC-only behavior for existing rows.
+		{"test_cycles", "timezone", `ALTER TABLE test_cycles ADD COLUMN timezone TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, column := range additive {
 		if err := s.ensureColumn(ctx, column.table, column.column, column.ddl); err != nil {

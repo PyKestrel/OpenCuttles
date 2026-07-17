@@ -168,7 +168,7 @@ func scanTestCase(row scanner) (domain.TestCase, error) {
 
 // ---- Test cycles ----
 
-const testCycleColumns = `id, name, platform, build_id, environment, case_ids, cron, on_new_build, enabled, last_run_at, next_run_at, created_at`
+const testCycleColumns = `id, name, platform, build_id, environment, case_ids, cron, timezone, on_new_build, enabled, last_run_at, next_run_at, created_at`
 
 func (s *SQLite) CreateTestCycle(ctx context.Context, c domain.TestCycle) (domain.TestCycle, error) {
 	if strings.TrimSpace(c.Name) == "" {
@@ -189,14 +189,14 @@ func (s *SQLite) UpdateTestCycle(ctx context.Context, c domain.TestCycle) error 
 func (s *SQLite) writeTestCycle(ctx context.Context, c domain.TestCycle, insert bool) error {
 	caseIDs, _ := json.Marshal(nonNilStrings(c.CaseIDs))
 	if insert {
-		_, err := s.db.ExecContext(ctx, `INSERT INTO test_cycles (`+testCycleColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			c.ID, c.Name, c.Platform, c.BuildID, c.Environment, string(caseIDs), c.Cron,
+		_, err := s.db.ExecContext(ctx, `INSERT INTO test_cycles (`+testCycleColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			c.ID, c.Name, c.Platform, c.BuildID, c.Environment, string(caseIDs), c.Cron, c.Timezone,
 			boolToInt(c.OnNewBuild), boolToInt(c.Enabled), nullableTime(c.LastRunAt), nullableTime(c.NextRunAt), formatTime(c.CreatedAt))
 		return err
 	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE test_cycles SET name=?, platform=?, build_id=?, environment=?, case_ids=?, cron=?, on_new_build=?, enabled=?, last_run_at=?, next_run_at=? WHERE id=?`,
-		c.Name, c.Platform, c.BuildID, c.Environment, string(caseIDs), c.Cron,
+		`UPDATE test_cycles SET name=?, platform=?, build_id=?, environment=?, case_ids=?, cron=?, timezone=?, on_new_build=?, enabled=?, last_run_at=?, next_run_at=? WHERE id=?`,
+		c.Name, c.Platform, c.BuildID, c.Environment, string(caseIDs), c.Cron, c.Timezone,
 		boolToInt(c.OnNewBuild), boolToInt(c.Enabled), nullableTime(c.LastRunAt), nullableTime(c.NextRunAt), c.ID)
 	return err
 }
@@ -281,7 +281,7 @@ func scanTestCycle(row scanner) (domain.TestCycle, error) {
 	var caseIDs, created string
 	var onNewBuild, enabled int
 	var lastRun, nextRun sql.NullString
-	if err := row.Scan(&c.ID, &c.Name, &c.Platform, &c.BuildID, &c.Environment, &caseIDs, &c.Cron,
+	if err := row.Scan(&c.ID, &c.Name, &c.Platform, &c.BuildID, &c.Environment, &caseIDs, &c.Cron, &c.Timezone,
 		&onNewBuild, &enabled, &lastRun, &nextRun, &created); err != nil {
 		return domain.TestCycle{}, err
 	}

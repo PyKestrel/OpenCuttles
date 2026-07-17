@@ -58,7 +58,8 @@ func (s *Scheduler) tick(ctx context.Context) {
 	}
 	for _, cycle := range due {
 		// Always advance next-run first so a run that can't start doesn't spin.
-		next, nerr := Next(cycle.Cron, now)
+		// The cycle's timezone (empty = UTC) governs its wall-clock fields.
+		next, nerr := NextIn(cycle.Cron, cycle.Timezone, now)
 		var nextPtr *time.Time
 		if nerr == nil {
 			nextPtr = &next

@@ -19,6 +19,16 @@ import { can } from "@/lib/permissions";
 const PLATFORMS: Platform[] = ["android", "windows", "linux", "macos"];
 const NONE = "__none__";
 
+// The viewer's IANA zone, offered as a one-click default so a cron doesn't
+// silently mean UTC when the author meant local time.
+const browserTimezone = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
+})();
+
 export function CyclesView({ principal }: { principal: Principal }) {
   const [cycles, setCycles] = useState<TestCycle[]>([]);
   const [cases, setCases] = useState<TestCase[]>([]);
@@ -42,7 +52,12 @@ export function CyclesView({ principal }: { principal: Principal }) {
     try {
       const saved = c.id ? await api.updateCycle(c.id, c) : await api.createCycle(c);
       // Schedule fields go through the dedicated endpoint so next-run recomputes.
-      await api.updateCycleSchedule(saved.id, { cron: c.cron ?? "", onNewBuild: !!c.onNewBuild, enabled: c.enabled !== false });
+      await api.updateCycleSchedule(saved.id, {
+        cron: c.cron ?? "",
+        timezone: c.timezone ?? "",
+        onNewBuild: !!c.onNewBuild,
+        enabled: c.enabled !== false,
+      });
       setEditing(null);
       refresh();
     } catch (err) {
@@ -67,6 +82,7 @@ export function CyclesView({ principal }: { principal: Principal }) {
     environment: c.environment,
     caseIds: c.caseIds,
     cron: c.cron,
+    timezone: c.timezone,
     onNewBuild: c.onNewBuild,
     enabled: false,
   });
@@ -179,7 +195,14 @@ export function CyclesView({ principal }: { principal: Principal }) {
                     <TableCell><Badge variant="secondary" className="text-[10.5px]">{platformLabel(c.platform)}</Badge></TableCell>
                     <TableCell className="text-right font-mono tabular-nums">{c.caseIds.length}</TableCell>
                     <TableCell className="text-[12px] text-muted-foreground">
-                      {c.cron ? <span className="font-mono">{c.cron}</span> : <span className="text-muted-foreground/50">manual</span>}
+                      {c.cron ? (
+                        <span className="font-mono" title={`Interpreted in ${c.timezone || "UTC"}`}>
+                          {c.cron}
+                          <span className="ml-1.5 text-[10.5px] text-muted-foreground/70">{c.timezone || "UTC"}</span>
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50">manual</span>
+                      )}
                       {c.onNewBuild && <Badge variant="outline" className="ml-2 text-[10px]">on build</Badge>}
                     </TableCell>
                     <TableCell>
@@ -293,7 +316,27 @@ function CycleEditor({ initial, cases, builds, onClose, onSave }: { initial: Par
             </Field>
           </div>
 
-          <Field label="Schedule (cron, optional)"><Input value={c.cron ?? ""} onChange={(e) => set({ cron: e.target.value })} placeholder="0 */6 * * *  (every 6 hours)" className="font-mono" /></Field>
+          <div className="grid gap-3 sm:grid-cols-[1.4fr_1fr]">
+            <Field label="Schedule (cron, optional)">
+              <Input value={c.cron ?? ""} onChange={(e) => set({ cron: e.target.value })} placeholder="0 */6 * * *  (every 6 hours)" className="font-mono" />
+            </Field>
+            <Field label="Timezone">
+              <div className="flex gap-1.5">
+                <Input value={c.timezone ?? ""} onChange={(e) => set({ timezone: e.target.value })} placeholder="UTC" className="font-mono" />
+                {browserTimezone && c.timezone !== browserTimezone && (
+                  <Button type="button" variant="secondary" className="shrink-0" title={`Use ${browserTimezone}`} onClick={() => set({ timezone: browserTimezone })}>
+                    Use mine
+                  </Button>
+                )}
+              </div>
+            </Field>
+          </div>
+          {c.cron && (
+            <p className="text-[11.5px] text-muted-foreground/80">
+              Runs at this cron in <span className="font-mono">{c.timezone || "UTC"}</span>
+              {!c.timezone && browserTimezone !== "UTC" && <> — not your local {browserTimezone}</>}.
+            </p>
+          )}
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-2 text-[13px]"><Switch checked={!!c.onNewBuild} onCheckedChange={(v) => set({ onNewBuild: v })} /> Run automatically on a new build</label>
             <label className="flex items-center gap-2 text-[13px]"><Switch checked={c.enabled !== false} onCheckedChange={(v) => set({ enabled: v })} /> Enabled</label>

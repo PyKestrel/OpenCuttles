@@ -340,6 +340,9 @@ type TestCycle struct {
 	Environment string     `json:"environment,omitempty"`
 	CaseIDs     []string   `json:"caseIds"`
 	Cron        string     `json:"cron,omitempty"`
+	// Timezone is the IANA zone (e.g. "America/New_York") the Cron's wall-clock
+	// fields are interpreted in. Empty means UTC.
+	Timezone    string     `json:"timezone,omitempty"`
 	OnNewBuild  bool       `json:"onNewBuild"`
 	Enabled     bool       `json:"enabled"`
 	LastRunAt   *time.Time `json:"lastRunAt,omitempty"`

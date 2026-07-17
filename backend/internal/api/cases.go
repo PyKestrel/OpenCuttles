@@ -305,6 +305,7 @@ func (s *Server) updateCycleCases(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updateCycleSchedule(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Cron       string `json:"cron"`
+		Timezone   string `json:"timezone"`
 		OnNewBuild bool   `json:"onNewBuild"`
 		Enabled    bool   `json:"enabled"`
 	}
@@ -318,6 +319,7 @@ func (s *Server) updateCycleSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.Cron = strings.TrimSpace(req.Cron)
+	c.Timezone = strings.TrimSpace(req.Timezone)
 	c.OnNewBuild = req.OnNewBuild
 	c.Enabled = req.Enabled
 	if err := s.applyCron(&c); err != nil {
@@ -333,14 +335,20 @@ func (s *Server) updateCycleSchedule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, c)
 }
 
-// applyCron validates a cycle's cron and (re)computes its next run time.
+// applyCron validates a cycle's cron + timezone and (re)computes its next run
+// time. The cron's wall-clock fields are interpreted in the cycle's timezone
+// (empty = UTC), so "0 9 * * *" means 9am where the user actually is.
 func (s *Server) applyCron(c *domain.TestCycle) error {
+	c.Timezone = strings.TrimSpace(c.Timezone)
+	if !scheduler.ValidTimezone(c.Timezone) {
+		return badRequest("unknown timezone: " + c.Timezone)
+	}
 	if strings.TrimSpace(c.Cron) == "" {
 		c.Cron = ""
 		c.NextRunAt = nil
 		return nil
 	}
-	next, err := scheduler.Next(c.Cron, time.Now().UTC())
+	next, err := scheduler.NextIn(c.Cron, c.Timezone, time.Now().UTC())
 	if err != nil {
 		return badRequest("invalid cron expression: " + c.Cron)
 	}

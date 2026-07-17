@@ -236,7 +236,7 @@ export const api = {
   deleteCycle: (id: string) => request<{ status: string }>(`/api/v1/cycles/${id}`, { method: "DELETE" }),
   updateCycleCases: (id: string, caseIds: string[]) =>
     request<TestCycle>(`/api/v1/cycles/${id}/cases`, { method: "PUT", headers: jsonHeaders, body: JSON.stringify({ caseIds }) }),
-  updateCycleSchedule: (id: string, sched: { cron: string; onNewBuild: boolean; enabled: boolean }) =>
+  updateCycleSchedule: (id: string, sched: { cron: string; timezone?: string; onNewBuild: boolean; enabled: boolean }) =>
     request<TestCycle>(`/api/v1/cycles/${id}/schedule`, { method: "PUT", headers: jsonHeaders, body: JSON.stringify(sched) }),
   runCycle: (id: string, opts?: { instanceId?: string; buildId?: string }) =>
     request<CycleRun>(`/api/v1/cycles/${id}/run`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(opts ?? {}) }),

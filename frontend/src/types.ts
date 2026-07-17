@@ -217,6 +217,8 @@ export type TestCycle = {
   environment?: string;
   caseIds: string[];
   cron?: string;
+  /** IANA zone (e.g. "America/New_York") the cron's wall-clock fields use. Empty = UTC. */
+  timezone?: string;
   onNewBuild: boolean;
   enabled: boolean;
   lastRunAt?: string;
