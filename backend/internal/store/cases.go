@@ -329,9 +329,40 @@ func (s *SQLite) GetCycleRun(ctx context.Context, id string) (domain.CycleRun, e
 	return scanCycleRun(row)
 }
 
+// ListCycleRuns returns the most recent 200 cycle runs. Prefer
+// ListCycleRunsPage for anything user-facing that needs to reach older history.
 func (s *SQLite) ListCycleRuns(ctx context.Context) ([]domain.CycleRun, error) {
+	runs, _, err := s.ListCycleRunsPage(ctx, 200, 0)
+	return runs, err
+}
+
+// CountCycleRuns returns the total number of cycle runs (for pagination).
+func (s *SQLite) CountCycleRuns(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM cycle_runs`).Scan(&n)
+	return n, err
+}
+
+// ListCycleRunsPage returns a page of cycle runs newest-first plus the total
+// count, so history past the first page stays reachable.
+func (s *SQLite) ListCycleRunsPage(ctx context.Context, limit, offset int) ([]domain.CycleRun, int, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	total, err := s.CountCycleRuns(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	runs, err := s.listCycleRuns(ctx, limit, offset)
+	return runs, total, err
+}
+
+func (s *SQLite) listCycleRuns(ctx context.Context, limit, offset int) ([]domain.CycleRun, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT r.id, r.cycle_id, c.name, r.trigger, r.build_id, r.instance_id, r.status, r.totals, r.started_at, r.finished_at
-		FROM cycle_runs r LEFT JOIN test_cycles c ON c.id = r.cycle_id ORDER BY r.started_at DESC LIMIT 200`)
+		FROM cycle_runs r LEFT JOIN test_cycles c ON c.id = r.cycle_id ORDER BY r.started_at DESC LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -399,6 +430,33 @@ func (s *SQLite) ListTestRunsByCycleRun(ctx context.Context, cycleRunID string) 
 		`SELECT r.id, r.test_id, COALESCE(NULLIF(t.name,''), tc.summary, ''), r.instance_id, r.status, r.passed, r.steps, r.video, r.error, r.started_at, r.finished_at, r.cycle_run_id, r.case_id
 		 FROM test_runs r LEFT JOIN tests t ON t.id = r.test_id LEFT JOIN test_cases tc ON tc.id = r.case_id
 		 WHERE r.cycle_run_id = ? ORDER BY r.started_at ASC`, cycleRunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	runs := make([]domain.TestRun, 0)
+	for rows.Next() {
+		run, err := scanCaseRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
+// ListRecentCaseRuns returns finished cycle case-runs newest-first, across all
+// cycles, for computing per-case history/flakiness. One query beats N per-case
+// queries; callers group by CaseID. limit bounds the scan window.
+func (s *SQLite) ListRecentCaseRuns(ctx context.Context, limit int) ([]domain.TestRun, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 2000
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT r.id, r.test_id, COALESCE(NULLIF(t.name,''), tc.summary, ''), r.instance_id, r.status, r.passed, r.steps, r.video, r.error, r.started_at, r.finished_at, r.cycle_run_id, r.case_id
+		 FROM test_runs r LEFT JOIN tests t ON t.id = r.test_id LEFT JOIN test_cases tc ON tc.id = r.case_id
+		 WHERE r.case_id != '' AND r.finished_at IS NOT NULL
+		 ORDER BY r.started_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}

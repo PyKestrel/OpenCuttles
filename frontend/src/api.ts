@@ -5,6 +5,7 @@ import type {
   AuditEvent,
   BootstrapStatus,
   Build,
+  CaseHealth,
   CreateImagePayload,
   CreateInstancePayload,
   CycleRun,
@@ -222,6 +223,7 @@ export const api = {
     form.append("file", file);
     return request<ImportResult>("/api/v1/cases/import", { method: "POST", body: form });
   },
+  caseHealth: () => request<CaseHealth[]>("/api/v1/cases/health"),
   exportCases: (format: "csv" | "xlsx", folder?: string) =>
     download(
       `/api/v1/cases/export?format=${format}${folder ? `&folder=${encodeURIComponent(folder)}` : ""}`,

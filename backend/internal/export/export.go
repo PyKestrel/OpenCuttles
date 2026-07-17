@@ -285,19 +285,27 @@ func stepLog(r domain.TestRun) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func durationSecs(r domain.TestRun) string {
+// runSeconds is a run's wall-clock duration, never negative: JUnit's time
+// attribute must be non-negative or CI parsers reject the report, and a clock
+// step backwards mid-run would otherwise produce one.
+func runSeconds(r domain.TestRun) float64 {
 	if r.FinishedAt == nil {
-		return "0"
+		return 0
 	}
-	return strconv.FormatFloat(r.FinishedAt.Sub(r.StartedAt).Seconds(), 'f', 3, 64)
+	if s := r.FinishedAt.Sub(r.StartedAt).Seconds(); s > 0 {
+		return s
+	}
+	return 0
+}
+
+func durationSecs(r domain.TestRun) string {
+	return strconv.FormatFloat(runSeconds(r), 'f', 3, 64)
 }
 
 func totalSecs(runs []domain.TestRun) string {
 	var total float64
 	for _, r := range runs {
-		if r.FinishedAt != nil {
-			total += r.FinishedAt.Sub(r.StartedAt).Seconds()
-		}
+		total += runSeconds(r)
 	}
 	return strconv.FormatFloat(total, 'f', 3, 64)
 }

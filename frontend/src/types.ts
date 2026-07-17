@@ -298,6 +298,34 @@ export type AgentModelUpdate = {
   apiKey?: string;
 };
 
+export type CaseHistoryPoint = {
+  runId: string;
+  cycleRunId?: string;
+  /** pass | fail | blocked */
+  status: string;
+  startedAt: string;
+  durationMs: number;
+};
+
+/** Cross-run health for a test case: is it passing, and can it be trusted? */
+export type CaseHealth = {
+  caseId: string;
+  summary: string;
+  runs: number;
+  pass: number;
+  fail: number;
+  blocked: number;
+  /** 0..1 */
+  passRate: number;
+  /** status changes between consecutive runs */
+  flips: number;
+  flaky: boolean;
+  lastStatus: string;
+  avgMs: number;
+  /** oldest-first, for sparklines */
+  history: CaseHistoryPoint[];
+};
+
 export type NotificationConfig = {
   url: string;
   onlyOnFailure: boolean;

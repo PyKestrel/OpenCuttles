@@ -121,3 +121,29 @@ func TestJUnitVerdicts(t *testing.T) {
 		t.Fatal("missing xml header")
 	}
 }
+
+// JUnit's time attribute must never be negative — CI parsers reject the report.
+// A run whose finish precedes its start (clock step back, or inconsistent data)
+// must clamp to 0 rather than emit "-345432.000".
+func TestJUnitNeverEmitsNegativeTime(t *testing.T) {
+	start := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+	before := start.Add(-4 * time.Hour) // finished BEFORE it started
+	runs := []domain.TestRun{
+		{ID: "r1", CaseID: "c1", Passed: true, StartedAt: start, FinishedAt: &before},
+	}
+	data, err := JUnit(domain.CycleRun{ID: "cr", CycleName: "S", StartedAt: start}, runs, nil)
+	if err != nil {
+		t.Fatalf("JUnit: %v", err)
+	}
+	if strings.Contains(string(data), `time="-`) {
+		t.Fatalf("negative time attribute emitted:\n%s", data)
+	}
+
+	var doc junitSuites
+	if err := xml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if doc.Suites[0].Cases[0].Time != "0.000" {
+		t.Errorf("time = %q, want 0.000", doc.Suites[0].Cases[0].Time)
+	}
+}

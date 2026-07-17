@@ -449,8 +449,11 @@ func (s *Server) writeTestMetrics(w http.ResponseWriter, r *http.Request) {
 		totals.Fail += run.Totals.Fail
 		totals.Blocked += run.Totals.Blocked
 		totals.NotRun += run.Totals.NotRun
+		// Never report a negative duration (a clock step back would produce one).
 		if lastDuration == 0 && run.FinishedAt != nil {
-			lastDuration = run.FinishedAt.Sub(run.StartedAt).Seconds()
+			if d := run.FinishedAt.Sub(run.StartedAt).Seconds(); d > 0 {
+				lastDuration = d
+			}
 		}
 	}
 

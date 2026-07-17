@@ -3,6 +3,13 @@ backend/opencuttles.db
 backend/*.db
 backend/bin/
 
+# Local dev state created by scripts/dev/start.sh and the api-local launch
+# config (SQLite DB, fetched images, run artifacts).
+data/
+
+# Packaged release output (make package)
+dist/
+
 # Frontend
 frontend/dist/
 frontend/node_modules/

@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
+	"github.com/opencuttles/opencuttles/backend/internal/insights"
 	"github.com/opencuttles/opencuttles/backend/internal/qmetry"
 	"github.com/opencuttles/opencuttles/backend/internal/scenario"
 	"github.com/opencuttles/opencuttles/backend/internal/scheduler"
@@ -31,6 +33,7 @@ func (s *Server) registerCaseRoutes() {
 	m.HandleFunc("DELETE /api/v1/cases/folders", t(s.deleteCaseFolder))
 	m.HandleFunc("POST /api/v1/cases/import", t(s.importCases))
 	m.HandleFunc("GET /api/v1/cases/export", t(s.exportCases))
+	m.HandleFunc("GET /api/v1/cases/health", t(s.caseHealth))
 	m.HandleFunc("GET /api/v1/cases/{id}", t(s.getCase))
 	m.HandleFunc("PUT /api/v1/cases/{id}", t(s.updateCase))
 	m.HandleFunc("DELETE /api/v1/cases/{id}", t(s.deleteCase))
@@ -421,13 +424,54 @@ func (s *Server) resolveCycleTarget(ctx context.Context, cycle domain.TestCycle,
 
 // ---- cycle runs ----
 
+// listCycleRuns returns a page of cycle runs. It stays backward compatible: with
+// no query params it responds with a bare array (what the UI polled before);
+// with ?limit/?offset it returns {runs,total,limit,offset} so older history is
+// reachable instead of being silently truncated.
 func (s *Server) listCycleRuns(w http.ResponseWriter, r *http.Request) {
-	runs, err := s.store.ListCycleRuns(r.Context())
+	q := r.URL.Query()
+	paged := q.Has("limit") || q.Has("offset")
+	limit := atoiDefault(q.Get("limit"), 200)
+	offset := atoiDefault(q.Get("offset"), 0)
+
+	runs, total, err := s.store.ListCycleRunsPage(r.Context(), limit, offset)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, runs)
+	if !paged {
+		writeJSON(w, http.StatusOK, runs)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Runs   []domain.CycleRun `json:"runs"`
+		Total  int               `json:"total"`
+		Limit  int               `json:"limit"`
+		Offset int               `json:"offset"`
+	}{Runs: runs, Total: total, Limit: limit, Offset: offset})
+}
+
+// caseHealth reports per-case pass rate, flakiness, and recent history — the
+// cross-run view a single run's report can't give.
+func (s *Server) caseHealth(w http.ResponseWriter, r *http.Request) {
+	window := atoiDefault(r.URL.Query().Get("window"), 2000)
+	runs, err := s.store.ListRecentCaseRuns(r.Context(), window)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, insights.CaseHealthFrom(runs))
+}
+
+func atoiDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 func (s *Server) getCycleRun(w http.ResponseWriter, r *http.Request) {

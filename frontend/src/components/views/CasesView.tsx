@@ -12,10 +12,44 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { api } from "@/api";
-import type { Principal, TestCase, TestCycle, TestStep } from "@/types";
+import type { CaseHealth, Principal, TestCase, TestCycle, TestStep } from "@/types";
 import { can } from "@/lib/permissions";
 
 const emptyCase: Partial<TestCase> = { summary: "", labels: [], components: [], steps: [] };
+
+const statusColor: Record<string, string> = {
+  pass: "var(--running)",
+  fail: "var(--destructive)",
+  blocked: "var(--warn)",
+};
+
+// HealthCell shows a case's recent run outcomes at a glance: a sparkline of the
+// last runs (oldest→newest), the pass rate, and a Flaky flag. A case that fails
+// every time is broken, not flaky — only alternating results earn the badge.
+function HealthCell({ health }: { health?: CaseHealth }) {
+  if (!health || health.runs === 0) {
+    return <span className="text-[11.5px] text-muted-foreground/50">never run</span>;
+  }
+  const pct = Math.round(health.passRate * 100);
+  const recent = health.history.slice(-10);
+  return (
+    <div className="flex items-center gap-2" title={`${health.runs} runs · ${health.pass} pass · ${health.fail} fail · ${health.blocked} blocked${health.flaky ? ` · ${health.flips} status flips` : ""}`}>
+      <span aria-hidden className="flex items-end gap-[2px]">
+        {recent.map((p) => (
+          <span key={p.runId} className="h-3.5 w-[3px] rounded-[1px]" style={{ background: statusColor[p.status] ?? "var(--muted-foreground)" }} />
+        ))}
+      </span>
+      <span className="font-mono text-[11.5px] tabular-nums" style={{ color: pct === 100 ? "var(--running)" : pct < 50 ? "var(--destructive)" : undefined }}>
+        {pct}%
+      </span>
+      {health.flaky && (
+        <Badge variant="outline" className="px-1 py-0 text-[9.5px] uppercase" style={{ borderColor: "var(--warn)", color: "var(--warn)" }}>
+          flaky
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 type FolderNode = { name: string; path: string; children: FolderNode[] };
 
@@ -56,15 +90,22 @@ export function CasesView({ principal }: { principal: Principal }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Partial<TestCase> | null>(null);
   const [addToCycleIds, setAddToCycleIds] = useState<string[] | null>(null);
+  const [health, setHealth] = useState<Map<string, CaseHealth>>(new Map());
   const fileRef = useRef<HTMLInputElement>(null);
   const canTest = can(principal, "test");
 
   const refresh = useCallback(async () => {
     try {
-      const [c, f, cy] = await Promise.all([api.cases(), api.caseFolders().catch(() => []), api.cycles().catch(() => [])]);
+      const [c, f, cy, h] = await Promise.all([
+        api.cases(),
+        api.caseFolders().catch(() => []),
+        api.cycles().catch(() => []),
+        api.caseHealth().catch(() => [] as CaseHealth[]),
+      ]);
       setCases(c ?? []);
       setFolders(f ?? []);
       setCycles(cy ?? []);
+      setHealth(new Map((h ?? []).map((x) => [x.caseId, x])));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load cases");
     }
@@ -327,6 +368,7 @@ export function CasesView({ principal }: { principal: Principal }) {
                     <TableHead className="w-8"><Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} aria-label="Select all" /></TableHead>
                     <TableHead>Summary</TableHead>
                     <TableHead className="w-40">Folder</TableHead>
+                    <TableHead className="w-[132px]">Health</TableHead>
                     <TableHead className="w-20">Priority</TableHead>
                     <TableHead className="w-14 text-right">Steps</TableHead>
                     <TableHead className="w-10" />
@@ -346,6 +388,7 @@ export function CasesView({ principal }: { principal: Principal }) {
                         )}
                       </TableCell>
                       <TableCell className="truncate text-[12px] text-muted-foreground">{c.folderPath || "—"}</TableCell>
+                      <TableCell><HealthCell health={health.get(c.id)} /></TableCell>
                       <TableCell>{c.priority ? <Badge variant="outline" className="text-[10.5px] capitalize">{c.priority}</Badge> : <span className="text-muted-foreground/50">—</span>}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{c.steps.length}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
