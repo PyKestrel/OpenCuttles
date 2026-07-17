@@ -75,12 +75,44 @@ func TestServiceLifecycleDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("delete instance: %v", err)
 	}
-	if operation.Status != "succeeded" {
-		t.Fatalf("operation status = %q", operation.Status)
+	// DeleteInstance is asynchronous like Start/Stop: it returns a running
+	// operation and a goroutine removes the instance, so the outcome must be
+	// awaited rather than read off the returned operation.
+	if operation.Status != "running" {
+		t.Fatalf("operation status = %q, want running", operation.Status)
 	}
-	if _, err := db.GetInstance(ctx, instance.ID); !store.IsNotFound(err) {
-		t.Fatalf("deleted instance lookup error = %v, want not found", err)
+	waitForDeleted(t, db, instance.ID)
+	if op := waitForOperation(t, db, operation.ID); op.Status != "succeeded" {
+		t.Fatalf("delete operation status = %q, want succeeded (%s)", op.Status, op.Message)
 	}
+}
+
+// waitForDeleted blocks until the instance row is gone.
+func waitForDeleted(t *testing.T, db *store.SQLite, id string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := db.GetInstance(context.Background(), id); store.IsNotFound(err) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("instance %s was not deleted", id)
+}
+
+// waitForOperation blocks until an operation reaches a terminal status.
+func waitForOperation(t *testing.T, db *store.SQLite, id string) domain.Operation {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		op, err := db.GetOperation(context.Background(), id)
+		if err == nil && op.Status != "running" {
+			return op
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("operation %s did not finish", id)
+	return domain.Operation{}
 }
 
 func waitForState(t *testing.T, db *store.SQLite, id, state string) domain.Instance {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -106,12 +107,20 @@ func TestAndroidVersionsEndpoint(t *testing.T) {
 	}
 }
 
+// TestRewriteConsoleHTML pins the console proxy's rewriting contract: only
+// root-absolute asset references are re-pointed under the instance prefix.
+// Relative references and the absence of a <base> tag both matter — the
+// operator's client page resolves its assets relative to the proxied document
+// URL, so injecting a <base> would break them.
 func TestRewriteConsoleHTML(t *testing.T) {
 	const prefix = "/api/v1/instances/abc/console"
 	resp := &http.Response{
 		Header: http.Header{"Content-Type": []string{"text/html"}},
 		Body: io.NopCloser(strings.NewReader(
-			`<html><head><title>console</title></head><body><script src="/js/app.js"></script><link href="/style.css"></body></html>`,
+			`<html><head><title>console</title></head><body>` +
+				`<script src="/js/app.js"></script><link href="/style.css">` +
+				`<script src='/js/single.js'></script><img src="assets/logo.png">` +
+				`</body></html>`,
 		)),
 	}
 	if err := rewriteConsoleHTML(resp, prefix); err != nil {
@@ -122,14 +131,29 @@ func TestRewriteConsoleHTML(t *testing.T) {
 		t.Fatalf("read body: %v", err)
 	}
 	html := string(body)
-	if !strings.Contains(html, `<base href="`+prefix+`/">`) {
-		t.Fatalf("missing base href: %s", html)
-	}
+
+	// Root-absolute references are rewritten to stay under the proxy prefix.
 	if !strings.Contains(html, `src="`+prefix+`/js/app.js"`) {
-		t.Fatalf("script src not rewritten: %s", html)
+		t.Errorf("script src not rewritten: %s", html)
 	}
 	if !strings.Contains(html, `href="`+prefix+`/style.css"`) {
-		t.Fatalf("link href not rewritten: %s", html)
+		t.Errorf("link href not rewritten: %s", html)
+	}
+	if !strings.Contains(html, `src='`+prefix+`/js/single.js'`) {
+		t.Errorf("single-quoted src not rewritten: %s", html)
+	}
+	// Relative references must be left alone; they already resolve against the
+	// proxied document URL.
+	if !strings.Contains(html, `src="assets/logo.png"`) {
+		t.Errorf("relative src should be untouched: %s", html)
+	}
+	// A <base> tag must never be injected — it would break those relative refs.
+	if strings.Contains(html, "<base") {
+		t.Errorf("a <base> tag must not be injected (it breaks relative assets): %s", html)
+	}
+	// The rewritten length must be advertised, or the proxied response truncates.
+	if resp.Header.Get("Content-Length") != strconv.Itoa(len(body)) {
+		t.Errorf("Content-Length = %q, want %d", resp.Header.Get("Content-Length"), len(body))
 	}
 }
 

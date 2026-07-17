@@ -33,7 +33,7 @@ func TestStoreAuthAuditAndInstancePersistence(t *testing.T) {
 		t.Fatalf("session user = %+v, err = %v", sessionUser, err)
 	}
 
-	image, err := db.CreateImage(ctx, domain.CreateImageRequest{Name: "AOSP", Path: "/var/lib/opencuttles/images/aosp"})
+	image, err := db.CreateImage(ctx, domain.CreateImageRequest{Name: "AOSP", Path: filepath.Join(tempDir, "images", "aosp")})
 	if err != nil {
 		t.Fatalf("create image: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestCreateInstanceDeployFields(t *testing.T) {
 	}
 	defer db.Close()
 
-	image, err := db.CreateImage(ctx, domain.CreateImageRequest{Name: "AOSP", Path: filepath.Join(tempDir, "img")})
+	image, err := db.CreateImage(ctx, domain.CreateImageRequest{Name: "AOSP", Path: filepath.Join(tempDir, "images", "img")})
 	if err != nil {
 		t.Fatalf("create image: %v", err)
 	}

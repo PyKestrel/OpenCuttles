@@ -128,7 +128,9 @@ func TestLaunchPassesDisplayFlags(t *testing.T) {
 	t.Setenv("OPENCUTTLES_IMAGE_ROOT", filepath.Join(tempDir, "images"))
 	t.Setenv("OPENCUTTLES_INSTANCE_ROOT", filepath.Join(tempDir, "instances"))
 
-	imageDir := filepath.Join(tempDir, "img")
+	// The image must live under OPENCUTTLES_IMAGE_ROOT or ValidateImagePath
+	// rejects it.
+	imageDir := filepath.Join(tempDir, "images", "img")
 	if err := os.MkdirAll(imageDir, 0o750); err != nil {
 		t.Fatalf("mkdir image: %v", err)
 	}
