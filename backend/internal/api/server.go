@@ -395,6 +395,85 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	_, _ = fmt.Fprintf(w, "opencuttles_host_cpu_count %d\n", host.CPUCount)
 	_, _ = fmt.Fprintf(w, "opencuttles_instances_total %d\n", len(instances))
 	_, _ = fmt.Fprintf(w, "opencuttles_instances_running %d\n", running)
+	s.writeTestMetrics(w, r)
+}
+
+// writeTestMetrics exposes the product's actual outcomes — pass rates and
+// failures — not just host infrastructure, so a dashboard or alertmanager can
+// watch test health. Test data is best-effort: a query failure skips the block
+// rather than failing the whole scrape.
+func (s *Server) writeTestMetrics(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	cases, err := s.store.ListTestCases(ctx)
+	if err != nil {
+		return
+	}
+	cycles, err := s.store.ListTestCycles(ctx)
+	if err != nil {
+		return
+	}
+	runs, err := s.store.ListCycleRuns(ctx)
+	if err != nil {
+		return
+	}
+
+	enabled := 0
+	for _, c := range cycles {
+		if c.Enabled {
+			enabled++
+		}
+	}
+	// ListCycleRuns is ordered started_at DESC, so the first run seen for a
+	// cycle is its latest. Aggregating the latest run per cycle describes
+	// current health, which is what you alert on.
+	running, passed, failed := 0, 0, 0
+	var totals domain.CycleTotals
+	latestSeen := map[string]bool{}
+	var lastDuration float64
+	for _, run := range runs {
+		if run.Status == "running" {
+			running++
+			continue
+		}
+		if latestSeen[run.CycleID] {
+			continue
+		}
+		latestSeen[run.CycleID] = true
+		if run.Status == "passed" {
+			passed++
+		} else {
+			failed++
+		}
+		totals.Cases += run.Totals.Cases
+		totals.Pass += run.Totals.Pass
+		totals.Fail += run.Totals.Fail
+		totals.Blocked += run.Totals.Blocked
+		totals.NotRun += run.Totals.NotRun
+		if lastDuration == 0 && run.FinishedAt != nil {
+			lastDuration = run.FinishedAt.Sub(run.StartedAt).Seconds()
+		}
+	}
+
+	_, _ = fmt.Fprintf(w, "# TYPE opencuttles_test_cases_total gauge\nopencuttles_test_cases_total %d\n", len(cases))
+	_, _ = fmt.Fprintf(w, "# TYPE opencuttles_test_cycles_total gauge\nopencuttles_test_cycles_total %d\n", len(cycles))
+	_, _ = fmt.Fprintf(w, "# TYPE opencuttles_test_cycles_enabled gauge\nopencuttles_test_cycles_enabled %d\n", enabled)
+	_, _ = fmt.Fprintf(w, "# TYPE opencuttles_cycle_runs_running gauge\nopencuttles_cycle_runs_running %d\n", running)
+
+	_, _ = fmt.Fprintf(w, "# HELP opencuttles_cycle_last_run_status Cycles by the status of their most recent finished run.\n")
+	_, _ = fmt.Fprintf(w, "# TYPE opencuttles_cycle_last_run_status gauge\n")
+	_, _ = fmt.Fprintf(w, "opencuttles_cycle_last_run_status{status=\"passed\"} %d\n", passed)
+	_, _ = fmt.Fprintf(w, "opencuttles_cycle_last_run_status{status=\"failed\"} %d\n", failed)
+
+	_, _ = fmt.Fprintf(w, "# HELP opencuttles_cycle_cases Case results across each cycle's most recent finished run.\n")
+	_, _ = fmt.Fprintf(w, "# TYPE opencuttles_cycle_cases gauge\n")
+	_, _ = fmt.Fprintf(w, "opencuttles_cycle_cases{result=\"pass\"} %d\n", totals.Pass)
+	_, _ = fmt.Fprintf(w, "opencuttles_cycle_cases{result=\"fail\"} %d\n", totals.Fail)
+	_, _ = fmt.Fprintf(w, "opencuttles_cycle_cases{result=\"blocked\"} %d\n", totals.Blocked)
+	_, _ = fmt.Fprintf(w, "opencuttles_cycle_cases{result=\"notrun\"} %d\n", totals.NotRun)
+
+	_, _ = fmt.Fprintf(w, "# HELP opencuttles_cycle_last_run_duration_seconds Duration of the most recent finished cycle run.\n")
+	_, _ = fmt.Fprintf(w, "# TYPE opencuttles_cycle_last_run_duration_seconds gauge\n")
+	_, _ = fmt.Fprintf(w, "opencuttles_cycle_last_run_duration_seconds %.3f\n", lastDuration)
 }
 
 func (s *Server) listAndroidVersions(w http.ResponseWriter, r *http.Request) {

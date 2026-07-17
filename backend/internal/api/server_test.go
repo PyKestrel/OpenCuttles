@@ -12,9 +12,11 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/opencuttles/opencuttles/backend/internal/auth"
 	"github.com/opencuttles/opencuttles/backend/internal/devicecontrol"
+	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
 )
@@ -107,6 +109,82 @@ func TestAndroidVersionsEndpoint(t *testing.T) {
 	}
 }
 
+// TestMetricsIncludesTestOutcomes checks /metrics reports the product's actual
+// outcomes (pass/fail/blocked), not just host infrastructure — a dashboard has
+// to be able to watch test health.
+func TestMetricsIncludesTestOutcomes(t *testing.T) {
+	t.Setenv("OPENCUTTLES_SECURE_COOKIES", "0")
+	t.Setenv("OPENCUTTLES_BOOTSTRAP_TOKEN", "")
+	handler, db := testServerWithStore(t)
+	ctx := context.Background()
+
+	tc, err := db.CreateTestCase(ctx, domain.TestCase{Summary: "Login works"})
+	if err != nil {
+		t.Fatalf("create case: %v", err)
+	}
+	cycle, err := db.CreateTestCycle(ctx, domain.TestCycle{Name: "Smoke", Platform: domain.PlatformAndroid, CaseIDs: []string{tc.ID}, Enabled: true})
+	if err != nil {
+		t.Fatalf("create cycle: %v", err)
+	}
+	run, err := db.CreateCycleRun(ctx, domain.CycleRun{CycleID: cycle.ID, Trigger: domain.CycleTriggerManual})
+	if err != nil {
+		t.Fatalf("create cycle run: %v", err)
+	}
+	finished := time.Now().UTC()
+	run.Status = "failed"
+	run.FinishedAt = &finished
+	run.Totals = domain.CycleTotals{Cases: 3, Pass: 1, Fail: 1, Blocked: 1}
+	if err := db.UpdateCycleRun(ctx, run); err != nil {
+		t.Fatalf("update cycle run: %v", err)
+	}
+
+	body := scrapeMetrics(t, handler)
+	for _, want := range []string{
+		"opencuttles_test_cases_total 1",
+		"opencuttles_test_cycles_total 1",
+		"opencuttles_test_cycles_enabled 1",
+		`opencuttles_cycle_last_run_status{status="failed"} 1`,
+		`opencuttles_cycle_cases{result="pass"} 1`,
+		`opencuttles_cycle_cases{result="fail"} 1`,
+		`opencuttles_cycle_cases{result="blocked"} 1`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("metrics missing %q\n---\n%s", want, body)
+		}
+	}
+	// The host metrics must survive alongside the new ones.
+	if !strings.Contains(body, "opencuttles_instances_total") {
+		t.Errorf("host metrics lost: %s", body)
+	}
+}
+
+// scrapeMetrics bootstraps an admin, logs in, and GETs /metrics.
+func scrapeMetrics(t *testing.T, handler http.Handler) string {
+	t.Helper()
+	do := func(method, path, body string, cookies []*http.Cookie) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		for _, c := range cookies {
+			req.AddCookie(c)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := do(http.MethodPost, "/api/v1/bootstrap", `{"username":"admin","password":"very-strong-password"}`, nil); rec.Code != http.StatusCreated {
+		t.Fatalf("bootstrap status = %d", rec.Code)
+	}
+	login := do(http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"very-strong-password"}`, nil)
+	if login.Code != http.StatusOK {
+		t.Fatalf("login status = %d", login.Code)
+	}
+	rec := do(http.MethodGet, "/api/v1/metrics", "", login.Result().Cookies())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("metrics status = %d", rec.Code)
+	}
+	return rec.Body.String()
+}
+
 // TestRewriteConsoleHTML pins the console proxy's rewriting contract: only
 // root-absolute asset references are re-pointed under the instance prefix.
 // Relative references and the absence of a <base> tag both matter — the
@@ -195,6 +273,14 @@ func TestServeStaticSPA(t *testing.T) {
 
 func testServer(t *testing.T) http.Handler {
 	t.Helper()
+	handler, _ := testServerWithStore(t)
+	return handler
+}
+
+// testServerWithStore is testServer but also hands back the store, for tests
+// that need to seed data behind the API.
+func testServerWithStore(t *testing.T) (http.Handler, *store.SQLite) {
+	t.Helper()
 	db, err := store.OpenSQLite(filepath.Join(t.TempDir(), "opencuttles.db"))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -205,5 +291,5 @@ func testServer(t *testing.T) http.Handler {
 	authService := auth.NewService(db)
 	orch := orchestrator.NewService(db, noopRunner{}, slog.Default())
 	devices := devicecontrol.NewService(db, nil, slog.Default())
-	return NewServer(db, orch, authService, devices, slog.Default(), false, "")
+	return NewServer(db, orch, authService, devices, slog.Default(), false, ""), db
 }
