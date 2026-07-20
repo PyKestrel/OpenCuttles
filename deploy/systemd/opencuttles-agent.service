@@ -5,10 +5,10 @@ Wants=opencuttles-api.service
 
 [Service]
 Type=simple
-# Adjust User/WorkingDirectory to where the agent project is checked out and built.
-User=atorres
-WorkingDirectory=/home/atorres/opencuttles/agent
-EnvironmentFile=/home/atorres/opencuttles/agent/.env
+User=opencuttles
+Group=opencuttles
+WorkingDirectory=/opt/opencuttles/agent
+EnvironmentFile=-/etc/opencuttles/agent.env
 # The OpenCuttles API reverse-proxies /agents/* to this port.
 Environment=PORT=8790
 # Build the bundle first: `make build-agent` (or `npx flue build --target node`)
@@ -17,6 +17,11 @@ Environment=PORT=8790
 ExecStart=/usr/bin/node dist/server.mjs
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

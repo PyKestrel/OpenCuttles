@@ -5,8 +5,9 @@
   "type": "module",
   "description": "Flue-harnessed cognitive-core agent that drives Android devices via the OpenCuttles MCP tools.",
   "scripts": {
-    "dev": "node --experimental-strip-types --watch server.ts",
-    "start": "node --experimental-strip-types server.ts",
+    "dev": "flue dev --port 8790",
+    "build": "flue build --target node",
+    "start": "node dist/server.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

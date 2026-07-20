@@ -35,13 +35,23 @@ workflows, and richer networking isolation.
 ## Repository Layout
 
 ```text
-backend/          Go API, SQLite store, Cuttlefish orchestration adapters
-frontend/         React + TypeScript dashboard
+backend/          Go API, SQLite store, MCP tool surface, Cuttlefish
+                  orchestration, test-management engine. Embeds the built
+                  frontend and the runner binaries, so it ships as one binary.
+frontend/         React + TypeScript dashboard (embedded into the API binary)
+agent/            Flue-harnessed cognitive-core agent (TypeScript sidecar) that
+                  drives devices in natural language via the MCP tools
+vision/           Florence-2 vision sidecar (Python) for screen grounding
+runner/           Desktop runner (separate cgo-free Go module) that dials home
+                  from Windows/Linux/macOS machines under test
 deploy/proxy/     Caddy reverse proxy template
 deploy/systemd/   systemd unit templates
 docs/             Architecture and acceptance documentation
-scripts/ubuntu/   Ubuntu host readiness checks
+scripts/ubuntu/   Host readiness checks, install/upgrade, backup/restore
 ```
+
+`backend/` and `runner/` are separate Go modules: the runner stays cgo-free so
+it cross-compiles to every desktop target from the appliance.
 
 ## Host Requirements
 
@@ -53,6 +63,19 @@ The target Ubuntu Server VM should provide:
 - Google Cuttlefish host tools installed and on `PATH`.
 - Android platform tools with `adb` installed and on `PATH`.
 - Enough RAM, CPU, and disk for the desired number of Android instances.
+  Budget disk generously: each Android image is 10–20 GB, and test evidence
+  (per-step screenshots and session video) accumulates alongside it.
+
+Only the KVM and Cuttlefish requirements are about *Android*. Desktop testing
+(Windows/Linux/macOS) needs none of them — those machines run the runner and
+dial home, so the appliance never touches their hypervisor.
+
+Build toolchains (installed automatically by `quickstart.sh` when missing):
+
+- Go matching `backend/go.mod` (currently 1.25) — only to build, not to run.
+- Node.js 22 for the dashboard and the agent sidecar. The Flue CLI needs
+  Node ≥ 22.18 for native TypeScript config support.
+- Python 3.10+ with a venv for the optional vision sidecar.
 
 Run the readiness check on the target host:
 
@@ -94,8 +117,8 @@ the machine's IP **and** its hostname without extra configuration (e.g.
 `http://192.168.1.50/`). Use `OPENCUTTLES_ALLOWED_ORIGIN=https://your.domain.example`
 for a real HTTPS hostname, which switches the proxy to a TLS-enabled,
 host-specific block.
-Quickstart installs Go 1.23 and Node.js 22 when the host versions are missing or
-too old.
+Quickstart installs Go 1.25 and Node.js 22 when the host versions are missing or
+too old (Go must satisfy `backend/go.mod`; override with `OPENCUTTLES_GO_VERSION`).
 Quickstart installs `adb` and, if missing, the Google Cuttlefish host packages.
 By default it installs the prebuilt `cuttlefish-base`/`cuttlefish-user` packages
 (Google Artifact Registry first, then the latest GitHub release `.deb` assets),

@@ -32,7 +32,11 @@ HuggingFace cache on first run.
 ## API (model-agnostic contract)
 
 - `POST /point {image, target}` → `{"points": [{"x","y"}]}` — box centers, normalized
-  0–1. Backed by Florence-2 `<OPEN_VOCABULARY_DETECTION>`.
+  0–1. Two-stage: text labels dominate Android UI, so it matches OCR regions
+  (`<OCR_WITH_REGION>`) first and falls back to `<OPEN_VOCABULARY_DETECTION>`
+  for icons and other non-text targets. Whole-image boxes (Florence-2's way of
+  saying "I can't localize this") are discarded rather than returned as a
+  center-screen hit.
 - `POST /query {image, question}` → `{"answer": "..."}` — Florence-2 has no free-form
   VQA, so this returns a detailed caption + on-screen OCR text for the caller to
   reason over (good for presence/text/state questions).

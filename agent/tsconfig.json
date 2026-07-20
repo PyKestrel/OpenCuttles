@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "module": "NodeNext",
+    // The sources import each other with explicit ".ts" specifiers (Node's
+    // type-stripping runtime resolves those directly), so the compiler has to
+    // allow them. NodeNext resolution matches how Node actually loads this ESM
+    // package at runtime.
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    // Typecheck only: `flue build` produces the actual bundle.
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["src", "flue.config.ts"]
+}

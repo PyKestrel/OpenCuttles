@@ -1,7 +1,12 @@
-// Package vision is a client for the OpenCuttles Moondream vision sidecar. It
+// Package vision is a client for the OpenCuttles Florence-2 vision sidecar. It
 // grounds and interprets device screenshots: Point locates a described element
 // (normalized 0-1 coordinates) and Query answers a visual question. It is shared
 // by the MCP agent-vision tools and the deterministic test runner.
+//
+// Query is not true free-form VQA — Florence-2 has no such head, so the sidecar
+// returns a detailed caption plus on-screen OCR text for the caller to reason
+// over. That is enough for presence, text, and state questions; ask_screen
+// routes through the configured LLM when a real answer is needed.
 package vision
 
 import (

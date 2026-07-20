@@ -4,14 +4,23 @@ After=network.target
 
 [Service]
 Type=simple
-# Adjust User/WorkingDirectory to where the vision project is checked out.
-User=atorres
-WorkingDirectory=/home/atorres/opencuttles/vision
+User=opencuttles
+Group=opencuttles
+WorkingDirectory=/opt/opencuttles/vision
 # HuggingFace model id. Swap to microsoft/Florence-2-large for more accuracy.
 Environment=OPENCUTTLES_VISION_MODEL=microsoft/Florence-2-base
-ExecStart=/home/atorres/opencuttles/vision/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8791
+# Model weights are cached here; without it HF defaults to the user's home,
+# which ProtectHome makes unwritable.
+Environment=HF_HOME=/var/lib/opencuttles/huggingface
+ExecStart=/opt/opencuttles/vision/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8791
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/opencuttles
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

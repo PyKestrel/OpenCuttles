@@ -11,7 +11,7 @@ For a new Ubuntu Server host, run:
 OPENCUTTLES_HOSTNAME=testral.cloud bash scripts/ubuntu/quickstart.sh
 ```
 
-The script installs common host dependencies, installs Go 1.23 and Node.js 22
+The script installs common host dependencies, installs Go 1.25 and Node.js 22
 when needed, installs `adb`, installs the Google Cuttlefish host packages if they
 are missing, prepares Go/npm dependencies, builds a single-binary package,
 installs the systemd/Caddy assets, generates a one-time bootstrap token, starts
@@ -43,7 +43,7 @@ HTTPS.
 
 ## 1. Prepare the host
 
-Install Cuttlefish, Android platform tools, Go 1.23+, Node.js 20+, Caddy, UFW, sqlite3,
+Install Cuttlefish, Android platform tools, Go 1.25+, Node.js 22+, Caddy, UFW, sqlite3,
 and rsync using your standard package source, or run:
 
 ```bash

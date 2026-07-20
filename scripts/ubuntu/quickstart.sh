@@ -4,7 +4,11 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 hostname="${OPENCUTTLES_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
 env_file="/etc/opencuttles/opencuttles.env"
-go_version="${OPENCUTTLES_GO_VERSION:-1.23.10}"
+# Must satisfy backend/go.mod's `go 1.25.0`. This was pinned at 1.23.10, which
+# does not: go.mod has no `toolchain` line, so a 1.23 install had to download the
+# 1.25 toolchain mid-build — a surprise network dependency on an appliance that
+# may be firewalled off from proxy.golang.org.
+go_version="${OPENCUTTLES_GO_VERSION:-1.25.12}"
 node_major="${OPENCUTTLES_NODE_MAJOR:-22}"
 
 is_ip_address() {
@@ -41,7 +45,9 @@ sudo apt-get install -y ca-certificates curl git make rsync sqlite3 ufw caddy ta
 sudo useradd --system --create-home --home-dir /var/lib/opencuttles --shell /usr/sbin/nologin opencuttles 2>/dev/null || true
 
 go_bin="$(command -v go || true)"
-if [[ -z "$go_bin" ]] || ! "$go_bin" version | grep -Eq 'go1\.(23|24|25)'; then
+# Accept an existing Go only if it can build backend/go.mod (>= 1.25) on its
+# own; 1.23/1.24 were accepted here but would have to fetch a newer toolchain.
+if [[ -z "$go_bin" ]] || ! "$go_bin" version | grep -Eq 'go1\.(2[5-9]|[3-9][0-9])'; then
   arch="$(dpkg --print-architecture)"
   case "$arch" in
     amd64) go_arch="amd64" ;;
