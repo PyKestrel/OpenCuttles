@@ -33,6 +33,13 @@ fi
 # Idempotent, so an existing env file keeps whatever is already set.
 bash "$(dirname "${BASH_SOURCE[0]}")/ensure-secrets.sh" /etc/opencuttles/opencuttles.env
 sudo install -m 0644 "${release_dir}/deploy/proxy/Caddyfile" /etc/caddy/conf.d/opencuttles.caddy
+
+# Nightly backups, so snapshots don't depend on someone running an upgrade.
+# backup.sh is installed alongside the binary because the unit invokes it there.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+sudo install -m 0755 "${script_dir}/backup.sh" /opt/opencuttles/bin/backup.sh
+sudo install -m 0644 "${release_dir}/deploy/systemd/opencuttles-backup.service" /etc/systemd/system/opencuttles-backup.service
+sudo install -m 0644 "${release_dir}/deploy/systemd/opencuttles-backup.timer" /etc/systemd/system/opencuttles-backup.timer
 if [[ -f /etc/caddy/Caddyfile ]] && sudo grep -q "/usr/share/caddy" /etc/caddy/Caddyfile; then
   echo "$caddy_include_marker" | sudo tee /etc/caddy/Caddyfile >/dev/null
 elif [[ -f /etc/caddy/Caddyfile ]] && ! sudo grep -qF "$caddy_include_marker" /etc/caddy/Caddyfile; then
@@ -44,6 +51,8 @@ fi
 sudo chown -R opencuttles:opencuttles /var/lib/opencuttles /var/log/opencuttles
 sudo systemctl daemon-reload
 sudo systemctl enable --now opencuttles-api
+sudo systemctl enable --now opencuttles-backup.timer
 sudo systemctl reload caddy || sudo systemctl restart caddy
 
 echo "OpenCuttles installed. Visit the configured Caddy hostname and bootstrap the local admin user."
+echo "Nightly backups are enabled (opencuttles-backup.timer -> /var/backups/opencuttles)."

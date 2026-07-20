@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenCuttles backup snapshot
+Documentation=https://github.com/opencuttles/opencuttles
+# Only meaningful once the database exists.
+ConditionPathExists=/var/lib/opencuttles/opencuttles.db
+
+[Service]
+Type=oneshot
+# backup.sh calls sudo internally and reads /etc/opencuttles, so it runs as root.
+EnvironmentFile=-/etc/opencuttles/opencuttles.env
+ExecStart=/opt/opencuttles/bin/backup.sh /var/backups/opencuttles
+# Artifacts (screenshots + video) dominate the snapshot size. Set
+# OPENCUTTLES_SKIP_ARTIFACTS=1 in opencuttles.env to take DB+config only.
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

@@ -220,10 +220,32 @@ downloads. Subsequent instances of the same version reuse the cached image.
 
 ## Backup and restore
 
+`install.sh` enables `opencuttles-backup.timer`, which snapshots nightly at
+03:30 into `/var/backups/opencuttles` and keeps the newest 14
+(`OPENCUTTLES_BACKUP_KEEP`). To take one by hand, or to restore:
+
 ```bash
 bash scripts/ubuntu/backup.sh
 bash scripts/ubuntu/restore.sh /var/backups/opencuttles/opencuttles-YYYYmmddTHHMMSSZ
+
+systemctl list-timers opencuttles-backup.timer
+journalctl -u opencuttles-backup.service
 ```
+
+A snapshot holds `opencuttles.db` (via `sqlite3 .backup`, the only consistent
+way to copy a live WAL database), `config.tar.gz`, and `artifacts.tar.gz` unless
+`OPENCUTTLES_SKIP_ARTIFACTS=1`. Everything is checksummed in `SHA256SUMS`, and
+`restore.sh` refuses to proceed without it.
+
+Restore replaces the database and config, and verifies `PRAGMA integrity_check`
+before starting the API. Test evidence is **not** restored by default, since it
+replaces the whole artifact tree — pass `OPENCUTTLES_RESTORE_ARTIFACTS=1` for
+that.
+
+> `config.tar.gz` contains `opencuttles.env` — the MCP token and
+> `OPENCUTTLES_SECRET_KEY`. Treat snapshots as secrets. It is also what makes
+> them restorable: without `SECRET_KEY`, every stored provider key and runner
+> token in the database is undecryptable.
 
 ## Upgrade and rollback
 

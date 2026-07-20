@@ -378,6 +378,49 @@ func (s *SQLite) listCycleRuns(ctx context.Context, limit, offset int) ([]domain
 	return runs, rows.Err()
 }
 
+// FailStrandedCycleRuns marks cycle runs (and their per-case test runs) that
+// were still 'running' as failed. Call it once at startup.
+//
+// Nothing resumes a run across a restart, so a process that dies mid-cycle
+// leaves the row 'running' forever. That is not just cosmetic: ListDueCycles
+// skips any cycle with a run in flight, so a single restart during a scheduled
+// run silently disables that schedule permanently, with no error anywhere.
+//
+// Returns the number of cycle runs swept so the caller can log it — a nonzero
+// count means the previous shutdown interrupted real work.
+func (s *SQLite) FailStrandedCycleRuns(ctx context.Context, reason string) (int, error) {
+	finished := formatTime(time.Now().UTC())
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Child rows first, so a failure can't leave cases 'running' under a cycle
+	// run that already reads 'failed'.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE test_runs SET status='failed', passed=0, error=?, finished_at=?
+		 WHERE status='running' AND cycle_run_id IN (SELECT id FROM cycle_runs WHERE status='running')`,
+		reason, finished); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx,
+		`UPDATE cycle_runs SET status='failed', finished_at=? WHERE status='running'`,
+		finished)
+	if err != nil {
+		return 0, err
+	}
+	swept, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return int(swept), nil
+}
+
 // DeleteCycleRun removes a cycle run and its per-case test_runs rows. On-disk
 // artifacts are removed by the caller (the store doesn't own the filesystem).
 func (s *SQLite) DeleteCycleRun(ctx context.Context, id string) error {

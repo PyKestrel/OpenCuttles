@@ -22,22 +22,11 @@ type SQLite struct {
 }
 
 func OpenSQLite(path string) (*SQLite, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	for _, pragma := range []string{
-		`PRAGMA journal_mode=WAL`,
-		`PRAGMA busy_timeout=5000`,
-		`PRAGMA foreign_keys=ON`,
-		`PRAGMA synchronous=NORMAL`,
-	} {
-		if _, err := db.Exec(pragma); err != nil {
-			_ = db.Close()
-			return nil, err
-		}
-	}
 
 	store := &SQLite{db: db}
 	if err := store.migrate(context.Background()); err != nil {
@@ -45,6 +34,34 @@ func OpenSQLite(path string) (*SQLite, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+// sqliteDSN builds a file: DSN carrying the connection settings as _pragma
+// parameters.
+//
+// These were previously applied with db.Exec after opening, which sets them on
+// whichever pooled connection happened to serve the call. database/sql may close
+// and reopen connections at will, and a replacement would come up with
+// foreign_keys OFF and no busy_timeout — silently losing FK enforcement and
+// turning lock contention into immediate SQLITE_BUSY errors. As DSN parameters
+// the driver applies them to every connection it opens.
+func sqliteDSN(path string) string {
+	// Only characters that carry meaning in a DSN need escaping; '%' goes first
+	// so the escapes introduced below aren't themselves re-escaped.
+	escaped := filepath.ToSlash(path)
+	for _, r := range []struct{ from, to string }{
+		{"%", "%25"},
+		{"?", "%3F"},
+		{"#", "%23"},
+		{" ", "%20"},
+	} {
+		escaped = strings.ReplaceAll(escaped, r.from, r.to)
+	}
+	return "file:" + escaped +
+		"?_pragma=busy_timeout(5000)" +
+		"&_pragma=foreign_keys(1)" +
+		"&_pragma=journal_mode(WAL)" +
+		"&_pragma=synchronous(1)"
 }
 
 func (s *SQLite) Close() error {
@@ -342,10 +359,23 @@ func (s *SQLite) rebuildTestRunsIfFK(ctx context.Context) error {
 		`ALTER TABLE test_runs_new RENAME TO test_runs`,
 		`CREATE INDEX IF NOT EXISTS idx_test_runs_started_at ON test_runs(started_at DESC)`,
 	}
+	// All of it or none of it. Run unbatched, a crash (or an error) between the
+	// DROP and the RENAME destroys every test run ever recorded and leaves a
+	// database that still opens cleanly, so the loss is silent. SQLite DDL is
+	// transactional, so a single transaction makes the rebuild atomic.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("rebuild test_runs: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	for _, stmt := range stmts {
-		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("rebuild test_runs: %w", err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("rebuild test_runs: %w", err)
 	}
 	return nil
 }

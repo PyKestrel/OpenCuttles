@@ -42,6 +42,14 @@ func main() {
 		logger.Error("reconcile failed", "error", err)
 		os.Exit(1)
 	}
+	// Nothing resumes a test cycle across a restart, and a cycle run left
+	// 'running' blocks its schedule from ever firing again.
+	if swept, err := db.FailStrandedCycleRuns(context.Background(), "interrupted by API restart"); err != nil {
+		logger.Error("sweep stranded cycle runs failed", "error", err)
+		os.Exit(1)
+	} else if swept > 0 {
+		logger.Warn("marked interrupted cycle runs as failed", "count", swept)
+	}
 	server := &http.Server{
 		Addr:              listenAddr,
 		Handler:           api.NewServer(db, service, authService, devices, logger, secureCookies, allowedOrigin),

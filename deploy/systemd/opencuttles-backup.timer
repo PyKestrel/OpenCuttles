@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily OpenCuttles backup snapshot
+Documentation=https://github.com/opencuttles/opencuttles
+
+[Timer]
+# Backups must not depend on someone running an upgrade. Nightly, off-hours.
+OnCalendar=*-*-* 03:30:00
+# Catch up after downtime rather than silently skipping the window.
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
