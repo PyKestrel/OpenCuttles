@@ -152,6 +152,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/android-versions", s.require(domain.PermissionView, s.listAndroidVersions))
 	s.mux.HandleFunc("GET /api/v1/images", s.require(domain.PermissionView, s.listImages))
 	s.mux.HandleFunc("POST /api/v1/images", s.require(domain.PermissionOperate, s.createImage))
+	// Destructive and reclaims tens of GB, so it sits behind admin rather than
+	// the operate permission that covers creation.
+	s.mux.HandleFunc("DELETE /api/v1/images/{id}", s.require(domain.PermissionAdmin, s.deleteImage))
 	s.mux.HandleFunc("GET /api/v1/instances", s.require(domain.PermissionView, s.listInstances))
 	s.mux.HandleFunc("POST /api/v1/instances", s.require(domain.PermissionOperate, s.createInstance))
 	// Prebuilt desktop-runner binaries, offered as a download during onboarding.
@@ -303,7 +306,51 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// maxUploadBytes is the hard ceiling on an upload body (APKs and app builds).
+//
+// ParseMultipartForm's argument is only the in-memory buffer size; everything
+// past it spills to disk with no limit at all, so a single request could fill
+// the appliance's disk and take every service on it down. MaxBytesReader is what
+// actually bounds the body.
+//
+// The default matches the 2 GB cap configured in Caddy, so the proxy and the
+// application agree on the limit and a rejected upload fails the same way at
+// either layer. Real app builds run large -- Android APKs of 100 MB+ are normal.
+func maxUploadBytes() int64 {
+	if raw := os.Getenv("OPENCUTTLES_MAX_UPLOAD_BYTES"); raw != "" {
+		if n, err := strconv.ParseInt(raw, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 2 << 30
+}
+
+// isMaxBytesError reports whether an error came from a body exceeding
+// MaxBytesReader's limit, so the handler can answer 413 rather than a generic
+// 400 that reads like a malformed request.
+func isMaxBytesError(err error) bool {
+	var maxErr *http.MaxBytesError
+	return errors.As(err, &maxErr)
+}
+
+// health is the liveness/readiness probe used by monitoring and by update.sh.
+//
+// It used to return a constant "ok", which made it worse than useless: the store
+// runs with SetMaxOpenConns(1), so a single stuck query wedges every other
+// handler while this endpoint keeps reporting green. Actually touch the database
+// — on a short timeout, so a hung DB fails the probe instead of hanging it too.
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := s.store.Ping(ctx); err != nil {
+		s.logger.Error("health check: database unreachable", "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "degraded",
+			"detail": "database unreachable",
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -496,6 +543,52 @@ func (s *Server) listImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, images)
+}
+
+// deleteImage removes an image and reclaims its disk space.
+//
+// Android images run 10-20 GB each and were previously undeletable, so a busy
+// appliance could fill its disk with no recourse. The delete is refused while
+// any instance still references the image, and the on-disk removal is gated on
+// ValidateImagePath so a tampered or hand-edited row can never point rm at
+// something outside the image root.
+func (s *Server) deleteImage(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	path, err := s.store.DeleteImage(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, store.ErrImageInUse) {
+			writeError(w, clientError{
+				status:  http.StatusConflict,
+				message: "image is still used by an instance; delete the instance first",
+			})
+			return
+		}
+		writeError(w, err)
+		return
+	}
+
+	// The row is gone either way; failing to reclaim the bytes is worth
+	// reporting but must not fail the request or resurrect the image.
+	removed := false
+	if path != "" {
+		if err := store.ValidateImagePath(path, false); err != nil {
+			s.logger.Error("refusing to delete image files outside the image root",
+				"image_id", id, "path", path, "error", err)
+		} else if err := os.RemoveAll(path); err != nil {
+			s.logger.Error("image row deleted but files remain", "image_id", id, "path", path, "error", err)
+		} else {
+			removed = true
+		}
+	}
+
+	principal, _ := principalFromContext(r.Context())
+	outcome, message := "succeeded", "image and files removed: "+path
+	if !removed {
+		outcome, message = "partial", "image row removed but files remain at "+path
+	}
+	s.audit(r, principal, "delete_image", "image", id, outcome, message)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "filesRemoved": removed})
 }
 
 func (s *Server) createImage(w http.ResponseWriter, r *http.Request) {

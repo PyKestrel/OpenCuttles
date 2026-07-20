@@ -171,7 +171,17 @@ func (s *Server) controlLaunchApp(w http.ResponseWriter, r *http.Request) {
 // temp file on the host, and installs it via adb.
 func (s *Server) controlInstallApp(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := r.ParseMultipartForm(512 << 20); err != nil {
+	// Bound the body before parsing: ParseMultipartForm's argument is only the
+	// in-memory buffer, and anything beyond it spills to disk unbounded.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes())
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		if isMaxBytesError(err) {
+			writeError(w, clientError{
+				status:  http.StatusRequestEntityTooLarge,
+				message: "apk exceeds the upload size limit",
+			})
+			return
+		}
 		writeError(w, badRequest("expected multipart apk upload"))
 		return
 	}

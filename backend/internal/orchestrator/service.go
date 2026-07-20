@@ -17,6 +17,7 @@ import (
 
 	"github.com/opencuttles/opencuttles/backend/internal/domain"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
+	"github.com/opencuttles/opencuttles/backend/internal/vision"
 )
 
 type Service struct {
@@ -88,6 +89,25 @@ func (s *Service) Health(ctx context.Context) domain.HealthReport {
 		}
 		checks = append(checks, domain.HealthCheck{Name: prerequisite.Name, Status: checkStatus, Message: prerequisite.Detail})
 	}
+
+	// Disk is the failure the appliance actually hits: Android images run 10-20
+	// GB each and test artifacts accumulate, so surface it before it wedges.
+	if check, degraded := s.diskCheck(); check.Name != "" {
+		checks = append(checks, check)
+		if degraded {
+			status = "degraded"
+		}
+	}
+
+	// The vision sidecar is the grounding engine for every agent test. Without
+	// this probe the dashboard reports green while no test can actually run.
+	if check, degraded := s.visionCheck(ctx); check.Name != "" {
+		checks = append(checks, check)
+		if degraded {
+			status = "degraded"
+		}
+	}
+
 	return domain.HealthReport{Status: status, Checks: checks, GeneratedAt: time.Now().UTC()}
 }
 
@@ -649,6 +669,55 @@ func (s *Service) pathCheck(command, remedy string) domain.Prerequisite {
 	return domain.Prerequisite{Name: command, OK: true, Detail: path}
 }
 
+// diskFreeWarnPercent is the free-space floor below which the appliance reports
+// degraded. A single Cuttlefish image is 10-20 GB, so 10% on a typical appliance
+// disk is roughly "one more image and you are wedged".
+const diskFreeWarnPercent = 10
+
+// diskCheck reports free space on the volume holding the image root. Returns a
+// zero-valued check when free space cannot be determined, so an unsupported
+// platform simply omits the check rather than reporting a false failure.
+func (s *Service) diskCheck() (domain.HealthCheck, bool) {
+	root := imageRootPath()
+	free, total, err := diskFree(root)
+	if err != nil || total == 0 {
+		return domain.HealthCheck{}, false
+	}
+	percent := float64(free) / float64(total) * 100
+	message := fmt.Sprintf("%.1f GiB free of %.1f GiB (%.0f%%) on %s",
+		float64(free)/(1<<30), float64(total)/(1<<30), percent, root)
+
+	if percent < diskFreeWarnPercent {
+		return domain.HealthCheck{
+			Name:    "disk_space",
+			Status:  "failed",
+			Message: message + " — delete unused images or prune artifacts",
+		}, true
+	}
+	return domain.HealthCheck{Name: "disk_space", Status: "ok", Message: message}, false
+}
+
+// visionCheck probes the Florence-2 sidecar. It is only reported when a vision
+// URL is actually configured: on an install that never enabled vision, a failing
+// check would be noise rather than signal.
+func (s *Service) visionCheck(ctx context.Context) (domain.HealthCheck, bool) {
+	client := vision.NewFromEnv()
+	if !client.Configured() {
+		return domain.HealthCheck{}, false
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	if err := client.Ping(probeCtx); err != nil {
+		return domain.HealthCheck{
+			Name:    "vision",
+			Status:  "failed",
+			Message: fmt.Sprintf("%s unreachable: %v — agent tests cannot ground on screen content", client.BaseURL(), err),
+		}, true
+	}
+	return domain.HealthCheck{Name: "vision", Status: "ok", Message: client.BaseURL()}, false
+}
+
 func (s *Service) kvmCheck() domain.Prerequisite {
 	info, err := os.Stat("/dev/kvm")
 	if err != nil {
@@ -708,24 +777,29 @@ func memoryBytes() uint64 {
 	return 0
 }
 
-func (s *Service) diskFreeBytes(ctx context.Context) uint64 {
-	if runtime.GOOS != "linux" {
-		return 0
-	}
-	result, err := s.runner.Run(ctx, "df", "-Pk", "/var/lib")
+// diskFreeBytes reports free space on the volume holding the image root.
+//
+// This used to shell out to `df -Pk /var/lib` and parse the output: it spawned a
+// subprocess per health poll, reported zero on any non-Linux host, and measured
+// /var/lib rather than the configured image root — which is often a separate
+// mount, so the number could describe the wrong filesystem entirely. It now uses
+// the same statfs call as diskCheck.
+func (s *Service) diskFreeBytes(context.Context) uint64 {
+	free, _, err := diskFree(imageRootPath())
 	if err != nil {
 		return 0
 	}
-	lines := strings.Split(result.Output, "\n")
-	if len(lines) < 2 {
-		return 0
+	return free
+}
+
+// imageRootPath is where images live; the volume holding it is what actually
+// fills up.
+func imageRootPath() string {
+	root := strings.TrimSpace(os.Getenv("OPENCUTTLES_IMAGE_ROOT"))
+	if root == "" {
+		root = "/var/lib/opencuttles/images"
 	}
-	fields := strings.Fields(lines[len(lines)-1])
-	if len(fields) < 4 {
-		return 0
-	}
-	kb, _ := strconv.ParseUint(fields[3], 10, 64)
-	return kb * 1024
+	return root
 }
 
 func instanceRoot() string {

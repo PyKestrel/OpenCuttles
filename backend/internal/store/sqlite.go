@@ -523,6 +523,43 @@ func (s *SQLite) GetImage(ctx context.Context, id string) (domain.Image, error) 
 	return scanImage(row)
 }
 
+// ErrImageInUse reports that an image still backs at least one instance.
+var ErrImageInUse = errors.New("image is referenced by an instance")
+
+// CountInstancesUsingImage reports how many instances reference an image.
+func (s *SQLite) CountInstancesUsingImage(ctx context.Context, id string) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM instances WHERE image_id = ?`, id).Scan(&n)
+	return n, err
+}
+
+// DeleteImage removes an image row, refusing while any instance still
+// references it. It returns the on-disk path so the caller can reclaim the
+// space — the store does not own the filesystem.
+//
+// Android images run 10-20 GB each, and until now there was no way to remove one
+// at all, so a busy appliance filled its disk with no recourse short of manual
+// sqlite surgery.
+func (s *SQLite) DeleteImage(ctx context.Context, id string) (string, error) {
+	image, err := s.GetImage(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	// Checked explicitly rather than relying on the FK, so the caller gets an
+	// actionable "still in use" instead of an opaque constraint violation.
+	inUse, err := s.CountInstancesUsingImage(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if inUse > 0 {
+		return "", fmt.Errorf("%w: %d instance(s)", ErrImageInUse, inUse)
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM images WHERE id = ?`, id); err != nil {
+		return "", err
+	}
+	return image.Path, nil
+}
+
 func imageRoot() string {
 	root := strings.TrimSpace(os.Getenv("OPENCUTTLES_IMAGE_ROOT"))
 	if root == "" {

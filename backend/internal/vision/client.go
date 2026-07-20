@@ -87,6 +87,35 @@ func (c *Client) Query(ctx context.Context, png []byte, question string) (string
 	return out.Answer, nil
 }
 
+// Configured reports whether a vision endpoint was actually set, as opposed to
+// falling back to the built-in localhost default.
+func (c *Client) Configured() bool {
+	return strings.TrimSpace(os.Getenv("OPENCUTTLES_VISION_URL")) != ""
+}
+
+// BaseURL is the endpoint this client talks to, for diagnostics.
+func (c *Client) BaseURL() string { return c.baseURL }
+
+// Ping checks the sidecar's /healthz. Used by the health report: vision is the
+// grounding engine for every agent test, so a dead sidecar means no test can
+// run even though everything else looks healthy.
+func (c *Client) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("vision sidecar returned %s", resp.Status)
+	}
+	return nil
+}
+
 func (c *Client) post(ctx context.Context, path string, body any, out any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {

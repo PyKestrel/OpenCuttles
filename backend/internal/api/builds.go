@@ -32,7 +32,17 @@ func (s *Server) listBuilds(w http.ResponseWriter, r *http.Request) {
 // uploadBuild stores an app-under-test artifact for a platform and triggers the
 // on-new-build cycles for that platform.
 func (s *Server) uploadBuild(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(1 << 30); err != nil {
+	// Bound the body before parsing: ParseMultipartForm's argument is only the
+	// in-memory buffer, and anything beyond it spills to disk unbounded.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes())
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		if isMaxBytesError(err) {
+			writeError(w, clientError{
+				status:  http.StatusRequestEntityTooLarge,
+				message: "build exceeds the upload size limit",
+			})
+			return
+		}
 		writeError(w, badRequest("invalid upload"))
 		return
 	}

@@ -89,6 +89,11 @@ export const api = {
       headers: jsonHeaders,
       body: JSON.stringify(payload),
     }),
+  deleteImage: (id: string) =>
+    request<{ status: string; filesRemoved: boolean }>(
+      `/api/v1/images/${encodeURIComponent(id)}`,
+      { method: "DELETE" },
+    ),
   instances: () => request<Instance[]>("/api/v1/instances"),
   createInstance: (payload: CreateInstancePayload) =>
     request<Instance>("/api/v1/instances", {
