@@ -1,4 +1,4 @@
-# MVP Acceptance Checklist
+# Acceptance Checklist
 
 Use this checklist on a prepared Ubuntu Server VM before treating a Testral
 build as merge-ready.
@@ -39,11 +39,19 @@ build as merge-ready.
 
 ## Deployment
 
-- Caddy serves the frontend and proxies `/api/*` to the backend.
+- Caddy terminates TLS and proxies everything to the binary, which serves the
+  embedded SPA, the API, and the console proxy on one port.
 - WebSocket upgrade headers are preserved for console-related routes.
 - ADB ports are not exposed publicly.
 - UFW allows only SSH and HTTPS inbound by default.
 - `scripts/ubuntu/backup.sh` and `scripts/ubuntu/restore.sh` complete successfully.
+- `opencuttles-backup.timer` is enabled and has run (`systemctl list-timers`).
+- **Restore drill:** back up, write more data, restore, and confirm the
+  post-backup writes are *gone* rather than resurrected. This is the check that
+  catches stale-WAL replay, the most likely way to lose data in an incident.
+- Old snapshots are pruned (`opencuttles-*` and `rollback-*` both bounded).
+- Every secret in `opencuttles.env` is a generated value, not a `change-this…`
+  placeholder, and no secret is empty.
 - Upgrade and rollback scripts preserve a rollback snapshot.
 - Service logs are visible through `journalctl -u opencuttles-api`.
 
@@ -57,3 +65,48 @@ build as merge-ready.
 6. Stop the instance.
 7. Delete the instance and confirm its operation history remains visible.
 8. Confirm console access is denied after logout.
+
+## Desktop Runner
+
+- The runner downloads from the dashboard for the target OS and enrolls with a
+  one-time token.
+- It connects **outbound only** — no inbound port is opened on the target.
+- Screenshot, click, type, scroll, right-click, drag, and chord all work.
+  (`["CTRL","C"]` must produce Ctrl+C, not Ctrl+Shift+C.)
+- Auto-start survives a logout/reboot; the Windows tray menu items all work.
+- The device reconnects on its own after the appliance restarts.
+- Revoking/deleting the device stops it from reconnecting.
+
+## Agent and Vision
+
+- The vision sidecar answers `/healthz`, and the health report shows a `vision`
+  check — failing when it is down, absent when it is not configured.
+- An admin can configure a provider and model in the dashboard; "Test
+  connection" succeeds.
+- "Test connection" against a *different* `baseUrl` does **not** send the stored
+  API key.
+- The Agent chat panel drives a real device end to end.
+- With the vision sidecar stopped, agent tests fail loudly rather than silently
+  passing.
+
+## Test Management
+
+- Import cases from QMetry CSV/XLSX; author a cycle; run it manually.
+- A cron-scheduled cycle fires at the expected time in its configured timezone.
+- Uploading a build triggers the cycles bound to that platform.
+- A failing step is recorded as a failure — a crashed or abandoned run must
+  never be reported as a pass.
+- Per-step screenshots and video are captured and visible in the report.
+- JUnit, CSV, and XLSX exports open in their target tools, with no negative
+  durations.
+- The completion webhook fires with the right payload.
+- **Restart mid-run**, then confirm the cycle's schedule still fires afterwards
+  (the stranded-run sweep) and the interrupted run reads `failed`.
+
+## Health and Capacity
+
+- `/api/v1/healthz` returns 503 when the database is unreachable.
+- The health report shows free disk and degrades below the threshold.
+- An unreferenced image can be deleted and its files leave the disk; a
+  referenced one is refused with a clear message.
+- An upload over the size cap is rejected with 413, not a hang or a full disk.

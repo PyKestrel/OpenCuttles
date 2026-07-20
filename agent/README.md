@@ -1,11 +1,18 @@
 # OpenCuttles agent sidecar
 
-A [Flue](https://flueframework.com)-harnessed agent that drives Android devices in
-natural language. It uses a local **MiniCPM5-1B** cognitive core (served by
-Ollama) and the OpenCuttles **MCP** device tools (screenshot, UI tree, tap, type,
-launch_app, …). The agent perceives the screen as the uiautomator accessibility
-tree and acts through the tools; the OpenCuttles API reverse-proxies this
-sidecar's HTTP endpoints under `/agents/*` for the WebUI chat panel.
+A [Flue](https://flueframework.com)-harnessed agent that drives devices in natural
+language — Android over ADB, and Windows/Linux/macOS desktops through the
+dial-home runner. It acts through the Testral **MCP** device tools (screenshot,
+UI tree, tap, click, type, press_chord, launch_app, …), perceiving the screen as
+the accessibility tree plus vision grounding. The API reverse-proxies this
+sidecar's HTTP endpoints under `/agents/*` for the dashboard chat panel.
+
+**The model is configured by an admin in the dashboard**, not here: the sidecar
+reads the provider, model, and decrypted API key from
+`GET /api/v1/agent/runtime` at startup. A local **MiniCPM5-1B** on Ollama is the
+zero-config fallback when nothing is configured — convenient for local
+development, but any OpenAI-, Anthropic-, Google-, or Azure-compatible provider
+works.
 
 Requires **Node ≥ 22.18** (the Flue CLI needs native TypeScript config support).
 

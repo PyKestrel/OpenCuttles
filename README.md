@@ -14,23 +14,33 @@ everywhere. Testral runs on a single Ubuntu Server host with KVM and provides th
 API, inventory, lifecycle tracking, health checks, deployment templates, and
 dashboard.
 
-## MVP Scope
+## Scope
 
-- Manage one Ubuntu Server host.
-- Bootstrap a local admin and protect the API/dashboard with secure sessions.
-- Use an OIDC-ready RBAC model with admin, operator, and viewer roles.
-- Automatically register the default Android image for one-click instance creation.
-- Optionally register additional Android images that can be launched by Cuttlefish.
-- Create, start, stop, and delete local Cuttlefish instances.
-- Track lifecycle state, allocated ports, capacity, health, and operation
-  history in SQLite.
-- Use authenticated, instance-bound Cuttlefish native WebRTC console access.
-- Keep ADB local to the host by default.
-- Provide systemd, reverse proxy, firewall, backup/restore, install, upgrade,
-  rollback, and uninstall assets for production single-host installs.
+**Devices**
 
-Future releases can add ws-scrcpy, multi-host agents, RBAC, image upload
-workflows, and richer networking isolation.
+- Create, start, stop, and delete local Cuttlefish Android instances, with
+  authenticated instance-bound WebRTC console access and ADB kept host-local.
+- Onboard Windows, Linux (X11), and macOS desktops via a runner that connects
+  **outbound only** — no inbound ports on the machine under test.
+- Track lifecycle state, ports, capacity, health, and operation history.
+
+**Agentic testing**
+
+- Drive any device in natural language through the MCP tool surface, with an
+  admin-configurable LLM and Florence-2 vision grounding.
+- Author test cases and cycles (QMetry-shaped), run them on a cron schedule or
+  on new build upload, and capture per-step screenshots and video as evidence.
+- Export JUnit / CSV / XLSX, fire completion webhooks, and surface trends,
+  per-case history, and flakiness.
+
+**Operations**
+
+- Bootstrap a local admin; OIDC-ready RBAC with admin, operator, viewer.
+- systemd, reverse proxy, firewall, nightly backup/restore, install, upgrade,
+  rollback, and uninstall assets for single-host production installs.
+
+Future releases can add ws-scrcpy, multi-host agents, external identity
+providers, image upload workflows, and richer networking isolation.
 
 ## Repository Layout
 
@@ -153,6 +163,37 @@ npm run dev
 ```
 
 The frontend dev server proxies API calls to `http://localhost:8080`.
+
+Agent sidecar (optional — needed for the Agent chat panel and agentic tests):
+
+```bash
+cd agent
+npm install
+npm run typecheck
+npm run dev            # flue dev --port 8790
+```
+
+Vision sidecar (optional — needed for screen grounding):
+
+```bash
+cd vision
+bash install.sh        # creates .venv and installs torch/transformers
+.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8791
+```
+
+Set `OPENCUTTLES_VISION_URL=http://127.0.0.1:8791` for the API to use it; it is
+skipped in the health report when unset.
+
+Desktop runner:
+
+```bash
+cd runner
+go test ./...
+go run . --appliance http://localhost:8080 --token <enrollment-token>
+```
+
+Get an enrollment token by adding a desktop device in the dashboard; `install`
+/ `uninstall` subcommands manage the auto-start entry.
 
 ## Deployment Sketch
 
