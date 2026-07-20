@@ -117,3 +117,37 @@ func TestRateLimiterTripsPerKey(t *testing.T) {
 		t.Fatal("a different action was caught by the login limit")
 	}
 }
+
+// The bootstrap bypass used to key on OPENCUTTLES_SECURE_COOKIES=0, which
+// quickstart sets for every IP-address / single-label-hostname install — a
+// normal production mode. On such a host an empty token meant anyone reaching
+// the port could claim the admin account.
+func TestBootstrapTokenBypassRequiresExplicitDevMode(t *testing.T) {
+	t.Run("insecure cookies alone does not authorize", func(t *testing.T) {
+		t.Setenv("OPENCUTTLES_BOOTSTRAP_TOKEN", "")
+		t.Setenv("OPENCUTTLES_SECURE_COOKIES", "0")
+		t.Setenv("OPENCUTTLES_DEV_MODE", "")
+		if err := validateBootstrapToken(""); err == nil {
+			t.Fatal("an HTTP-mode production install accepted an empty bootstrap token")
+		}
+	})
+
+	t.Run("explicit dev mode authorizes", func(t *testing.T) {
+		t.Setenv("OPENCUTTLES_BOOTSTRAP_TOKEN", "")
+		t.Setenv("OPENCUTTLES_DEV_MODE", "1")
+		if err := validateBootstrapToken(""); err != nil {
+			t.Fatalf("dev mode should allow tokenless bootstrap: %v", err)
+		}
+	})
+
+	t.Run("a configured token still wins over dev mode", func(t *testing.T) {
+		t.Setenv("OPENCUTTLES_BOOTSTRAP_TOKEN", "real-token")
+		t.Setenv("OPENCUTTLES_DEV_MODE", "1")
+		if err := validateBootstrapToken("wrong"); err == nil {
+			t.Fatal("dev mode must not bypass a configured token")
+		}
+		if err := validateBootstrapToken("real-token"); err != nil {
+			t.Fatalf("correct token rejected: %v", err)
+		}
+	})
+}

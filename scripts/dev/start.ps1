@@ -11,6 +11,8 @@ $env:OPENCUTTLES_LISTEN = if ($env:OPENCUTTLES_LISTEN) { $env:OPENCUTTLES_LISTEN
 $env:OPENCUTTLES_DB = $DbPath
 $env:OPENCUTTLES_ALLOWED_ORIGIN = if ($env:OPENCUTTLES_ALLOWED_ORIGIN) { $env:OPENCUTTLES_ALLOWED_ORIGIN } else { "http://localhost:5173" }
 $env:OPENCUTTLES_SECURE_COOKIES = "0"
+# Local dev only: allows claiming the first admin without a bootstrap token.
+$env:OPENCUTTLES_DEV_MODE = "1"
 $env:OPENCUTTLES_EXECUTE_CVD = if ($env:OPENCUTTLES_EXECUTE_CVD) { $env:OPENCUTTLES_EXECUTE_CVD } else { "0" }
 $env:OPENCUTTLES_IMAGE_ROOT = if ($env:OPENCUTTLES_IMAGE_ROOT) { $env:OPENCUTTLES_IMAGE_ROOT } else { $ImageDir }
 

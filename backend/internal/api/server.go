@@ -1127,10 +1127,20 @@ func stripPort(addr string) string {
 	return addr
 }
 
+// validateBootstrapToken authorizes claiming the first admin account.
+//
+// The unauthenticated path exists for local development (scripts/dev/start.sh),
+// but it used to key on OPENCUTTLES_SECURE_COOKIES=0 — which quickstart also
+// sets for every IP-address or single-label-hostname install, i.e. a normal
+// production mode. On such a host, an empty token meant anyone who could reach
+// the port could claim the admin account before the operator did.
+//
+// It now requires an explicit OPENCUTTLES_DEV_MODE=1, which no install path
+// sets, so "convenient for dev" can never be inherited by a real deployment.
 func validateBootstrapToken(token string) error {
 	expected := os.Getenv("OPENCUTTLES_BOOTSTRAP_TOKEN")
 	if expected == "" {
-		if os.Getenv("OPENCUTTLES_SECURE_COOKIES") == "0" {
+		if os.Getenv("OPENCUTTLES_DEV_MODE") == "1" {
 			return nil
 		}
 		return fmt.Errorf("bootstrap token is not configured")

@@ -147,6 +147,11 @@ Then update the token in the agent sidecar's own config so it can reconnect.
 > value becomes undecryptable, so stored provider keys must be re-entered and
 > every desktop device must be re-enrolled. Back this key up.
 
+Claiming the first admin without a bootstrap token is possible only under
+`OPENCUTTLES_DEV_MODE=1`, which is set solely by `scripts/dev/start.sh`. Never
+set it on a deployed appliance: with no token configured it would let anyone who
+can reach the port claim the admin account before you do.
+
 The Caddy config is installed as `/etc/caddy/conf.d/opencuttles.caddy` and the
 installer appends an import line to `/etc/caddy/Caddyfile` if needed. Review the
 site hostname in both Caddy and `OPENCUTTLES_ALLOWED_ORIGIN` before first login.

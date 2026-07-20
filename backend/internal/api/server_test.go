@@ -281,6 +281,12 @@ func testServer(t *testing.T) http.Handler {
 // that need to seed data behind the API.
 func testServerWithStore(t *testing.T) (http.Handler, *store.SQLite) {
 	t.Helper()
+	// Tests bootstrap their admin without a token. That bypass now requires an
+	// explicit dev-mode opt-in, so a production install can't inherit it (see
+	// TestBootstrapTokenBypassRequiresExplicitDevMode). Individual tests can
+	// still override this with their own t.Setenv.
+	t.Setenv("OPENCUTTLES_DEV_MODE", "1")
+
 	db, err := store.OpenSQLite(filepath.Join(t.TempDir(), "opencuttles.db"))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)

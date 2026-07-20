@@ -10,6 +10,9 @@ export OPENCUTTLES_LISTEN="${OPENCUTTLES_LISTEN:-127.0.0.1:8080}"
 export OPENCUTTLES_DB="$db_path"
 export OPENCUTTLES_ALLOWED_ORIGIN="${OPENCUTTLES_ALLOWED_ORIGIN:-http://localhost:5173}"
 export OPENCUTTLES_SECURE_COOKIES=0
+# Allows claiming the first admin without a bootstrap token. Local dev only:
+# no install path sets this, so a real deployment can never inherit it.
+export OPENCUTTLES_DEV_MODE=1
 export OPENCUTTLES_EXECUTE_CVD="${OPENCUTTLES_EXECUTE_CVD:-0}"
 export OPENCUTTLES_IMAGE_ROOT="${OPENCUTTLES_IMAGE_ROOT:-${root_dir}/data/images}"
 
