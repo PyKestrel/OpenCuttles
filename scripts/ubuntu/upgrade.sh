@@ -26,4 +26,21 @@ sudo systemctl daemon-reload
 sudo systemctl start opencuttles-api
 sudo systemctl reload caddy || true
 
+# Each upgrade copies the whole of /opt/opencuttles here. Unpruned, that grows
+# without bound until the appliance runs out of disk — the same failure the
+# nightly backup retention guards against.
+keep_rollbacks="${OPENCUTTLES_ROLLBACK_KEEP:-5}"
+if [[ "$keep_rollbacks" -gt 0 ]]; then
+  mapfile -t stale_rollbacks < <(
+    find /var/backups/opencuttles -mindepth 1 -maxdepth 1 -type d -name 'rollback-*' \
+      | sort -r | tail -n "+$((keep_rollbacks + 1))"
+  )
+  for old in "${stale_rollbacks[@]:-}"; do
+    [[ -n "$old" ]] || continue
+    echo "Pruning old rollback snapshot ${old}"
+    sudo rm -rf "$old"
+  done
+fi
+
 echo "Upgrade complete. Rollback snapshot: ${rollback_dir}"
+echo "Keeping the newest ${keep_rollbacks} rollback snapshots (OPENCUTTLES_ROLLBACK_KEEP)."
