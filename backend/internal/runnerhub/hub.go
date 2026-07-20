@@ -46,6 +46,17 @@ type session struct {
 	mu       sync.Mutex
 	pending  map[string]chan result
 	seq      uint64
+
+	// closed once to force the SSE stream to end, so revoking a credential can
+	// drop a session that is already connected. Without it, revocation would
+	// only stop the *next* dial-in and an attacker's live tunnel would survive.
+	done     chan struct{}
+	doneOnce sync.Once
+}
+
+// close ends the session's stream. Safe to call more than once.
+func (s *session) close() {
+	s.doneOnce.Do(func() { close(s.done) })
 }
 
 func (s *session) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
@@ -124,6 +135,23 @@ func (h *Hub) Online(deviceID string) bool {
 	return ok
 }
 
+// Disconnect drops a device's runner session if one is connected, and reports
+// whether it did. Called when a credential is revoked or rotated so an already
+// established tunnel cannot outlive the credential that opened it.
+func (h *Hub) Disconnect(deviceID string) bool {
+	h.mu.Lock()
+	s := h.sessions[deviceID]
+	if s != nil {
+		delete(h.sessions, deviceID)
+	}
+	h.mu.Unlock()
+	if s == nil {
+		return false
+	}
+	s.close()
+	return true
+}
+
 // Call sends a method to a device's runner and awaits its result.
 func (h *Hub) Call(ctx context.Context, deviceID, method string, params any) (json.RawMessage, error) {
 	h.mu.RLock()
@@ -149,9 +177,17 @@ func (h *Hub) StreamHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s := &session{deviceID: deviceID, outbox: make(chan command, 16), pending: map[string]chan result{}}
+	s := &session{
+		deviceID: deviceID,
+		outbox:   make(chan command, 16),
+		pending:  map[string]chan result{},
+		done:     make(chan struct{}),
+	}
 	h.mu.Lock()
-	h.sessions[deviceID] = s // a fresh stream supersedes any stale one
+	if prev := h.sessions[deviceID]; prev != nil {
+		prev.close() // a fresh stream supersedes any stale one
+	}
+	h.sessions[deviceID] = s
 	h.mu.Unlock()
 	if h.OnOnline != nil {
 		h.OnOnline(deviceID, true)
@@ -179,6 +215,9 @@ func (h *Hub) StreamHandler(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-s.done:
+			// Credential revoked (or superseded by a newer stream).
 			return
 		case cmd := <-s.outbox:
 			data, err := json.Marshal(cmd)

@@ -20,6 +20,11 @@ jobs:
         run: cd backend && go vet ./...
       - name: Test backend
         run: cd backend && go test ./...
+      # The runner hub, orchestrator, and scheduler are all concurrent, and the
+      # store is shared across handlers. -race needs cgo, which is unavailable on
+      # a stock Windows dev machine, so CI is the only place this actually runs.
+      - name: Test backend (race detector)
+        run: cd backend && CGO_ENABLED=1 go test -race ./...
       - name: Build backend
         run: cd backend && go build ./cmd/opencuttles-api
 

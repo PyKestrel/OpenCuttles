@@ -162,6 +162,13 @@ func (s *Server) routes() {
 	// one-line installer works on the target machine, which has no cookie.
 	s.mux.HandleFunc("GET /api/v1/runner/downloads", s.require(domain.PermissionOperate, s.listRunnerDownloads))
 	s.mux.HandleFunc("GET /api/v1/runner/download", s.downloadRunner)
+	// Enrollment-credential management. Registered before the catch-all prefix
+	// routes below; these exact patterns are more specific, so ServeMux prefers
+	// them. Admin-only: a token grants screenshot and input on someone's real
+	// desktop, so issuing one is a higher bar than operating a device.
+	s.mux.HandleFunc("POST /api/v1/instances/{id}/token/rotate", s.require(domain.PermissionAdmin, s.rotateDesktopToken))
+	s.mux.HandleFunc("DELETE /api/v1/instances/{id}/token", s.require(domain.PermissionAdmin, s.revokeDesktopToken))
+
 	s.mux.HandleFunc("GET /api/v1/instances/", s.require(domain.PermissionView, s.instanceRoute))
 	s.mux.HandleFunc("POST /api/v1/instances/", s.require(domain.PermissionOperate, s.instanceRoute))
 	s.mux.HandleFunc("DELETE /api/v1/instances/", s.require(domain.PermissionOperate, s.instanceRoute))
@@ -685,6 +692,80 @@ func (s *Server) onboardDesktop(w http.ResponseWriter, r *http.Request, req doma
 		"instance":        instance,
 		"enrollmentToken": token,
 	})
+}
+
+// rotateDesktopToken issues a new enrollment token for a desktop device and
+// invalidates the old one, returning the plaintext exactly once.
+//
+// Until this existed, an enrollment token was permanent and unrevocable: a
+// leaked token granted screenshot and input on someone's real desktop forever,
+// and the only remedy was deleting the device entirely.
+func (s *Server) rotateDesktopToken(w http.ResponseWriter, r *http.Request) {
+	s.replaceDesktopToken(w, r, true)
+}
+
+// revokeDesktopToken invalidates a desktop device's enrollment token without
+// issuing a replacement. The device stays in the inventory but no runner can
+// authenticate as it until a new token is issued.
+func (s *Server) revokeDesktopToken(w http.ResponseWriter, r *http.Request) {
+	s.replaceDesktopToken(w, r, false)
+}
+
+func (s *Server) replaceDesktopToken(w http.ResponseWriter, r *http.Request, issueNew bool) {
+	id := r.PathValue("id")
+
+	instance, err := s.store.GetInstance(r.Context(), id)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if !isDesktopInstance(instance) {
+		writeError(w, badRequest("only desktop devices use enrollment tokens"))
+		return
+	}
+
+	token, hash := "", ""
+	if issueNew {
+		token, err = newRunnerToken()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		sum := sha256.Sum256([]byte(token))
+		hash = hex.EncodeToString(sum[:])
+	}
+
+	updated, err := s.store.SetDesktopTokenHash(r.Context(), id, hash)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if !updated {
+		writeError(w, clientError{status: http.StatusNotFound, message: "desktop device not found"})
+		return
+	}
+
+	// Drop any live tunnel: the credential that opened it is no longer valid, and
+	// revocation that only takes effect on the next dial-in would leave an
+	// attacker's existing session running indefinitely.
+	disconnected := false
+	if s.runners != nil {
+		disconnected = s.runners.Disconnect(id)
+	}
+
+	action, outcome := "revoke_runner_token", "succeeded"
+	if issueNew {
+		action = "rotate_runner_token"
+	}
+	principal, _ := principalFromContext(r.Context())
+	s.audit(r, principal, action, "instance", id, outcome,
+		fmt.Sprintf("%s (live session dropped: %t)", instance.Name, disconnected))
+
+	body := map[string]any{"status": "ok", "sessionDropped": disconnected}
+	if issueNew {
+		body["enrollmentToken"] = token
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func isDesktopPlatform(p string) bool {

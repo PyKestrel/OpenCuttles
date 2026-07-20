@@ -109,6 +109,20 @@ export const api = {
       headers: jsonHeaders,
       body: JSON.stringify({ name, platform }),
     }),
+  // Issue a fresh enrollment token, invalidating the old one and dropping any
+  // live tunnel. Returns the new plaintext exactly once.
+  rotateRunnerToken: (id: string) =>
+    request<{ status: string; enrollmentToken: string; sessionDropped: boolean }>(
+      `/api/v1/instances/${id}/token/rotate`,
+      { method: "POST" },
+    ),
+  // Invalidate the enrollment token without issuing a replacement. The device
+  // stays in the inventory but no runner can authenticate as it.
+  revokeRunnerToken: (id: string) =>
+    request<{ status: string; sessionDropped: boolean }>(
+      `/api/v1/instances/${id}/token`,
+      { method: "DELETE" },
+    ),
   startInstance: (id: string) =>
     request<{ instance: Instance; operation: Operation }>(`/api/v1/instances/${id}/start`, {
       method: "POST",

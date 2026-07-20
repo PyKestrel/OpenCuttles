@@ -102,3 +102,56 @@ func mockRunner(ctx context.Context, base, device string) {
 		}
 	}
 }
+
+// Revoking a credential must drop a session that is already connected.
+// Otherwise revocation would only stop the *next* dial-in, and an attacker
+// holding a leaked token would keep an open tunnel indefinitely.
+func TestDisconnectDropsLiveSession(t *testing.T) {
+	hub := New()
+	hub.TokenAuth = func(r *http.Request) (string, bool) {
+		id := r.Header.Get("X-Device")
+		return id, id != ""
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /stream", hub.StreamHandler)
+	mux.HandleFunc("POST /result", hub.ResultHandler)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	runnerCtx, runnerCancel := context.WithCancel(context.Background())
+	defer runnerCancel()
+	go mockRunner(runnerCtx, ts.URL, "dev1")
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !hub.Online("dev1") {
+		if time.Now().After(deadline) {
+			t.Fatal("runner never connected")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if !hub.Disconnect("dev1") {
+		t.Fatal("Disconnect reported no session for a connected device")
+	}
+	if hub.Online("dev1") {
+		t.Fatal("device still reports online after Disconnect")
+	}
+	// A command must now fail fast rather than hang waiting on a dead tunnel.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := hub.Call(ctx, "dev1", "screenshot", nil); err == nil {
+		t.Fatal("Call succeeded against a disconnected device")
+	}
+
+	// Disconnecting again is a no-op, not a panic on a double channel close.
+	if hub.Disconnect("dev1") {
+		t.Fatal("second Disconnect reported dropping a session")
+	}
+}
+
+func TestDisconnectUnknownDeviceIsNoop(t *testing.T) {
+	hub := New()
+	if hub.Disconnect("nope") {
+		t.Fatal("Disconnect reported dropping a session for an unknown device")
+	}
+}

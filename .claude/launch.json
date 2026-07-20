@@ -4,7 +4,13 @@
     {
       "name": "frontend-appliance",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--host", "127.0.0.1"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "127.0.0.1"
+      ],
       "cwd": "frontend",
       "env": {
         "OC_API_TARGET": "http://10.1.0.104"
@@ -14,7 +20,10 @@
     {
       "name": "api-local",
       "runtimeExecutable": "go",
-      "runtimeArgs": ["run", "./cmd/opencuttles-api"],
+      "runtimeArgs": [
+        "run",
+        "./cmd/opencuttles-api"
+      ],
       "cwd": "backend",
       "env": {
         "OPENCUTTLES_LISTEN": "127.0.0.1:8080",
@@ -22,14 +31,21 @@
         "OPENCUTTLES_IMAGE_ROOT": "../data/images",
         "OPENCUTTLES_SECURE_COOKIES": "0",
         "OPENCUTTLES_EXECUTE_CVD": "0",
-        "OPENCUTTLES_ALLOWED_ORIGIN": "http://localhost:5173"
+        "OPENCUTTLES_ALLOWED_ORIGIN": "http://localhost:5173",
+        "OPENCUTTLES_DEV_MODE": "1"
       },
       "port": 8080
     },
     {
       "name": "frontend-local",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--host", "127.0.0.1"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--host",
+        "127.0.0.1"
+      ],
       "cwd": "frontend",
       "env": {
         "OC_API_TARGET": "http://127.0.0.1:8080"

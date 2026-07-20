@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Check, Copy, Download, X } from "lucide-react";
+import { Check, Download, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/api";
+import { CopyField } from "@/components/ui/copy-field";
+import { oneLineInstall } from "@/lib/runner-install";
 import type { AndroidVersion, Image, Instance, Platform, RunnerDownload } from "@/types";
 
 const RESOLUTION_PRESETS = [
@@ -309,27 +311,6 @@ function EnrolledView({ instance, token, onDone }: { instance: Instance; token: 
   );
 }
 
-// oneLineInstall builds a copy-paste command that downloads the runner (via the
-// enrollment token, so it works on the target machine with no browser session),
-// then installs it to auto-start at login and connects it now. The token goes in
-// the Authorization header, never the URL.
-function oneLineInstall(platform: string, origin: string, token: string): string {
-  const url = (arch: string) => `${origin}/api/v1/runner/download?platform=${platform}&arch=${arch}`;
-  if (platform === "windows") {
-    return (
-      `$t='${token}'; ` +
-      `iwr '${url("amd64")}' -Headers @{Authorization="Bearer $t"} -OutFile opencuttles-runner.exe; ` +
-      `.\\opencuttles-runner.exe install --appliance '${origin}' --token $t`
-    );
-  }
-  // Linux/macOS: detect the arch (Apple Silicon vs Intel) so one command covers both.
-  return (
-    `T='${token}'; A=$(uname -m); [ "$A" = x86_64 ] && A=amd64; [ "$A" = aarch64 ] && A=arm64; ` +
-    `curl -fsSL -H "Authorization: Bearer $T" '${origin}/api/v1/runner/download?platform=${platform}&arch='"$A" -o opencuttles-runner && ` +
-    `chmod +x opencuttles-runner && ./opencuttles-runner install --appliance '${origin}' --token "$T"`
-  );
-}
-
 function archLabel(arch: string): string {
   if (arch === "arm64") return "Apple Silicon";
   if (arch === "amd64") return "Intel / x64";
@@ -339,28 +320,6 @@ function archLabel(arch: string): string {
 function formatMB(bytes: number): string {
   if (!bytes) return "";
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function CopyField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  const [copied, setCopied] = useState(false);
-  function copy() {
-    void navigator.clipboard?.writeText(value);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  }
-  return (
-    <div>
-      <div className="mb-1 text-[12px] text-muted-foreground">{label}</div>
-      <div className="flex items-stretch gap-2">
-        <code className={cn("min-w-0 flex-1 overflow-x-auto rounded-lg border bg-secondary px-3 py-2 text-[12px] whitespace-nowrap", mono && "font-mono")} style={{ borderColor: "var(--border-strong)" }}>
-          {value}
-        </code>
-        <button onClick={copy} title="Copy" className="grid w-9 shrink-0 place-items-center rounded-lg border bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground" style={{ borderColor: "var(--border-strong)" }}>
-          {copied ? <Check className="size-3.5" style={{ color: "var(--running)" }} /> : <Copy className="size-3.5" />}
-        </button>
-      </div>
-    </div>
-  );
 }
 
 const inputCls = "w-full rounded-lg border bg-secondary px-3 py-2 text-[13px] outline-none focus:border-[var(--ring)]";

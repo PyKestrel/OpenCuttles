@@ -47,6 +47,9 @@ export function DeviceWorkspace({
   const canControl = can(principal, "control");
   const canTest = can(principal, "test");
   const canOperate = can(principal, "operate");
+  // Enrollment credentials grant input on a real machine, so managing them
+  // is admin-only — matching the API routes.
+  const canAdmin = can(principal, "admin");
   const isDesktop = isDesktopPlatform(instance.platform);
   const PlatformIcon = platformIcon(instance.platform || "android");
 
@@ -156,7 +159,7 @@ export function DeviceWorkspace({
           {tab === "logs" && <LogsTab instance={instance} />}
           {tab === "tests" && <TestsPanel instance={instance} instances={instances} scoped />}
           {tab === "configure" && (
-            <ConfigureTab instance={instance} busy={busy} canOperate={canOperate} onDelete={onDelete} />
+            <ConfigureTab instance={instance} busy={busy} canOperate={canOperate} canAdmin={canAdmin} onDelete={onDelete} />
           )}
         </FadeIn>
       </div>

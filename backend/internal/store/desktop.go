@@ -48,6 +48,26 @@ func (s *SQLite) CreateDesktopInstance(ctx context.Context, name, platform, toke
 	return inst, nil
 }
 
+// SetDesktopTokenHash replaces a desktop device's enrollment credential.
+//
+// Passing an empty hash revokes it: no presented token can match, because
+// FindDesktopByTokenHash refuses an empty lookup outright (otherwise a runner
+// sending no token would match every revoked device at once).
+//
+// Returns whether a desktop row was actually updated, so the caller can answer
+// 404 rather than silently succeeding on an unknown or Android device.
+func (s *SQLite) SetDesktopTokenHash(ctx context.Context, id, tokenHash string) (bool, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE instances SET control_token_ciphertext = ?, updated_at = ?
+		 WHERE id = ? AND platform NOT IN ('', 'android')`,
+		tokenHash, formatTime(time.Now().UTC()), id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
 // FindDesktopByTokenHash resolves a runner's presented enrollment token (hashed)
 // to its device. Used to authenticate the dial-home tunnel.
 func (s *SQLite) FindDesktopByTokenHash(ctx context.Context, tokenHash string) (domain.Instance, error) {

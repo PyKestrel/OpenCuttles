@@ -75,7 +75,11 @@ build as merge-ready.
   (`["CTRL","C"]` must produce Ctrl+C, not Ctrl+Shift+C.)
 - Auto-start survives a logout/reboot; the Windows tray menu items all work.
 - The device reconnects on its own after the appliance restarts.
-- Revoking/deleting the device stops it from reconnecting.
+- Rotating the token disconnects the running runner and the **old** token no
+  longer authenticates; the one-liner shown reconnects the machine.
+- Revoking the token disconnects it and no token authenticates until a new one
+  is issued. The device stays in the inventory.
+- Deleting the device stops it from reconnecting.
 
 ## Agent and Vision
 

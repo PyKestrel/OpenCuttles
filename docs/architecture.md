@@ -95,6 +95,11 @@ Enrollment tokens are stored as sha256; the runner's own credential and stored
 provider keys are encrypted at rest with `OPENCUTTLES_SECRET_KEY`
 (AES-256-GCM via `internal/secretbox`).
 
+A token grants screenshot and input on a real machine, so it can be **rotated**
+(new token issued, old one dead) or **revoked** outright from the device's
+Configure tab — admin-only. Both drop any live tunnel immediately: revocation
+that only applied to the next dial-in would leave an existing session running.
+
 ### Test management
 
 A QMetry-shaped model: **TestCase → TestCycle → CycleRun → per-case TestRun**.
@@ -170,7 +175,8 @@ restart, so boot performs two sweeps:
 ## Known limitations
 
 - `SetMaxOpenConns(1)` means one slow query serializes the API.
-- Runner enrollment tokens do not expire and have no revocation path.
+- Runner enrollment tokens can be rotated and revoked, but do not expire on
+  their own.
 - Row-level growth (audit events, step records) is not yet pruned or VACUUMed;
   only on-disk artifacts are.
 
