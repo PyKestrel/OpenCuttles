@@ -106,13 +106,17 @@ if sudo test ! -s "$env_file"; then
   sudo install -m 0640 "${root_dir}/deploy/systemd/opencuttles.env.example" "$env_file"
 fi
 
-bootstrap_token="$(openssl rand -hex 24 2>/dev/null || date +%s%N)"
 sudo sed -i \
   -e "s#^OPENCUTTLES_ALLOWED_ORIGIN=.*#OPENCUTTLES_ALLOWED_ORIGIN=${origin}#" \
-  -e "s#^OPENCUTTLES_BOOTSTRAP_TOKEN=.*#OPENCUTTLES_BOOTSTRAP_TOKEN=${bootstrap_token}#" \
   -e "s#^OPENCUTTLES_SECURE_COOKIES=.*#OPENCUTTLES_SECURE_COOKIES=${secure_cookies}#" \
   -e "s#^OPENCUTTLES_TRUST_PROXY_HEADERS=.*#OPENCUTTLES_TRUST_PROXY_HEADERS=1#" \
   "$env_file"
+
+# Generate every secret (bootstrap + MCP + at-rest key), not just the bootstrap
+# token — a shipped default is a publicly-known credential. install.sh already
+# ran this; re-running is a no-op for values it set.
+bash "${root_dir}/scripts/ubuntu/ensure-secrets.sh" "$env_file"
+bootstrap_token="$(sudo sed -n 's#^OPENCUTTLES_BOOTSTRAP_TOKEN=##p' "$env_file" | head -1)"
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now opencuttles-api

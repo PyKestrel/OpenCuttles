@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -997,16 +998,40 @@ func (s *Server) audit(r *http.Request, principal domain.Principal, action, reso
 	}
 }
 
+// clientIP identifies the caller for rate limiting and audit records.
+//
+// It must return a value stable across a client's connections: r.RemoteAddr is
+// "IP:port", and the port changes every TCP connection, so using it verbatim
+// gave every request its own rate-limit bucket — the login limiter never
+// tripped. Always strip the port.
+//
+// When proxy headers are trusted, take the LAST X-Forwarded-For element rather
+// than the first. Proxies append, so the trailing entry is the one our own Caddy
+// observed; the leading entries are whatever the client sent and are therefore
+// attacker-controlled (they could rotate them to get a fresh bucket every
+// request, and forge audit source IPs).
 func clientIP(r *http.Request) string {
 	if os.Getenv("OPENCUTTLES_TRUST_PROXY_HEADERS") == "1" {
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+			parts := strings.Split(forwarded, ",")
+			if hop := strings.TrimSpace(parts[len(parts)-1]); hop != "" {
+				return stripPort(hop)
+			}
 		}
-		if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-			return strings.TrimSpace(realIP)
+		if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
+			return stripPort(realIP)
 		}
 	}
-	return r.RemoteAddr
+	return stripPort(r.RemoteAddr)
+}
+
+// stripPort removes a trailing :port, leaving a bare host. Values without a port
+// (and IPv6 literals that fail to split) are returned unchanged.
+func stripPort(addr string) string {
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return addr
 }
 
 func validateBootstrapToken(token string) error {

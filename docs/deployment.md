@@ -104,12 +104,48 @@ minimum, set:
 ```bash
 OPENCUTTLES_ALLOWED_ORIGIN=https://your-opencuttles-hostname
 OPENCUTTLES_SECURE_COOKIES=1
-OPENCUTTLES_BOOTSTRAP_TOKEN=generate-a-long-random-one-time-token
 OPENCUTTLES_TRUST_PROXY_HEADERS=1
 OPENCUTTLES_EXECUTE_CVD=1
 OPENCUTTLES_IMAGE_ROOT=/var/lib/opencuttles/images
 OPENCUTTLES_DEFAULT_IMAGE_PATH=/var/lib/opencuttles/images/default
 ```
+
+### Secrets
+
+Three values in that file are real credentials:
+
+| Variable | Grants |
+| --- | --- |
+| `OPENCUTTLES_MCP_TOKEN` | the full MCP tool surface — click/type/screenshot on every device, no session — plus `GET /api/v1/agent/runtime`, which returns the **decrypted** provider API key |
+| `OPENCUTTLES_BOOTSTRAP_TOKEN` | claims the first admin account |
+| `OPENCUTTLES_SECRET_KEY` | encrypts stored provider API keys and desktop runner tokens at rest |
+
+`install.sh` and `quickstart.sh` generate all three via
+`scripts/ubuntu/ensure-secrets.sh`. They ship **empty** in
+`opencuttles.env.example` so a missed generation fails closed rather than
+installing a known credential. The helper is idempotent, so it is safe to re-run
+on an existing appliance to fill in whatever is missing:
+
+```bash
+bash scripts/ubuntu/ensure-secrets.sh
+sudo systemctl restart opencuttles-api
+```
+
+**Upgrading an existing appliance:** the helper only fills in empty or
+`change-this…` placeholder values, so an appliance installed before this change
+keeps whatever it already has — including the old shipped default MCP token.
+Rotate anything that was ever a shipped default, by hand:
+
+```bash
+bash scripts/ubuntu/ensure-secrets.sh --rotate OPENCUTTLES_MCP_TOKEN
+sudo systemctl restart opencuttles-api
+```
+
+Then update the token in the agent sidecar's own config so it can reconnect.
+
+> Do **not** rotate `OPENCUTTLES_SECRET_KEY` casually: every already-encrypted
+> value becomes undecryptable, so stored provider keys must be re-entered and
+> every desktop device must be re-enrolled. Back this key up.
 
 The Caddy config is installed as `/etc/caddy/conf.d/opencuttles.caddy` and the
 installer appends an import line to `/etc/caddy/Caddyfile` if needed. Review the
@@ -149,7 +185,8 @@ journalctl -u opencuttles-api -f
 ```
 
 Open the Caddy hostname in a browser, bootstrap the first local admin user using
-`OPENCUTTLES_BOOTSTRAP_TOKEN`, then rotate or remove the token from
+the `OPENCUTTLES_BOOTSTRAP_TOKEN` value that `ensure-secrets.sh` generated
+(`quickstart.sh` prints it at the end), then remove the token from
 `/etc/opencuttles/opencuttles.env` after the admin exists.
 
 ## Interactive console (WebRTC)

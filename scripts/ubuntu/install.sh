@@ -29,6 +29,9 @@ sudo install -m 0644 "${release_dir}/deploy/systemd/opencuttles-api.service" /et
 if [[ ! -f /etc/opencuttles/opencuttles.env ]]; then
   sudo install -m 0640 "${release_dir}/deploy/systemd/opencuttles.env.example" /etc/opencuttles/opencuttles.env
 fi
+# The example ships every secret EMPTY on purpose; generate real values now.
+# Idempotent, so an existing env file keeps whatever is already set.
+bash "$(dirname "${BASH_SOURCE[0]}")/ensure-secrets.sh" /etc/opencuttles/opencuttles.env
 sudo install -m 0644 "${release_dir}/deploy/proxy/Caddyfile" /etc/caddy/conf.d/opencuttles.caddy
 if [[ -f /etc/caddy/Caddyfile ]] && sudo grep -q "/usr/share/caddy" /etc/caddy/Caddyfile; then
   echo "$caddy_include_marker" | sudo tee /etc/caddy/Caddyfile >/dev/null

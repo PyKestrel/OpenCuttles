@@ -205,22 +205,42 @@ func (s *Server) getAgentRuntime(w http.ResponseWriter, r *http.Request) {
 }
 
 // testAgentModel performs a best-effort reachability/auth check against the
-// configured provider using the submitted config (falling back to the stored
-// key when the request omits one).
+// submitted provider config.
+//
+// The stored key is only reused when the request targets the SAME baseUrl it was
+// saved against. Otherwise this endpoint would decrypt the saved key and send it
+// to any host the caller names — turning "test connection" into key
+// exfiltration (and an SSRF that carries a credential). A test against a new
+// endpoint must supply its own key.
 func (s *Server) testAgentModel(w http.ResponseWriter, r *http.Request) {
 	var req agentModelUpdate
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 		writeError(w, clientError{status: http.StatusBadRequest, message: "invalid request body"})
 		return
 	}
+	baseURL := strings.TrimSpace(req.BaseURL)
 	key := ""
-	if req.APIKey != nil && *req.APIKey != "" {
+	switch {
+	case req.APIKey != nil && *req.APIKey != "":
 		key = *req.APIKey
-	} else if existing, err := s.loadAgentModel(r.Context()); err == nil && existing.KeyCiphertext != "" && s.secrets != nil {
-		key, _ = s.secrets.Open(existing.KeyCiphertext)
+	case s.secrets != nil:
+		existing, err := s.loadAgentModel(r.Context())
+		if err == nil && existing.KeyCiphertext != "" && sameEndpoint(existing.BaseURL, baseURL) {
+			key, _ = s.secrets.Open(existing.KeyCiphertext)
+		}
 	}
-	ok, message := probeProvider(r.Context(), req.API, strings.TrimSpace(req.BaseURL), key)
+	ok, message := probeProvider(r.Context(), req.API, baseURL, key)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": ok, "message": message})
+}
+
+// sameEndpoint reports whether two base URLs address the same provider endpoint,
+// ignoring a trailing slash and case in the scheme/host.
+func sameEndpoint(a, b string) bool {
+	norm := func(s string) string {
+		return strings.ToLower(strings.TrimRight(strings.TrimSpace(s), "/"))
+	}
+	a, b = norm(a), norm(b)
+	return a != "" && a == b
 }
 
 // probeProvider issues a lightweight, read-only request to the provider to
