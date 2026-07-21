@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -82,16 +83,63 @@ func runAgentLoop(appliance, token string, st *agentState) {
 	ctrl := &controller{screen: screen, base: appliance, token: token, installs: map[string]*installState{}}
 	log.Printf("OpenCuttles runner starting — appliance=%s", appliance)
 
+	delay := backoffMin
 	for {
-		if err := runTunnel(appliance, token, ctrl, st); err != nil {
-			log.Printf("tunnel closed: %v — reconnecting in 5s", err)
-		}
+		start := time.Now()
+		err := runTunnel(appliance, token, ctrl, st)
 		st.setConnected(false)
+
+		// A tunnel that stayed up is evidence the appliance is healthy, so the
+		// next blip should retry promptly rather than inherit a long delay.
+		if time.Since(start) >= backoffReset {
+			delay = backoffMin
+		}
+		if err != nil {
+			log.Printf("tunnel closed: %v — reconnecting in %s", err, delay.Round(time.Second))
+		} else {
+			log.Printf("tunnel closed — reconnecting in %s", delay.Round(time.Second))
+		}
+
 		select {
-		case <-time.After(5 * time.Second):
+		case <-time.After(delay):
+			delay = nextBackoff(delay, rand.Float64)
 		case <-st.wake:
+			// Manual reconnect from the tray: the operator is asking for it now,
+			// so honor that and start over from the shortest delay.
+			delay = backoffMin
 		}
 	}
+}
+
+const (
+	backoffMin = 1 * time.Second
+	backoffMax = 60 * time.Second
+	// backoffReset is how long a tunnel must survive to count as healthy.
+	backoffReset = 30 * time.Second
+)
+
+// nextBackoff doubles the delay up to backoffMax and applies ±20% jitter.
+//
+// The previous fixed 5s retry meant that when the appliance restarted, every
+// runner came back in lockstep and kept doing so — a self-synchronizing herd
+// that gets worse with fleet size. Jitter is what breaks the synchronization;
+// the cap keeps a long outage from pushing reconnects out indefinitely.
+//
+// rnd returns a value in [0,1) — injected so this is testable without sleeping.
+func nextBackoff(current time.Duration, rnd func() float64) time.Duration {
+	next := current * 2
+	if next > backoffMax {
+		next = backoffMax
+	}
+	jitter := 1 + (rnd()*0.4 - 0.2) // ±20%
+	next = time.Duration(float64(next) * jitter)
+	if next < backoffMin {
+		next = backoffMin
+	}
+	if next > backoffMax {
+		next = backoffMax
+	}
+	return next
 }
 
 // setupFileLog tees the log to a file next to the installed binary, so the

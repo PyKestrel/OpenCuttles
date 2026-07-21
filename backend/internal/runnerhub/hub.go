@@ -20,9 +20,18 @@ import (
 
 const (
 	sendTimeout = 10 * time.Second
-	callTimeout = 60 * time.Second
-	pingEvery   = 20 * time.Second
-	maxResult   = 48 << 20 // 48 MiB — screenshots can be large
+
+	// callTimeout is a backstop for callers that set no deadline of their own.
+	// Interactive control paths pass a context with a much shorter timeout and
+	// still win, because call selects on ctx.Done() too.
+	//
+	// It must exceed the runner's own result-upload timeout, or the appliance
+	// gives up while a legitimate upload is still in flight — which is what a
+	// large screenshot on a slow uplink looks like.
+	callTimeout = 150 * time.Second
+
+	pingEvery = 20 * time.Second
+	maxResult = 48 << 20 // 48 MiB — screenshots can be large
 )
 
 // command is a request pushed to a runner over the SSE stream.

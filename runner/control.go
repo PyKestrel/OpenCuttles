@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 )
 
 // screen is the platform-specific desktop control surface. Coordinates are in
@@ -179,8 +178,7 @@ func (c *controller) fetchBuild(buildID, filename string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	client := &http.Client{Timeout: 10 * time.Minute}
-	resp, err := client.Do(req)
+	resp, err := httpClient(buildTimeout).Do(req)
 	if err != nil {
 		return "", err
 	}

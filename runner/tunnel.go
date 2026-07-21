@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // command is one control request pushed by the appliance over the SSE stream.
@@ -27,9 +26,8 @@ func runTunnel(base, token string, ctrl *controller, st *agentState) error {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	// A long-lived stream; disable client timeouts.
-	client := &http.Client{Timeout: 0}
-	resp, err := client.Do(req)
+	// A long-lived stream; no client deadline (see streamTimeout).
+	resp, err := httpClient(streamTimeout).Do(req)
 	if err != nil {
 		return err
 	}
@@ -62,6 +60,13 @@ func runTunnel(base, token string, ctrl *controller, st *agentState) error {
 	return fmt.Errorf("stream ended")
 }
 
+// respond executes one command and POSTs its result back.
+//
+// Every failure here is logged. Previously they were all discarded — a result
+// that failed to upload left no trace on the runner at all, while the appliance
+// waited out its call timeout and reported a bare "timed out awaiting". On a LAN
+// that essentially never happens; over a slow or flaky link it is the common
+// failure, and it was close to undiagnosable from either end.
 func respond(base, token string, ctrl *controller, cmd command) {
 	payload := map[string]any{"id": cmd.ID}
 	result, err := ctrl.handle(cmd.Method, cmd.Params)
@@ -70,15 +75,38 @@ func respond(base, token string, ctrl *controller, cmd command) {
 	} else {
 		payload["result"] = result
 	}
-	body, _ := json.Marshal(payload)
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		// The result isn't serializable. Reporting the command as failed is far
+		// better than posting a truncated body the appliance can't decode, which
+		// would strand the command until its timeout.
+		log.Printf("command %s (%s): encoding the result failed: %v", cmd.ID, cmd.Method, err)
+		body, err = json.Marshal(map[string]any{"id": cmd.ID, "error": "runner could not encode the result"})
+		if err != nil {
+			return // unreachable: this payload is two strings
+		}
+	}
+
 	req, err := http.NewRequest(http.MethodPost, base+"/api/v1/runner/result", bytes.NewReader(body))
 	if err != nil {
+		log.Printf("command %s (%s): building the result request failed: %v", cmd.ID, cmd.Method, err)
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 30 * time.Second}
-	if resp, err := client.Do(req); err == nil {
-		resp.Body.Close()
+
+	resp, err := httpClient(resultTimeout).Do(req)
+	if err != nil {
+		log.Printf("command %s (%s): posting the result failed after %d bytes: %v",
+			cmd.ID, cmd.Method, len(body), err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		// A 401 here means the token was revoked mid-flight; the stream will
+		// drop too and the reconnect loop will report it. Worth naming either way.
+		log.Printf("command %s (%s): appliance rejected the result: HTTP %d",
+			cmd.ID, cmd.Method, resp.StatusCode)
 	}
 }
