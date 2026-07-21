@@ -88,6 +88,18 @@ export type Instance = {
 // a desktop running the dial-home runner.
 export type DeviceSource = "cuttlefish" | "physical" | "runner";
 
+// One entry from `adb devices -l` on the appliance, for the registration
+// pick-list. `state` is adb's own word: device, offline, unauthorized,
+// "no permissions".
+export type DiscoveredDevice = {
+  serial: string;
+  state: string;
+  model?: string;
+  product?: string;
+  registered: boolean;
+  registeredAs?: string;
+};
+
 export type Operation = {
   id: string;
   instanceId?: string;

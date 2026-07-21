@@ -63,6 +63,10 @@ type Server struct {
 	secrets       *secretbox.Box
 	runners       *runnerhub.Hub
 	handler       http.Handler
+	// cmdRunner shells out on the appliance (currently only adb discovery).
+	// A field rather than a call to NewExecRunner inline, so the handler can be
+	// tested without depending on what is installed on the machine.
+	cmdRunner devicecontrol.CommandRunner
 }
 
 // operatorPortFromEnv resolves the host-wide cuttlefish-operator HTTPS port.
@@ -99,6 +103,7 @@ func New(store *store.SQLite, orch *orchestrator.Service, authService *auth.Serv
 		secureCookies: secureCookies,
 		allowedOrigin: allowedOrigin,
 		authLimiter:   newRateLimiter(),
+		cmdRunner:     devicecontrol.NewExecRunner(logger),
 	}
 	if assets, ok := web.Assets(); ok {
 		server.webAssets = assets
@@ -168,6 +173,9 @@ func (s *Server) routes() {
 	// Destructive and reclaims tens of GB, so it sits behind admin rather than
 	// the operate permission that covers creation.
 	s.mux.HandleFunc("DELETE /api/v1/images/{id}", s.require(domain.PermissionAdmin, s.deleteImage))
+	// What ADB can see right now, to populate the registration pick-list.
+	// Read-only and assistive: it never creates rows (see listADBDevices).
+	s.mux.HandleFunc("GET /api/v1/adb/devices", s.require(domain.PermissionOperate, s.listADBDevices))
 	s.mux.HandleFunc("GET /api/v1/instances", s.require(domain.PermissionView, s.listInstances))
 	s.mux.HandleFunc("POST /api/v1/instances", s.require(domain.PermissionOperate, s.createInstance))
 	// Prebuilt desktop-runner binaries, offered as a download during onboarding.

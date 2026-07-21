@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -153,5 +154,30 @@ func TestUpdateInstanceDisplay(t *testing.T) {
 	}
 	if stored.DisplayWidth != 1080 || stored.DisplayHeight != 2400 || stored.DPI != 420 {
 		t.Fatalf("display = %dx%d @%d", stored.DisplayWidth, stored.DisplayHeight, stored.DPI)
+	}
+}
+
+// A device-farm appliance may have no Cuttlefish image at all. Registration
+// still routes through GetOrCreateDefaultImage to satisfy the instances.image_id
+// foreign key, so this pins that the placeholder is cosmetic rather than a
+// precondition — without it, a phones-and-desktops-only deployment would be
+// unable to register anything.
+func TestRegistrationWorksWithoutACuttlefishImage(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	t.Setenv("OPENCUTTLES_IMAGE_ROOT", filepath.Join(dir, "images"))
+	t.Setenv("OPENCUTTLES_DEFAULT_IMAGE_PATH", "")
+
+	db, err := OpenSQLite(filepath.Join(dir, "oc.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	if _, err := db.CreatePhysicalAndroid(ctx, "phone", "R5CT30ABCDE"); err != nil {
+		t.Fatalf("registering a handset needs no Cuttlefish image: %v", err)
+	}
+	if _, err := db.CreateDesktopInstance(ctx, "desk", domain.PlatformWindows, "h"); err != nil {
+		t.Fatalf("onboarding a desktop needs no Cuttlefish image: %v", err)
 	}
 }

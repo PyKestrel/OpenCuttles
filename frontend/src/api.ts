@@ -9,6 +9,7 @@ import type {
   CreateImagePayload,
   CreateInstancePayload,
   CycleRun,
+  DiscoveredDevice,
   DeviceTest,
   HealthReport,
   Host,
@@ -101,6 +102,9 @@ export const api = {
       headers: jsonHeaders,
       body: JSON.stringify(payload),
     }),
+  // What ADB can see on the appliance right now. Assistive only — nothing is
+  // registered until the operator picks one.
+  adbDevices: () => request<{ devices: DiscoveredDevice[] }>("/api/v1/adb/devices"),
   // Register a physical Android device. Nothing is provisioned and no token is
   // issued — the appliance only records how to reach it over ADB.
   registerPhysicalAndroid: (name: string, adbTarget: string) =>

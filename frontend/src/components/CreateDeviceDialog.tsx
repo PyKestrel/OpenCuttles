@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/api";
 import { CopyField } from "@/components/ui/copy-field";
 import { oneLineInstall } from "@/lib/runner-install";
-import type { AndroidVersion, Image, Instance, Platform, RunnerDownload } from "@/types";
+import type { AndroidVersion, DiscoveredDevice, Image, Instance, Platform, RunnerDownload } from "@/types";
 
 const RESOLUTION_PRESETS = [
   { id: "phone", label: "Phone · 720 × 1280 (320 dpi)", width: 720, height: 1280, dpi: 320 },
@@ -33,6 +33,10 @@ export function CreateDeviceDialog({
 }) {
   const [mode, setMode] = useState<Mode>("android");
   const [adbTarget, setAdbTarget] = useState("");
+  // Discovery is assistive: a failure here (no adb on the appliance) must not
+  // block registration, so the manual field always stays usable.
+  const [discovered, setDiscovered] = useState<DiscoveredDevice[] | null>(null);
+  const [discoverError, setDiscoverError] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -59,6 +63,18 @@ export function CreateDeviceDialog({
     }).catch(() => undefined);
     api.images().then((im) => setImages(im ?? [])).catch(() => undefined);
   }, [open]);
+
+  useEffect(() => {
+    if (!open || mode !== "physical") return;
+    setDiscoverError("");
+    api
+      .adbDevices()
+      .then((res) => setDiscovered(res.devices ?? []))
+      .catch((err) => {
+        setDiscovered([]);
+        setDiscoverError(err instanceof Error ? err.message : "Could not list ADB devices");
+      });
+  }, [open, mode]);
 
   useEffect(() => {
     if (!open) return;
@@ -239,6 +255,39 @@ export function CreateDeviceDialog({
                 <Field label="Name">
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="pixel-8-lab" />
                 </Field>
+                {discovered && discovered.length > 0 && (
+                  <Field label="Detected on the appliance">
+                    <div className="space-y-1 rounded-lg border p-1" style={{ borderColor: "var(--border-strong)" }}>
+                      {discovered.map((d) => (
+                        <button
+                          key={d.serial}
+                          type="button"
+                          disabled={d.registered}
+                          onClick={() => {
+                            setAdbTarget(d.serial);
+                            if (!name.trim() && d.model) setName(d.model.replace(/_/g, "-").toLowerCase());
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px]",
+                            d.registered ? "opacity-50" : "hover:bg-accent",
+                            adbTarget === d.serial && "bg-brand-weak",
+                          )}
+                        >
+                          <span className="font-mono">{d.serial}</span>
+                          {d.model && <span className="text-muted-foreground">{d.model.replace(/_/g, " ")}</span>}
+                          <span className="ml-auto text-[11px] text-muted-foreground/80">
+                            {d.registered ? `already added${d.registeredAs ? ` as ${d.registeredAs}` : ""}` : d.state}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </Field>
+                )}
+                {discoverError && (
+                  <p className="text-[11.5px] text-muted-foreground/80">
+                    Could not list devices automatically ({discoverError}). Enter the target by hand below.
+                  </p>
+                )}
                 <Field label="ADB target">
                   <Input
                     value={adbTarget}
