@@ -3,4 +3,5 @@ dist/
 .env
 *.log
 .pi/
-package-lock.json
+# package-lock.json is committed (like frontend/), so `npm ci` works in CI and
+# the beta @flue/* pins cannot drift between machines.
