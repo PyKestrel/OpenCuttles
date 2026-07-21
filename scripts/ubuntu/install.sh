@@ -32,7 +32,7 @@ fi
 # The example ships every secret EMPTY on purpose; generate real values now.
 # Idempotent, so an existing env file keeps whatever is already set.
 bash "$(dirname "${BASH_SOURCE[0]}")/ensure-secrets.sh" /etc/opencuttles/opencuttles.env
-sudo install -m 0644 "${release_dir}/deploy/proxy/Caddyfile" /etc/caddy/conf.d/opencuttles.caddy
+bash "$(dirname "${BASH_SOURCE[0]}")/apply-caddyfile.sh" "${release_dir}/deploy/proxy/Caddyfile"
 
 # Nightly backups, so snapshots don't depend on someone running an upgrade.
 # backup.sh is installed alongside the binary because the unit invokes it there.

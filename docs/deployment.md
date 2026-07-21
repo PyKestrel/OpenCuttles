@@ -403,3 +403,11 @@ Manual upgrade/rollback:
 bash scripts/ubuntu/upgrade.sh dist/package
 bash scripts/ubuntu/rollback.sh /var/backups/opencuttles/rollback-YYYYmmddTHHMMSSZ
 ```
+
+An upgrade keeps the host's Caddy site address and its `tls` line, so an HTTPS
+appliance stays on HTTPS. Earlier versions copied the packaged template over
+that file, which reverted the site to plaintext `:80` on every upgrade — and
+since runners refuse plaintext, that showed up as every runner disconnecting
+rather than as anything pointing at Caddy. If an appliance was downgraded that
+way before this fix, re-run `quickstart.sh` to restore the HTTPS block; the
+certificate and its pin are left alone, so enrolled runners keep working.

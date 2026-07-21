@@ -115,6 +115,11 @@ jobs:
           sudo apt-get update && sudo apt-get install -y shellcheck
           # SC1091: sourced files aren't resolvable in isolation.
           shellcheck --severity=error --exclude=SC1091 scripts/ubuntu/*.sh
+      - name: Test the Caddy site-config installer
+        # Guards the HTTPS-to-plaintext downgrade that shipped in upgrade.sh:
+        # a lint pass cannot catch a sed expression that quietly drops a
+        # "tls" line, only running it can.
+        run: bash scripts/ubuntu/apply-caddyfile.test.sh
 
   package:
     runs-on: ubuntu-24.04
