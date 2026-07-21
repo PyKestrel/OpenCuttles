@@ -282,6 +282,27 @@ export type Build = {
   createdAt: string;
 };
 
+// RunnerClientBundle is the client-certificate identity issued when the
+// appliance requires mutual TLS. Present only in that case, and returned exactly
+// once — it carries a private key.
+export type RunnerClientBundle = {
+  clientCertPem: string;
+  clientKeyPem: string;
+  caCertPem: string;
+};
+
+// RunnerEnrollment is everything a device needs to dial home, returned by
+// onboarding and by token rotation alike.
+export type RunnerEnrollment = {
+  enrollmentToken: string;
+  applianceOrigin: string;
+  appliancePin: string;
+  // Present only under mutual TLS. mtlsEndpoint is a separate listener, so it is
+  // the address the runner must dial — not the dashboard origin.
+  clientBundle?: RunnerClientBundle;
+  mtlsEndpoint?: string;
+};
+
 export type ImportResult = {
   casesParsed: number;
   stepsParsed: number;

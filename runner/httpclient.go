@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"net"
 	"net/http"
 	"time"
@@ -59,9 +60,9 @@ var sharedTransport = &http.Transport{
 //
 // Called once from main before any request is made, so every client created by
 // httpClient picks it up. Kept separate from the transport definition because
-// the pin isn't known until flags are parsed.
-func configureTLS(pin []byte, insecure bool) {
-	sharedTransport.TLSClientConfig = tlsConfigFor(pin, insecure)
+// the pin and client identity aren't known until flags are parsed.
+func configureTLS(pin []byte, insecure bool, clientCert *tls.Certificate) {
+	sharedTransport.TLSClientConfig = tlsConfigFor(pin, insecure, clientCert)
 }
 
 // httpClient returns a client for one request class. Callers pass the timeout

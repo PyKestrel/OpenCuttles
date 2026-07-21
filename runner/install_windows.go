@@ -45,6 +45,10 @@ func runInstall(e enrollment) error {
 	if err := copySelf(binPath); err != nil {
 		return fmt.Errorf("copy runner to %s: %w", binPath, err)
 	}
+	// Before anything starts: the runner reads this at launch.
+	if err := installIdentity(e); err != nil {
+		return err
+	}
 
 	if err := autostartRegister(binPath, e); err != nil {
 		return err

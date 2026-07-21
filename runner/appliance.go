@@ -99,21 +99,33 @@ func spkiPin(cert *x509.Certificate) string {
 //     narrower) identity guarantee. Without this mode, appliances reached by IP
 //     address could not use TLS at all, which is exactly what pushed operators
 //     onto plaintext in the first place.
-func tlsConfigFor(pin []byte, insecure bool) *tls.Config {
+// clientCert, when non-nil, is presented to appliances that require mutual TLS.
+// It is ignored by appliances that don't ask for one, so passing it always is
+// safe and means the runner needs no separate "mTLS mode" switch.
+//
+// The bundle's caCertPem is deliberately *not* used as a server trust root. That
+// CA signs runner client certificates only (it is MaxPathLenZero and clientAuth
+// -scoped), while the appliance presents its own certificate on the mTLS
+// listener — the same one ensure-tls.sh generates and publishes a pin for. So
+// the appliance is authenticated by the pin here exactly as on the ordinary
+// port, and the two directions stay independent.
+func tlsConfigFor(pin []byte, insecure bool, clientCert *tls.Certificate) *tls.Config {
+	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	switch {
 	case insecure:
 		// Development escape hatch. main warns loudly when this is set.
-		return &tls.Config{InsecureSkipVerify: true} //nolint:gosec // opt-in, dev only
+		cfg.InsecureSkipVerify = true //nolint:gosec // opt-in, dev only
 	case len(pin) == 0:
-		return &tls.Config{MinVersion: tls.VersionTLS12}
+		// Ordinary verification against the system trust store.
 	default:
-		return &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			//nolint:gosec // not unverified: VerifyPeerCertificate pins the key below.
-			InsecureSkipVerify:    true,
-			VerifyPeerCertificate: verifyPin(pin),
-		}
+		//nolint:gosec // not unverified: VerifyPeerCertificate pins the key below.
+		cfg.InsecureSkipVerify = true
+		cfg.VerifyPeerCertificate = verifyPin(pin)
 	}
+	if clientCert != nil {
+		cfg.Certificates = []tls.Certificate{*clientCert}
+	}
+	return cfg
 }
 
 // verifyPin accepts the handshake only if some presented certificate's public

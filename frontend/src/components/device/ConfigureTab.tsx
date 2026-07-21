@@ -98,7 +98,7 @@ export function ConfigureTab({
 // session running.
 function EnrollmentCard({ instance, canAdmin }: { instance: Instance; canAdmin: boolean }) {
   const [busy, setBusy] = useState(false);
-  const [issued, setIssued] = useState<{ token: string; origin: string; pin: string } | null>(null);
+  const [issued, setIssued] = useState<{ token: string; origin: string; pin: string; bundle: string; dial: string } | null>(null);
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
 
   async function rotate() {
@@ -111,6 +111,9 @@ function EnrollmentCard({ instance, canAdmin }: { instance: Instance; canAdmin: 
         // machine may not resolve the name the operator is browsing with.
         origin: res.applianceOrigin || window.location.origin,
         pin: res.appliancePin || "",
+        // Only present when the appliance requires mutual TLS.
+        bundle: res.clientBundle ? JSON.stringify(res.clientBundle) : "",
+        dial: res.mtlsEndpoint || "",
       });
       toast.success(
         res.sessionDropped
@@ -157,7 +160,7 @@ function EnrollmentCard({ instance, canAdmin }: { instance: Instance; canAdmin: 
             <CopyField label="New enrollment token — shown once" value={issued.token} mono />
             <CopyField
               label={`One-line install for ${instance.name}`}
-              value={oneLineInstall(platformOf(instance), issued.origin, issued.token, issued.pin)}
+              value={oneLineInstall(platformOf(instance), issued.origin, issued.token, issued.pin, issued.bundle, issued.dial)}
               mono
             />
             <p className="text-[11px] text-muted-foreground/80">

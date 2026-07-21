@@ -214,7 +214,7 @@ func TestTLSConfigModes(t *testing.T) {
 	pin, _ := parsePin(spkiPin(cert))
 
 	// No pin: ordinary verification against the system trust store.
-	plain := tlsConfigFor(nil, false)
+	plain := tlsConfigFor(nil, false, nil)
 	if plain.InsecureSkipVerify {
 		t.Error("without a pin, verification must not be skipped")
 	}
@@ -226,7 +226,7 @@ func TestTLSConfigModes(t *testing.T) {
 	// present — that combination is what authenticates a self-signed appliance.
 	// InsecureSkipVerify without a verifier would be a silent downgrade to no
 	// authentication at all, so assert both together.
-	pinned := tlsConfigFor(pin, false)
+	pinned := tlsConfigFor(pin, false, nil)
 	if !pinned.InsecureSkipVerify {
 		t.Error("pinned mode needs InsecureSkipVerify so a self-signed cert is usable")
 	}
@@ -263,7 +263,7 @@ func TestPinnedConnectionAgainstRealTLSServer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pin: %v", err)
 		}
-		configureTLS(pin, false)
+		configureTLS(pin, false, nil)
 		sharedTransport.CloseIdleConnections()
 
 		resp, err := httpClient(resultTimeout).Do(mustGet(t, srv.URL))
@@ -276,7 +276,7 @@ func TestPinnedConnectionAgainstRealTLSServer(t *testing.T) {
 	t.Run("wrong pin is refused", func(t *testing.T) {
 		other := selfSignedCert(t, "somewhere-else")
 		pin, _ := parsePin(spkiPin(other))
-		configureTLS(pin, false)
+		configureTLS(pin, false, nil)
 		sharedTransport.CloseIdleConnections()
 
 		resp, err := httpClient(resultTimeout).Do(mustGet(t, srv.URL))
@@ -293,7 +293,7 @@ func TestPinnedConnectionAgainstRealTLSServer(t *testing.T) {
 		// Without a pin we fall back to the system trust store, which must not
 		// trust a self-signed appliance. This is the case that used to push
 		// operators onto plaintext.
-		configureTLS(nil, false)
+		configureTLS(nil, false, nil)
 		sharedTransport.CloseIdleConnections()
 
 		resp, err := httpClient(resultTimeout).Do(mustGet(t, srv.URL))
@@ -304,7 +304,7 @@ func TestPinnedConnectionAgainstRealTLSServer(t *testing.T) {
 	})
 
 	t.Run("insecure connects to anything", func(t *testing.T) {
-		configureTLS(nil, true)
+		configureTLS(nil, true, nil)
 		sharedTransport.CloseIdleConnections()
 
 		resp, err := httpClient(resultTimeout).Do(mustGet(t, srv.URL))

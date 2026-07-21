@@ -22,6 +22,8 @@
 package main
 
 import (
+	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -43,10 +45,11 @@ func main() {
 	token := fs.String("token", os.Getenv("OPENCUTTLES_ENROLL_TOKEN"), "enrollment token shown in the dashboard when you add this device")
 	pin := fs.String("pin", os.Getenv("OPENCUTTLES_APPLIANCE_PIN"), "appliance certificate pin (sha256/BASE64), shown with the enrollment token; required for a self-signed appliance")
 	insecure := fs.Bool("insecure", false, "allow plaintext HTTP and skip certificate verification — development only, never for a real device")
+	identitySrc := fs.String("identity", os.Getenv("OPENCUTTLES_IDENTITY_FILE"), "path to the client identity bundle from enrollment; only needed when the appliance requires mutual TLS")
 	_ = fs.Parse(rest)
 
 	tok := strings.TrimSpace(*token)
-	e := enrollment{Token: tok, Pin: strings.TrimSpace(*pin), Insecure: *insecure}
+	e := enrollment{Token: tok, Pin: strings.TrimSpace(*pin), Insecure: *insecure, IdentitySrc: strings.TrimSpace(*identitySrc)}
 
 	// Resolve the appliance URL up front so a bad scheme fails immediately with a
 	// clear message, rather than at the first request.
@@ -69,7 +72,11 @@ func main() {
 	} else if len(pinBytes) == 0 {
 		log.Printf("no --pin given; verifying the appliance against the system trust store")
 	}
-	configureTLS(pinBytes, *insecure)
+
+	// The client identity is presented whenever one is present. Appliances that
+	// don't require mutual TLS ignore it, so there is no mode to get wrong.
+	clientCert := loadClientIdentity(e.IdentitySrc)
+	configureTLS(pinBytes, *insecure, clientCert)
 
 	switch sub {
 	case "uninstall":
@@ -95,6 +102,35 @@ func main() {
 	default:
 		log.Fatalf("unknown command %q (expected: install, uninstall, or no command to run)", sub)
 	}
+}
+
+// loadClientIdentity resolves the client certificate for mutual TLS, preferring
+// an explicit --identity path over the installed one.
+//
+// Absence is normal and silent — mutual TLS is opt-in and most appliances don't
+// use it. A file that exists but cannot be used is fatal: continuing would mean
+// dialing an appliance that requires a certificate without one, and failing at
+// the handshake with a TLS error that says nothing about the real cause.
+func loadClientIdentity(explicit string) *tls.Certificate {
+	path := explicit
+	if path == "" {
+		path = identityPath()
+	}
+	cert, err := loadIdentity(path)
+	switch {
+	case errors.Is(err, errNoIdentity):
+		if explicit != "" {
+			// Explicitly asked for, so silence would be wrong.
+			log.Fatalf("no client identity at %s", explicit)
+		}
+		return nil
+	case err != nil:
+		log.Fatalf("%v", err)
+	}
+	if cn, notAfter := certExpiry(cert); cn != "" {
+		log.Printf("presenting the client certificate for device %s (valid until %s)", cn, notAfter)
+	}
+	return cert
 }
 
 func requireCreds(appliance, token string) {

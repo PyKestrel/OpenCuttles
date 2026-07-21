@@ -44,4 +44,67 @@ describe("oneLineInstall", () => {
       expect(cmd, platform).toContain("Authorization");
     }
   });
+
+  describe("mutual TLS", () => {
+    const bundle = JSON.stringify({
+      clientCertPem: "-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----\n",
+      clientKeyPem: "-----BEGIN EC PRIVATE KEY-----\nBBB\n-----END EC PRIVATE KEY-----\n",
+      caCertPem: "-----BEGIN CERTIFICATE-----\nCCC\n-----END CERTIFICATE-----\n",
+    });
+
+    // Without a bundle nothing about the command may change — mutual TLS is off
+    // for almost every deployment.
+    it("adds nothing when there is no bundle", () => {
+      for (const platform of ["windows", "linux"]) {
+        const cmd = oneLineInstall(platform, "https://app.example", "tok");
+        expect(cmd, platform).not.toContain("--identity");
+        expect(cmd, platform).not.toContain("opencuttles-identity.json");
+      }
+    });
+
+    it("writes the bundle, passes --identity, and removes the temp copy", () => {
+      for (const platform of ["windows", "linux"]) {
+        const cmd = oneLineInstall(platform, "https://app.example", "tok", "", bundle);
+        expect(cmd, platform).toContain("--identity opencuttles-identity.json");
+        expect(cmd, platform).toContain(bundle);
+        // The file holds a private key; leaving it in the download directory
+        // after install has copied it elsewhere serves no purpose.
+        expect(cmd, platform).toMatch(/rm -f opencuttles-identity\.json|Remove-Item -Force opencuttles-identity\.json/);
+      }
+    });
+
+    // Windows PowerShell 5.1 is the default shell on Windows 10/11 and writes a
+    // UTF-8 BOM with `Set-Content -Encoding utf8`. A BOM makes Go's JSON decoder
+    // reject the bundle, so the command must not use that.
+    it("writes the Windows file without a BOM", () => {
+      const cmd = oneLineInstall("windows", "https://app.example", "tok", "", bundle);
+      expect(cmd).toContain("[IO.File]::WriteAllText");
+      expect(cmd).not.toContain("Set-Content");
+    });
+
+    // The mTLS listener is a separate port, so the runner must dial that rather
+    // than the dashboard origin — while the download still comes from the origin,
+    // because no certificate exists yet to authenticate with.
+    it("dials the mTLS endpoint but downloads from the origin", () => {
+      const cmd = oneLineInstall("linux", "https://app.example", "tok", "", bundle, "https://app.example:8443");
+      expect(cmd).toContain("--appliance 'https://app.example:8443'");
+      expect(cmd).toContain("'https://app.example/api/v1/runner/download");
+    });
+
+    // Everything is single-quoted, which is only safe while no value can contain
+    // a quote. A quote would close the string and splice the rest into the shell.
+    it("refuses values containing a single quote", () => {
+      expect(() => oneLineInstall("linux", "https://app.example", "tok'; rm -rf /; echo '")).toThrow();
+      expect(() => oneLineInstall("linux", "https://app.example", "tok", "", `{"a":"it's"}`)).toThrow();
+    });
+
+    // JSON.stringify escapes the PEM's newlines, so the whole command stays on
+    // one line — a literal newline would truncate it at the paste boundary.
+    it("stays a single line", () => {
+      for (const platform of ["windows", "linux"]) {
+        const cmd = oneLineInstall(platform, "https://app.example", "tok", "", bundle);
+        expect(cmd.includes("\n"), platform).toBe(false);
+      }
+    });
+  });
 });

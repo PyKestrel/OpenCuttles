@@ -53,7 +53,7 @@ export function CreateDeviceDialog({
 
   // Desktop
   const [desktopOS, setDesktopOS] = useState<DesktopOS>("windows");
-  const [enrolled, setEnrolled] = useState<{ instance: Instance; token: string; origin: string; pin: string } | null>(null);
+  const [enrolled, setEnrolled] = useState<{ instance: Instance; token: string; origin: string; pin: string; bundle: string; dial: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -150,6 +150,9 @@ export function CreateDeviceDialog({
         // origin may be a name the target machine cannot resolve.
         origin: res.applianceOrigin || window.location.origin,
         pin: res.appliancePin || "",
+        // Only present when the appliance requires mutual TLS.
+        bundle: res.clientBundle ? JSON.stringify(res.clientBundle) : "",
+        dial: res.mtlsEndpoint || "",
       });
       onCreated(res.instance);
     } catch (err) {
@@ -170,7 +173,7 @@ export function CreateDeviceDialog({
         </div>
 
         {enrolled ? (
-          <EnrolledView instance={enrolled.instance} token={enrolled.token} origin={enrolled.origin} pin={enrolled.pin} onDone={close} />
+          <EnrolledView instance={enrolled.instance} token={enrolled.token} origin={enrolled.origin} pin={enrolled.pin} bundle={enrolled.bundle} dial={enrolled.dial} onDone={close} />
         ) : (
           <div className="p-5">
             {/* mode toggle */}
@@ -337,7 +340,7 @@ export function CreateDeviceDialog({
   );
 }
 
-function EnrolledView({ instance, token, origin, pin, onDone }: { instance: Instance; token: string; origin: string; pin: string; onDone: () => void }) {
+function EnrolledView({ instance, token, origin, pin, bundle, dial, onDone }: { instance: Instance; token: string; origin: string; pin: string; bundle: string; dial: string; onDone: () => void }) {
   const isWindows = instance.platform === "windows";
 
   const [runners, setRunners] = useState<RunnerDownload[] | null>(null);
@@ -347,7 +350,7 @@ function EnrolledView({ instance, token, origin, pin, onDone }: { instance: Inst
   }, []);
   // Only the builds for this device's platform are relevant (macOS has two archs).
   const forPlatform = (runners ?? []).filter((r) => r.platform === instance.platform);
-  const oneLine = oneLineInstall(instance.platform, origin, token, pin);
+  const oneLine = oneLineInstall(instance.platform, origin, token, pin, bundle, dial);
 
   async function grab(arch: string) {
     try {

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"strings"
 	"syscall"
@@ -205,9 +206,20 @@ func (ws *wizardState) onInstall() {
 		messageBox(ws.hwnd, "That certificate pin isn't valid:\n\n"+err.Error(), "Check the pin", mbIconError)
 		return
 	}
+	// The wizard has no field for a client-certificate bundle, so it uses one
+	// already saved at the default path if there is one. An appliance requiring
+	// mutual TLS is enrolled through the dashboard one-liner, which passes
+	// --identity; this only keeps the GUI path working when the bundle was put
+	// in place separately.
+	clientCert, err := loadIdentity(identityPath())
+	if err != nil && !errors.Is(err, errNoIdentity) {
+		messageBox(ws.hwnd, "The saved client identity could not be used:\n\n"+err.Error(),
+			"Check the client identity", mbIconError)
+		return
+	}
 	// The install starts the runner immediately, so TLS has to be configured
 	// before it dials home.
-	configureTLS(pinBytes, false)
+	configureTLS(pinBytes, false, clientCert)
 
 	e := enrollment{Appliance: appliance, Token: token, Pin: pin}
 	if err := runInstall(e); err != nil {

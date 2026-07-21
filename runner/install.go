@@ -81,6 +81,36 @@ type enrollment struct {
 	Pin string
 	// Insecure allows plaintext and skips verification. Development only.
 	Insecure bool
+	// IdentitySrc is where the client-certificate bundle was supplied from, if
+	// the appliance requires mutual TLS. Unlike the fields above it never reaches
+	// the auto-start entry: install copies the file to identityPath() and the
+	// runner reads it from there. PEM blocks are multi-line and would not survive
+	// a registry value or a .desktop Exec line, and keeping them out of argv is
+	// also what preserves quotedArgs' no-escaping-needed invariant.
+	IdentitySrc string
+}
+
+// installIdentity copies the enrollment bundle to the runner's stable path, so
+// an auto-started run finds it without any argument.
+//
+// A no-op when no bundle was supplied, which is the normal case: mutual TLS is
+// opt-in. When one *was* supplied, a failure is returned rather than warned
+// about — an install that silently drops the identity produces a device that
+// enrolls successfully and then cannot connect, which is a much worse experience
+// than failing here.
+func installIdentity(e enrollment) error {
+	if e.IdentitySrc == "" {
+		return nil
+	}
+	dst := identityPath()
+	if sameFile(e.IdentitySrc, dst) {
+		return nil
+	}
+	raw, err := os.ReadFile(e.IdentitySrc)
+	if err != nil {
+		return fmt.Errorf("reading the client identity from %s: %w", e.IdentitySrc, err)
+	}
+	return saveIdentity(dst, raw)
 }
 
 // runArgs is the argument list the auto-start entry runs the binary with.

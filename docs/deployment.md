@@ -224,6 +224,28 @@ record on every connection, so revoking a device stops its certificate working
 immediately. Certificates are also short-lived, so a lost machine's key expires
 on its own.
 
+**On the device.** The one-line install carries the certificate bundle, writes it
+beside the downloaded binary, passes `--identity` to `install`, and deletes the
+temp copy. `install` stores it as `runner-identity.json` next to the runner
+(mode `600`), and every subsequent start reads it from there — the auto-start
+entry gains no new arguments, because PEM blocks do not survive a registry value
+or a `.desktop` Exec line.
+
+From then on the runner presents the certificate whenever it has one. Appliances
+that don't require mutual TLS ignore it, so there is no mode to set and nothing
+to keep in sync. Note the download step still authenticates with the bearer
+token alone: no certificate exists until enrollment finishes, so that endpoint
+cannot require one.
+
+Client certificates last 90 days. Rotating a device's token reissues the
+certificate along with it, which is the intended renewal path — a device whose
+certificate expires stops connecting and needs a rotation to come back.
+
+> The Windows install **wizard** (double-clicking the binary) has no field for a
+> certificate bundle. Under mutual TLS, enroll through the dashboard one-liner
+> instead; the wizard will use an identity file only if one was already placed at
+> the path above.
+
 ### Secrets
 
 Three values in that file are real credentials:
