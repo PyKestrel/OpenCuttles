@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Camera, MonitorPlay, Play, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { can } from "@/lib/permissions";
-import { isDesktopPlatform, platformIcon } from "@/lib/platform";
+import { isLive, isProvisioned, platformIcon } from "@/lib/platform";
 import { FadeIn } from "@/components/Motion";
 import { SummaryTab } from "@/components/device/SummaryTab";
 import { LogsTab } from "@/components/device/LogsTab";
 import { ConfigureTab } from "@/components/device/ConfigureTab";
 import { ConsoleWorkspace, type ConsolePane } from "@/components/device/ConsoleWorkspace";
-import { DesktopConsole } from "@/components/device/DesktopConsole";
+import { ScreenshotConsole } from "@/components/device/ScreenshotConsole";
 import { TestsPanel } from "@/components/tests/TestsPanel";
 import { api } from "@/api";
 import type { Instance, Principal, TestRun } from "@/types";
@@ -50,16 +50,21 @@ export function DeviceWorkspace({
   // Enrollment credentials grant input on a real machine, so managing them
   // is admin-only — matching the API routes.
   const canAdmin = can(principal, "admin");
-  const isDesktop = isDesktopPlatform(instance.platform);
+  // Three independent questions that the old single `isDesktop` conflated.
+  // A physical Android handset makes the difference visible: it is not a
+  // desktop, but it also has no start/stop lifecycle and no WebRTC console.
+  const provisioned = isProvisioned(instance);           // has start/stop
+  const webrtcConsole = instance.consoleProvider === "cuttlefish-webrtc";
+  const isAndroid = (instance.platform || "android") === "android"; // has logcat
   const PlatformIcon = platformIcon(instance.platform || "android");
 
   const tabs = useMemo(() => {
     const t: DeviceTab[] = ["summary", "console"];
     if (canTest) t.push("tests");
-    if (canControl && !isDesktop) t.push("logs"); // logcat is Android-only
+    if (canControl && isAndroid) t.push("logs"); // logcat is Android-only
     t.push("configure");
     return t;
-  }, [canControl, canTest, isDesktop]);
+  }, [canControl, canTest, isAndroid]);
 
   // Summary shortcuts can jump straight to a console pane (Controls or Agent).
   function openTab(next: DeviceTab, pane?: ConsolePane) {
@@ -97,13 +102,15 @@ export function DeviceWorkspace({
         </span>
         <h1 className="text-[18px] font-semibold tracking-tight">{instance.name}</h1>
         <span className="font-mono text-[12px] text-muted-foreground/70">
-          {isDesktop ? instance.platform : instance.deviceId || instance.id}
+          {provisioned ? instance.deviceId || instance.id : instance.adbTarget || instance.platform}
         </span>
         <span className="mx-1 w-px" style={{ background: "var(--border)", height: 22 }} />
-        {isDesktop ? (
-          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium" style={{ color: instance.state === "online" ? "var(--running)" : "var(--stopped)" }}>
-            <span className="size-2 rounded-full" style={{ background: instance.state === "online" ? "var(--running)" : "var(--stopped)" }} />
-            {instance.state === "online" ? "Online" : "Offline"}
+        {!provisioned ? (
+          // Nothing to start or stop: a desktop comes online when its runner
+          // dials home, a handset when ADB can reach it.
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium" style={{ color: isLive(instance) ? "var(--running)" : "var(--stopped)" }}>
+            <span className="size-2 rounded-full" style={{ background: isLive(instance) ? "var(--running)" : "var(--stopped)" }} />
+            {isLive(instance) ? "Online" : "Offline"}
           </span>
         ) : (
           <div className="flex gap-0.5">
@@ -151,10 +158,13 @@ export function DeviceWorkspace({
         <FadeIn id={tab}>
           {tab === "summary" && <SummaryTab instance={instance} latestRun={latestRun} onOpenTab={openTab} />}
           {tab === "console" &&
-            (isDesktop ? (
-              <DesktopConsole instance={instance} canControl={canControl} pane={consolePane} onPane={setConsolePane} />
-            ) : (
+            // Keyed on the console the device actually offers, not on its
+            // platform: a physical handset is Android but has no WebRTC stream,
+            // so the old platform test would have sent it to the wrong console.
+            (webrtcConsole ? (
               <ConsoleWorkspace instance={instance} canControl={canControl} pane={consolePane} onPane={setConsolePane} />
+            ) : (
+              <ScreenshotConsole instance={instance} canControl={canControl} pane={consolePane} onPane={setConsolePane} />
             ))}
           {tab === "logs" && <LogsTab instance={instance} />}
           {tab === "tests" && <TestsPanel instance={instance} instances={instances} scoped />}

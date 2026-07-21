@@ -12,11 +12,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { api } from "@/api";
-import { platformLabel } from "@/lib/platform";
+import { PLATFORMS, platformLabel } from "@/lib/platform";
 import type { Build, Platform, Principal, TestCase, TestCycle } from "@/types";
 import { can } from "@/lib/permissions";
 
-const PLATFORMS: Platform[] = ["android", "windows", "linux", "macos"];
 const NONE = "__none__";
 
 // The viewer's IANA zone, offered as a one-click default so a cron doesn't

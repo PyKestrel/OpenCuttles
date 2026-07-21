@@ -75,7 +75,18 @@ export type Instance = {
   lastError?: string;
   createdAt: string;
   updatedAt: string;
+
+  // Where the device comes from, as distinct from what OS it runs. Absent means
+  // "cuttlefish" (rows predating the field). A physical handset is still
+  // platform:"android" — the two answer different questions.
+  source?: DeviceSource;
+  // How ADB addresses a physical device: a USB serial, or host:port.
+  adbTarget?: string;
 };
+
+// A Cuttlefish VM the appliance provisions, a real handset it only talks to, or
+// a desktop running the dial-home runner.
+export type DeviceSource = "cuttlefish" | "physical" | "runner";
 
 export type Operation = {
   id: string;

@@ -17,7 +17,10 @@ const RESOLUTION_PRESETS = [
 ];
 
 type DesktopOS = Exclude<Platform, "android">;
-type Mode = "android" | "desktop";
+// Three ways a device joins: a VM the appliance launches, a real handset it
+// only talks to over ADB, or a desktop running the dial-home runner. These are
+// genuinely different flows — only the last issues a credential.
+type Mode = "android" | "physical" | "desktop";
 
 export function CreateDeviceDialog({
   open,
@@ -29,6 +32,7 @@ export function CreateDeviceDialog({
   onCreated: (instance: Instance) => void;
 }) {
   const [mode, setMode] = useState<Mode>("android");
+  const [adbTarget, setAdbTarget] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -102,6 +106,21 @@ export function CreateDeviceDialog({
     }
   }
 
+  async function registerPhysical(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const instance = await api.registerPhysicalAndroid(name.trim(), adbTarget.trim());
+      onCreated(instance);
+      close();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to register device");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onboardDesktop(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -140,7 +159,7 @@ export function CreateDeviceDialog({
           <div className="p-5">
             {/* mode toggle */}
             <div className="mb-4 inline-flex rounded-lg border p-0.5" style={{ background: "var(--secondary)" }}>
-              {(["android", "desktop"] as Mode[]).map((m) => (
+              {(["android", "physical", "desktop"] as Mode[]).map((m) => (
                 <button
                   key={m}
                   onClick={() => { setMode(m); setError(""); }}
@@ -150,7 +169,7 @@ export function CreateDeviceDialog({
                   )}
                   style={mode === m ? { background: "var(--card)", boxShadow: "var(--card-shadow)" } : undefined}
                 >
-                  {m === "android" ? "Android (deploy)" : "Desktop (onboard)"}
+                  {m === "android" ? "Virtual" : m === "physical" ? "Phone" : "Desktop"}
                 </button>
               ))}
             </div>
@@ -207,6 +226,35 @@ export function CreateDeviceDialog({
                   <Button type="button" onClick={close}>Cancel</Button>
                   <Button variant="primary" disabled={busy || !name.trim() || (!androidVersion && !imageId)}>
                     {busy ? "Deploying…" : "Deploy device"}
+                  </Button>
+                </div>
+              </form>
+            ) : mode === "physical" ? (
+              <form className="space-y-3.5" onSubmit={registerPhysical}>
+                <p className="text-[12px] leading-relaxed text-muted-foreground">
+                  Register a real Android device the appliance can reach over ADB. Nothing is
+                  installed on the phone and no VM is launched — Testral only records how to
+                  talk to it, and shows it online once ADB can see it.
+                </p>
+                <Field label="Name">
+                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="pixel-8-lab" />
+                </Field>
+                <Field label="ADB target">
+                  <Input
+                    value={adbTarget}
+                    onChange={(e) => setAdbTarget(e.target.value)}
+                    placeholder="R5CT30ABCDE or 192.168.1.42:5555"
+                  />
+                </Field>
+                <p className="text-[11.5px] leading-relaxed text-muted-foreground/80">
+                  Use the USB serial from <code className="font-mono">adb devices</code>, or
+                  <code className="font-mono"> host:port</code> for a device on the network. USB
+                  is preferred: adb over TCP is unauthenticated on the LAN.
+                </p>
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button type="button" onClick={close}>Cancel</Button>
+                  <Button variant="primary" disabled={busy || !name.trim() || !adbTarget.trim()}>
+                    {busy ? "Registering…" : "Register device"}
                   </Button>
                 </div>
               </form>

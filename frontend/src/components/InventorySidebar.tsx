@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Activity, BookMarked, ChevronDown, ChevronRight, FlaskConical, History, ImageIcon, Laptop, ListChecks, Monitor, MonitorSmartphone, Package, Plus, Server, Smartphone, Terminal } from "lucide-react";
+import { Activity, BookMarked, ChevronDown, ChevronRight, FlaskConical, History, ImageIcon, ListChecks, MonitorSmartphone, Package, Plus, Server } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StatusDot } from "@/components/StatusDot";
+import { PLATFORMS, platformIcon, platformLabel } from "@/lib/platform";
 import type { Host, Instance, Platform } from "@/types";
 
 export type InventoryView = "devices" | "cases" | "cycles" | "runs" | "builds" | "tests" | "images" | "activity";
@@ -17,13 +18,13 @@ const VIEWS: { id: InventoryView; label: string; Icon: typeof MonitorSmartphone 
   { id: "activity", label: "Activity", Icon: Activity },
 ];
 
-// Platform groups, in display order. Android first (the original product).
-const PLATFORMS: { id: Platform; label: string; Icon: typeof Monitor }[] = [
-  { id: "android", label: "Android", Icon: Smartphone },
-  { id: "windows", label: "Windows", Icon: Monitor },
-  { id: "linux", label: "Linux", Icon: Terminal },
-  { id: "macos", label: "macOS", Icon: Laptop },
-];
+// Platform groups, in display order. Derived from the shared list rather than
+// restated, so adding a platform is a one-line change instead of a hunt.
+const PLATFORM_GROUPS = PLATFORMS.map((id) => ({
+  id,
+  label: platformLabel(id),
+  Icon: platformIcon(id),
+}));
 
 export function InventorySidebar({
   host,
@@ -47,7 +48,7 @@ export function InventorySidebar({
   const [openHost, setOpenHost] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const groups = PLATFORMS.map((p) => ({
+  const groups = PLATFORM_GROUPS.map((p) => ({
     ...p,
     devices: instances.filter((i) => (i.platform || "android") === p.id),
   })).filter((g) => g.devices.length > 0);

@@ -8,11 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/api";
-import { platformLabel } from "@/lib/platform";
+import { PLATFORMS, platformLabel } from "@/lib/platform";
 import type { Build, Platform, Principal } from "@/types";
 import { can } from "@/lib/permissions";
 
-const PLATFORMS: Platform[] = ["android", "windows", "linux", "macos"];
 const EXT: Record<Platform, string> = { android: ".apk", windows: ".exe,.msi", linux: ".deb,.rpm,.AppImage,.run,.sh", macos: ".dmg,.pkg,.zip" };
 
 export function BuildsView({ principal }: { principal: Principal }) {

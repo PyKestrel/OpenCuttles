@@ -2,16 +2,21 @@ import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "re
 import { cn } from "@/lib/utils";
 import { AgentTab } from "@/components/device/AgentTab";
 import { api } from "@/api";
+import { isLive, usesRunnerTunnel } from "@/lib/platform";
 import type { Instance } from "@/types";
 
 type Pane = "controls" | "agent";
 
 const KEYS = ["ENTER", "TAB", "ESC", "BACKSPACE", "DELETE", "UP", "DOWN", "LEFT", "RIGHT"];
 
-// The desktop operation workspace: a live, clickable screenshot on the left
-// (clicks and typing are injected via the runner tunnel) with a Controls / Agent
-// switcher on the right — mirroring the Android console layout.
-export function DesktopConsole({
+// A screenshot-based operation workspace: a live, clickable screenshot on the
+// left with a Controls / Agent switcher on the right.
+//
+// Used by every device without a WebRTC stream — desktops driven over the runner
+// tunnel, and physical Android handsets driven over ADB. The component was
+// already transport-agnostic (it goes through the same control routes either
+// way); only its name and its offline message assumed a desktop.
+export function ScreenshotConsole({
   instance,
   canControl,
   pane,
@@ -22,7 +27,13 @@ export function DesktopConsole({
   pane: Pane;
   onPane: (p: Pane) => void;
 }) {
-  const online = instance.state === "online" || instance.state === "running";
+  const online = isLive(instance);
+  // Why a device is offline depends on how it is reached, and the fix is
+  // completely different: start a runner, or plug in a phone and accept the
+  // debugging prompt.
+  const offlineHelp = usesRunnerTunnel(instance)
+    ? "This device is offline. Start its runner — the Configure tab shows the install command — to bring it online."
+    : "This device is offline. Check that it is connected and that USB debugging is authorized on the device itself; the appliance polls for it every few seconds.";
 
   return (
     <div className="flex flex-col gap-4 xl:h-[720px] xl:flex-row">
@@ -37,7 +48,14 @@ export function DesktopConsole({
           <ScreenView instance={instance} />
         ) : (
           <div className="grid size-full place-items-center bg-secondary/40 px-6 text-center text-[13.5px] text-muted-foreground">
-            <p className="max-w-xs">This device is offline. Start its runner (dashboard → the device shows the enrollment command) to bring it online.</p>
+            <div className="max-w-xs space-y-2">
+              <p>{offlineHelp}</p>
+              {instance.lastError ? (
+                // The poller records exactly why — an unaccepted debugging
+                // prompt reads very differently from a missing cable.
+                <p className="text-[12.5px] text-muted-foreground/80">{instance.lastError}</p>
+              ) : null}
+            </div>
           </div>
         )}
       </div>

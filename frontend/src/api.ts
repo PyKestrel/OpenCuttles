@@ -101,6 +101,14 @@ export const api = {
       headers: jsonHeaders,
       body: JSON.stringify(payload),
     }),
+  // Register a physical Android device. Nothing is provisioned and no token is
+  // issued — the appliance only records how to reach it over ADB.
+  registerPhysicalAndroid: (name: string, adbTarget: string) =>
+    request<Instance>("/api/v1/instances", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ name, platform: "android", source: "physical", adbTarget }),
+    }),
   // Onboard a desktop target; returns the one-time enrollment token the runner
   // presents to dial home. Same endpoint, keyed by platform.
   onboardDesktop: (name: string, platform: Exclude<Platform, "android">) =>
