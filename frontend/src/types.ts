@@ -289,6 +289,19 @@ export type ImportResult = {
   warnings: string[];
 };
 
+// DraftResult holds cases proposed from a specification. Nothing here has been
+// saved: the reviewer accepts, edits, or rejects each one, and only the accepted
+// ones are written. Drafts arrive without an id for exactly that reason.
+export type DraftResult = {
+  cases: DraftCase[];
+  warnings: string[];
+  // dropped counts proposals the backend discarded as unusable (no summary, no
+  // steps). Shown so a short list of drafts is not mistaken for a short spec.
+  dropped: number;
+};
+
+export type DraftCase = Omit<TestCase, "id" | "createdAt" | "updatedAt">;
+
 export type AgentModelPreset = {
   label: string;
   providerId: string;

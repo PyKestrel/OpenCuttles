@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookMarked, ChevronDown, ChevronRight, Copy, Download, FolderPlus, FolderTree, ListPlus, MoreHorizontal, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
+import { BookMarked, ChevronDown, ChevronRight, Copy, Download, FolderPlus, FolderTree, ListPlus, MoreHorizontal, Pencil, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/api";
 import type { CaseHealth, Principal, TestCase, TestCycle, TestStep } from "@/types";
 import { can } from "@/lib/permissions";
+import { SpecDraftDialog } from "./SpecDraftDialog";
 
 const emptyCase: Partial<TestCase> = { summary: "", labels: [], components: [], steps: [] };
 
@@ -90,6 +91,7 @@ export function CasesView({ principal }: { principal: Principal }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Partial<TestCase> | null>(null);
   const [addToCycleIds, setAddToCycleIds] = useState<string[] | null>(null);
+  const [drafting, setDrafting] = useState(false);
   const [health, setHealth] = useState<Map<string, CaseHealth>>(new Map());
   const fileRef = useRef<HTMLInputElement>(null);
   const canTest = can(principal, "test");
@@ -313,6 +315,9 @@ export function CasesView({ principal }: { principal: Principal }) {
             <Button variant="secondary" onClick={() => fileRef.current?.click()}>
               <Upload className="size-3.5" /> Import QMetry
             </Button>
+            <Button variant="secondary" onClick={() => setDrafting(true)}>
+              <Sparkles className="size-3.5" /> From spec
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="secondary" disabled={cases.length === 0}>
@@ -419,6 +424,17 @@ export function CasesView({ principal }: { principal: Principal }) {
       {editing && <CaseEditor initial={editing} onClose={() => setEditing(null)} onSave={save} />}
       {addToCycleIds && (
         <AddToCycleDialog count={addToCycleIds.length} cycles={cycles} onClose={() => setAddToCycleIds(null)} onPick={(id) => addToCycle(id, addToCycleIds)} />
+      )}
+      {drafting && (
+        <SpecDraftDialog
+          folder={folder}
+          onClose={() => setDrafting(false)}
+          onSaved={(n) => {
+            setDrafting(false);
+            toast.success(`Saved ${n} case${n === 1 ? "" : "s"} from the specification`);
+            refresh();
+          }}
+        />
       )}
     </div>
   );

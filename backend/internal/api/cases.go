@@ -32,6 +32,7 @@ func (s *Server) registerCaseRoutes() {
 	m.HandleFunc("POST /api/v1/cases/folders", t(s.createCaseFolder))
 	m.HandleFunc("DELETE /api/v1/cases/folders", t(s.deleteCaseFolder))
 	m.HandleFunc("POST /api/v1/cases/import", t(s.importCases))
+	m.HandleFunc("POST /api/v1/cases/draft", t(s.draftCases))
 	m.HandleFunc("GET /api/v1/cases/export", t(s.exportCases))
 	m.HandleFunc("GET /api/v1/cases/health", t(s.caseHealth))
 	m.HandleFunc("GET /api/v1/cases/{id}", t(s.getCase))

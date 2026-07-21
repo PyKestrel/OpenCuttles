@@ -10,6 +10,7 @@ import type {
   CreateInstancePayload,
   CycleRun,
   DiscoveredDevice,
+  DraftResult,
   DeviceTest,
   HealthReport,
   Host,
@@ -263,6 +264,20 @@ export const api = {
     form.append("file", file);
     return request<ImportResult>("/api/v1/cases/import", { method: "POST", body: form });
   },
+  // draftCasesFromFile/Text return proposals only — nothing is saved until the
+  // reviewer accepts, at which point each accepted case goes through createCase.
+  draftCasesFromFile: (file: File, folderPath?: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (folderPath) form.append("folder", folderPath);
+    return request<DraftResult>("/api/v1/cases/draft", { method: "POST", body: form });
+  },
+  draftCasesFromText: (text: string, folderPath?: string) =>
+    request<DraftResult>("/api/v1/cases/draft", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ text, folderPath }),
+    }),
   caseHealth: () => request<CaseHealth[]>("/api/v1/cases/health"),
   exportCases: (format: "csv" | "xlsx", folder?: string) =>
     download(
