@@ -550,7 +550,7 @@ func (s *SQLite) AppendStep(ctx context.Context, runID string, step domain.StepR
 
 // ---- Builds ----
 
-const buildColumns = `id, platform, filename, path, size_bytes, version, status, note, created_at`
+const buildColumns = `id, platform, filename, path, size_bytes, version, status, note, created_at, sha256`
 
 func (s *SQLite) CreateBuild(ctx context.Context, b domain.Build) (domain.Build, error) {
 	b.ID = newID("build")
@@ -558,8 +558,8 @@ func (s *SQLite) CreateBuild(ctx context.Context, b domain.Build) (domain.Build,
 	if b.Status == "" {
 		b.Status = "uploaded"
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO builds (`+buildColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		b.ID, b.Platform, b.Filename, b.Path, b.SizeBytes, b.Version, b.Status, b.Note, formatTime(b.CreatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO builds (`+buildColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		b.ID, b.Platform, b.Filename, b.Path, b.SizeBytes, b.Version, b.Status, b.Note, formatTime(b.CreatedAt), b.SHA256)
 	return b, err
 }
 
@@ -597,17 +597,17 @@ func (s *SQLite) UpdateBuildStatus(ctx context.Context, id, status, note string)
 	return err
 }
 
-// SetBuildLocation records the stored artifact path + size after the upload is
-// streamed to disk.
-func (s *SQLite) SetBuildLocation(ctx context.Context, id, path string, size int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE builds SET path=?, size_bytes=? WHERE id=?`, path, size, id)
+// SetBuildLocation records the stored artifact path, size, and content hash
+// after the upload is streamed to disk.
+func (s *SQLite) SetBuildLocation(ctx context.Context, id, path string, size int64, sha256 string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE builds SET path=?, size_bytes=?, sha256=? WHERE id=?`, path, size, sha256, id)
 	return err
 }
 
 func scanBuild(row scanner) (domain.Build, error) {
 	var b domain.Build
 	var created string
-	if err := row.Scan(&b.ID, &b.Platform, &b.Filename, &b.Path, &b.SizeBytes, &b.Version, &b.Status, &b.Note, &created); err != nil {
+	if err := row.Scan(&b.ID, &b.Platform, &b.Filename, &b.Path, &b.SizeBytes, &b.Version, &b.Status, &b.Note, &created, &b.SHA256); err != nil {
 		return domain.Build{}, err
 	}
 	b.CreatedAt = parseTime(created)

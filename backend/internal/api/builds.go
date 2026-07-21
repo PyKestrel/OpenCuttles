@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"os"
@@ -88,7 +90,11 @@ func (s *Server) uploadBuild(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	size, copyErr := io.Copy(dst, file)
+	// Hash while streaming to disk: the runner downloads this artifact and
+	// executes it, so it needs something to verify against. Doing it here costs
+	// nothing extra — the bytes are already passing through.
+	hasher := sha256.New()
+	size, copyErr := io.Copy(io.MultiWriter(dst, hasher), file)
 	_ = dst.Close()
 	if copyErr != nil {
 		writeError(w, copyErr)
@@ -96,7 +102,8 @@ func (s *Server) uploadBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	build.Path = dstPath
 	build.SizeBytes = size
-	_ = s.store.SetBuildLocation(r.Context(), build.ID, dstPath, size)
+	build.SHA256 = hex.EncodeToString(hasher.Sum(nil))
+	_ = s.store.SetBuildLocation(r.Context(), build.ID, dstPath, size, build.SHA256)
 
 	principal, _ := principalFromContext(r.Context())
 	s.audit(r, principal, "upload_build", "build", build.ID, "succeeded", build.Filename)

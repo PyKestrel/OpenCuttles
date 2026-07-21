@@ -688,9 +688,12 @@ func (s *Server) onboardDesktop(w http.ResponseWriter, r *http.Request, req doma
 	}
 	principal, _ := principalFromContext(r.Context())
 	s.audit(r, principal, "onboard_device", "instance", instance.ID, "accepted", req.Platform)
+	origin, pin := enrollmentTLS()
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"instance":        instance,
 		"enrollmentToken": token,
+		"applianceOrigin": origin,
+		"appliancePin":    pin,
 	})
 }
 
@@ -763,9 +766,28 @@ func (s *Server) replaceDesktopToken(w http.ResponseWriter, r *http.Request, iss
 
 	body := map[string]any{"status": "ok", "sessionDropped": disconnected}
 	if issueNew {
+		origin, pin := enrollmentTLS()
 		body["enrollmentToken"] = token
+		body["applianceOrigin"] = origin
+		body["appliancePin"] = pin
 	}
 	writeJSON(w, http.StatusOK, body)
+}
+
+// enrollmentTLS returns what a runner needs to reach this appliance securely:
+// the canonical origin it should dial, and the certificate pin when the
+// appliance uses a self-signed certificate.
+//
+// The dashboard embeds both in the install one-liner. Using the configured
+// origin rather than whatever host the browser happens to be on matters: an
+// operator may reach the dashboard by a name the runner cannot resolve, or over
+// a scheme the runner now refuses.
+//
+// The pin is not a secret — it identifies the appliance, it does not
+// authenticate to it.
+func enrollmentTLS() (origin, pin string) {
+	return strings.TrimRight(strings.TrimSpace(os.Getenv("OPENCUTTLES_ALLOWED_ORIGIN")), "/"),
+		strings.TrimSpace(os.Getenv("OPENCUTTLES_TLS_PIN"))
 }
 
 func isDesktopPlatform(p string) bool {
@@ -822,6 +844,13 @@ func (s *Server) runnerBuildArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+build.Filename+"\"")
+	// The runner executes this file, so give it something to verify against.
+	// Builds uploaded before the hash column existed have none; the runner
+	// treats an absent hash as "cannot verify" and says so rather than silently
+	// trusting the bytes.
+	if build.SHA256 != "" {
+		w.Header().Set("X-Artifact-SHA256", build.SHA256)
+	}
 	http.ServeFile(w, r, build.Path)
 }
 

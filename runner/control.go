@@ -1,13 +1,17 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -194,10 +198,29 @@ func (c *controller) fetchBuild(buildID, filename string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(tmp, resp.Body); err != nil {
+
+	// Hash while downloading and check it before the caller executes this file.
+	// TLS already authenticates the appliance, but this is what catches a
+	// tampered or truncated artifact — including one corrupted at rest on the
+	// appliance, which TLS says nothing about.
+	want := strings.ToLower(strings.TrimSpace(resp.Header.Get("X-Artifact-SHA256")))
+	hasher := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(tmp, hasher), resp.Body); err != nil {
 		tmp.Close()
+		os.Remove(tmp.Name())
 		return "", err
 	}
 	tmp.Close()
+
+	got := hex.EncodeToString(hasher.Sum(nil))
+	switch {
+	case want == "":
+		// Uploaded before the appliance recorded hashes. Proceed, but say so —
+		// this is an unverified executable, and silence would hide that.
+		log.Printf("build %s: appliance sent no checksum, cannot verify this artifact before running it", buildID)
+	case !strings.EqualFold(want, got):
+		os.Remove(tmp.Name())
+		return "", fmt.Errorf("build %s failed checksum: expected %s, got %s — refusing to run it", buildID, want, got)
+	}
 	return tmp.Name(), nil
 }

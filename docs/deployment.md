@@ -33,8 +33,12 @@ The stable release branch is used because the `aosp-main` tip can transiently
 lack the device `-img-` artifact on its newest build. Note the build-target name
 differs by branch: `aosp-main` uses `aosp_cf_x86_64_phone`, while the release and
 GSI branches use `aosp_cf_x86_64_only_phone`.
-Single-label hostnames and IP addresses default to HTTP, for example
-`OPENCUTTLES_HOSTNAME=opencuttles`. Fully qualified domains default to HTTPS.
+**Everything defaults to HTTPS.** A fully qualified domain gets an ACME
+certificate from Caddy; a single-label hostname or IP address gets a self-signed
+certificate plus a published pin (see *TLS and desktop runners* below). This used
+to fall back to plain HTTP for those, which made plaintext the default for the
+most common install. `OPENCUTTLES_HTTP=1` still opts out, for throwaway
+appliances only.
 Set `OPENCUTTLES_ALLOWED_ORIGIN=https://your.domain.example` to force the exact
 browser origin.
 Enable HSTS only for real HTTPS domains. Do not send HSTS for local names such as
@@ -109,6 +113,42 @@ OPENCUTTLES_EXECUTE_CVD=1
 OPENCUTTLES_IMAGE_ROOT=/var/lib/opencuttles/images
 OPENCUTTLES_DEFAULT_IMAGE_PATH=/var/lib/opencuttles/images/default
 ```
+
+### TLS and desktop runners
+
+Desktop runners refuse plaintext. This channel carries device control **and**
+build artifacts that the runner downloads and executes, so a MITM on `http://`
+means code execution on the target machine, not just eavesdropping.
+
+* **Real domain** — Caddy obtains a certificate via ACME. Runners verify against
+  the system trust store and need no pin. Nothing extra to do.
+* **IP address or single-label hostname** — no public CA will issue for those, so
+  `quickstart.sh` mints a self-signed certificate via
+  `scripts/ubuntu/ensure-tls.sh` and publishes its public-key pin as
+  `OPENCUTTLES_TLS_PIN`. The dashboard embeds that pin in the install command it
+  shows for each device, and the runner authenticates the appliance by it.
+
+The pin is **not a secret** — it identifies the appliance; it does not
+authenticate to it. It covers the public key rather than the certificate, so
+re-issuing with the same key keeps every enrolled runner working.
+
+```bash
+bash scripts/ubuntu/ensure-tls.sh 10.1.0.104     # idempotent; prints the pin
+```
+
+> Regenerating the certificate (`--force`, or deleting `/etc/opencuttles/tls`)
+> invalidates the pin every enrolled runner holds, and they will refuse to
+> reconnect until re-enrolled with the new one. The script will not do it
+> accidentally.
+
+`OPENCUTTLES_HTTP=1` still forces plaintext for throwaway development
+appliances. Runners then need `--insecure`, which they warn about on every
+start. Never use it for a device that matters.
+
+Build artifacts are hashed on upload and the hash is served with the download;
+the runner verifies it before executing the file. Artifacts uploaded before this
+existed have no hash — the runner logs that it cannot verify them rather than
+failing.
 
 ### Secrets
 

@@ -45,7 +45,7 @@ export function CreateDeviceDialog({
 
   // Desktop
   const [desktopOS, setDesktopOS] = useState<DesktopOS>("windows");
-  const [enrolled, setEnrolled] = useState<{ instance: Instance; token: string } | null>(null);
+  const [enrolled, setEnrolled] = useState<{ instance: Instance; token: string; origin: string; pin: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -108,7 +108,14 @@ export function CreateDeviceDialog({
     setError("");
     try {
       const res = await api.onboardDesktop(name.trim(), desktopOS);
-      setEnrolled({ instance: res.instance, token: res.enrollmentToken });
+      setEnrolled({
+        instance: res.instance,
+        token: res.enrollmentToken,
+        // The appliance tells us how runners should reach it; the browser's own
+        // origin may be a name the target machine cannot resolve.
+        origin: res.applianceOrigin || window.location.origin,
+        pin: res.appliancePin || "",
+      });
       onCreated(res.instance);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to onboard device");
@@ -128,7 +135,7 @@ export function CreateDeviceDialog({
         </div>
 
         {enrolled ? (
-          <EnrolledView instance={enrolled.instance} token={enrolled.token} onDone={close} />
+          <EnrolledView instance={enrolled.instance} token={enrolled.token} origin={enrolled.origin} pin={enrolled.pin} onDone={close} />
         ) : (
           <div className="p-5">
             {/* mode toggle */}
@@ -233,8 +240,7 @@ export function CreateDeviceDialog({
   );
 }
 
-function EnrolledView({ instance, token, onDone }: { instance: Instance; token: string; onDone: () => void }) {
-  const origin = window.location.origin;
+function EnrolledView({ instance, token, origin, pin, onDone }: { instance: Instance; token: string; origin: string; pin: string; onDone: () => void }) {
   const isWindows = instance.platform === "windows";
 
   const [runners, setRunners] = useState<RunnerDownload[] | null>(null);
@@ -244,7 +250,7 @@ function EnrolledView({ instance, token, onDone }: { instance: Instance; token: 
   }, []);
   // Only the builds for this device's platform are relevant (macOS has two archs).
   const forPlatform = (runners ?? []).filter((r) => r.platform === instance.platform);
-  const oneLine = oneLineInstall(instance.platform, origin, token);
+  const oneLine = oneLineInstall(instance.platform, origin, token, pin);
 
   async function grab(arch: string) {
     try {

@@ -15,20 +15,41 @@ is_ip_address() {
   [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
+# Everything is HTTPS unless the operator explicitly asks for plaintext.
+#
+# This used to fall back to http:// for any IP address or single-label hostname,
+# because no public CA will issue a certificate for those. That made plaintext
+# the default for the most common install — and desktop runners then carried
+# device control and executable build artifacts over it. Those appliances now
+# get a self-signed certificate plus a published key pin instead (see
+# ensure-tls.sh); runners authenticate the appliance by that pin.
+self_signed_tls=0
 if [[ -n "${OPENCUTTLES_ALLOWED_ORIGIN:-}" ]]; then
   origin="$OPENCUTTLES_ALLOWED_ORIGIN"
-elif [[ "${OPENCUTTLES_HTTP:-0}" == "1" || "$hostname" != *.* ]] || is_ip_address "$hostname"; then
+  if [[ "$origin" != http://* ]] && { [[ "$hostname" != *.* ]] || is_ip_address "$hostname"; }; then
+    self_signed_tls=1
+  fi
+elif [[ "${OPENCUTTLES_HTTP:-0}" == "1" ]]; then
+  # Explicit opt-out, for throwaway/dev appliances only.
   origin="http://${hostname}"
+elif [[ "$hostname" != *.* ]] || is_ip_address "$hostname"; then
+  origin="https://${hostname}"
+  self_signed_tls=1
 else
   origin="https://${hostname}"
 fi
 
-# For HTTP (local hostnames / IP addresses) bind Caddy to all hosts on :80 so
-# the dashboard is reachable by hostname OR by the machine's IP. For a real
-# HTTPS domain, keep a host-specific block so automatic TLS works.
+# Plain HTTP binds every host on :80 so the dashboard is reachable by hostname
+# or IP. HTTPS uses a host-specific block: a real FQDN gets automatic ACME, and
+# an IP/local hostname gets the self-signed certificate written above.
 if [[ "$origin" == http://* ]]; then
   site_address=":80"
   secure_cookies="0"
+  echo
+  echo "WARNING: OPENCUTTLES_HTTP=1 — the dashboard and every desktop runner will"
+  echo "         use plaintext. Runners refuse plaintext unless installed with"
+  echo "         --insecure. Do not use this for real devices."
+  echo
 else
   site_address="$origin"
   secure_cookies="1"
@@ -123,6 +144,22 @@ sudo sed -i \
 # ran this; re-running is a no-op for values it set.
 bash "${root_dir}/scripts/ubuntu/ensure-secrets.sh" "$env_file"
 bootstrap_token="$(sudo sed -n 's#^OPENCUTTLES_BOOTSTRAP_TOKEN=##p' "$env_file" | head -1)"
+
+# An appliance reached by IP or a single-label hostname cannot get a public
+# certificate, so mint a self-signed one and publish its pin. Idempotent: an
+# existing certificate is left alone, because regenerating it would invalidate
+# the pin every enrolled runner already holds.
+if [[ "$self_signed_tls" == "1" ]]; then
+  bash "${root_dir}/scripts/ubuntu/ensure-tls.sh" "$hostname" "$env_file"
+  if sudo test -f /etc/caddy/conf.d/opencuttles.caddy; then
+    # Point Caddy at the certificate. Any previous tls line is removed first so
+    # re-running quickstart replaces it rather than stacking duplicates, which
+    # Caddy would reject.
+    sudo sed -i '\#^[[:space:]]*tls /etc/opencuttles/tls/#d' /etc/caddy/conf.d/opencuttles.caddy
+    sudo sed -i '1a\    tls /etc/opencuttles/tls/appliance.crt /etc/opencuttles/tls/appliance.key' \
+      /etc/caddy/conf.d/opencuttles.caddy
+  fi
+fi
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now opencuttles-api

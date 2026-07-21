@@ -386,6 +386,10 @@ type Build struct {
 	Status    string    `json:"status"`
 	Note      string    `json:"note,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+	// SHA256 of the stored artifact, hex, computed while the upload streams to
+	// disk. The runner verifies it before executing the file — without it, a
+	// tampered or truncated artifact would simply be run.
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 type CreateInstanceRequest struct {

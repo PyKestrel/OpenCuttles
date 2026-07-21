@@ -285,6 +285,9 @@ func (s *SQLite) migrate(ctx context.Context) error {
 		// carry a computer-use MCP endpoint and an encrypted bearer token.
 		{"instances", "platform", `ALTER TABLE instances ADD COLUMN platform TEXT NOT NULL DEFAULT 'android'`},
 		{"instances", "control_endpoint", `ALTER TABLE instances ADD COLUMN control_endpoint TEXT NOT NULL DEFAULT ''`},
+		// Content hash of the uploaded artifact, so the runner can verify what it
+		// downloads before executing it.
+		{"builds", "sha256", `ALTER TABLE builds ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''`},
 		{"instances", "control_token_ciphertext", `ALTER TABLE instances ADD COLUMN control_token_ciphertext TEXT NOT NULL DEFAULT ''`},
 		// v4: per-case executions within a cycle run reuse the test_runs table.
 		{"test_runs", "cycle_run_id", `ALTER TABLE test_runs ADD COLUMN cycle_run_id TEXT NOT NULL DEFAULT ''`},

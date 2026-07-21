@@ -104,7 +104,7 @@ export const api = {
   // Onboard a desktop target; returns the one-time enrollment token the runner
   // presents to dial home. Same endpoint, keyed by platform.
   onboardDesktop: (name: string, platform: Exclude<Platform, "android">) =>
-    request<{ instance: Instance; enrollmentToken: string }>("/api/v1/instances", {
+    request<{ instance: Instance; enrollmentToken: string; applianceOrigin: string; appliancePin: string }>("/api/v1/instances", {
       method: "POST",
       headers: jsonHeaders,
       body: JSON.stringify({ name, platform }),
@@ -112,7 +112,7 @@ export const api = {
   // Issue a fresh enrollment token, invalidating the old one and dropping any
   // live tunnel. Returns the new plaintext exactly once.
   rotateRunnerToken: (id: string) =>
-    request<{ status: string; enrollmentToken: string; sessionDropped: boolean }>(
+    request<{ status: string; enrollmentToken: string; sessionDropped: boolean; applianceOrigin: string; appliancePin: string }>(
       `/api/v1/instances/${id}/token/rotate`,
       { method: "POST" },
     ),

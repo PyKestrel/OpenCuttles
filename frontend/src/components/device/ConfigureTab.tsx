@@ -98,14 +98,20 @@ export function ConfigureTab({
 // session running.
 function EnrollmentCard({ instance, canAdmin }: { instance: Instance; canAdmin: boolean }) {
   const [busy, setBusy] = useState(false);
-  const [issued, setIssued] = useState("");
+  const [issued, setIssued] = useState<{ token: string; origin: string; pin: string } | null>(null);
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
 
   async function rotate() {
     setBusy(true);
     try {
       const res = await api.rotateRunnerToken(instance.id);
-      setIssued(res.enrollmentToken);
+      setIssued({
+        token: res.enrollmentToken,
+        // Use the appliance's configured origin, not the browser's: the target
+        // machine may not resolve the name the operator is browsing with.
+        origin: res.applianceOrigin || window.location.origin,
+        pin: res.appliancePin || "",
+      });
       toast.success(
         res.sessionDropped
           ? "New token issued — the connected runner was disconnected."
@@ -122,7 +128,7 @@ function EnrollmentCard({ instance, canAdmin }: { instance: Instance; canAdmin: 
     setBusy(true);
     try {
       const res = await api.revokeRunnerToken(instance.id);
-      setIssued("");
+      setIssued(null);
       setConfirmingRevoke(false);
       toast.success(
         res.sessionDropped
@@ -148,10 +154,10 @@ function EnrollmentCard({ instance, canAdmin }: { instance: Instance; canAdmin: 
 
         {issued ? (
           <div className="space-y-2">
-            <CopyField label="New enrollment token — shown once" value={issued} mono />
+            <CopyField label="New enrollment token — shown once" value={issued.token} mono />
             <CopyField
               label={`One-line install for ${instance.name}`}
-              value={oneLineInstall(platformOf(instance), window.location.origin, issued)}
+              value={oneLineInstall(platformOf(instance), issued.origin, issued.token, issued.pin)}
               mono
             />
             <p className="text-[11px] text-muted-foreground/80">
