@@ -206,10 +206,41 @@ func (s *Service) adb(ctx context.Context, instance domain.Instance, args ...str
 	}
 	full := append([]string{"-s", target}, args...)
 	out, err := s.runner.Run(ctx, nil, "adb", full...)
-	if err != nil {
-		return out, fmt.Errorf("adb %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	if err == nil {
+		return out, nil
 	}
-	return out, nil
+
+	// adb -s host:port only works after `adb connect host:port` has registered
+	// the transport, and that registration is lost whenever the adb server
+	// restarts. Reconnect once and retry rather than surfacing "device not
+	// found" for a device that is perfectly reachable.
+	if isTCPTarget(target) && isDeviceNotFound(out, err) {
+		if _, cErr := s.runner.Run(ctx, nil, "adb", "connect", target); cErr == nil {
+			out, err = s.runner.Run(ctx, nil, "adb", full...)
+			if err == nil {
+				return out, nil
+			}
+		}
+	}
+	return out, fmt.Errorf("adb %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+}
+
+// isTCPTarget reports whether an ADB target is a host:port address (as opposed
+// to a USB serial), which is the only kind `adb connect` applies to.
+func isTCPTarget(target string) bool {
+	return strings.Contains(target, ":")
+}
+
+// isDeviceNotFound recognizes adb's "not found" failure, which is what an
+// unregistered TCP transport looks like.
+func isDeviceNotFound(out []byte, err error) bool {
+	if err == nil {
+		return false
+	}
+	combined := strings.ToLower(string(out) + " " + err.Error())
+	return strings.Contains(combined, "not found") ||
+		strings.Contains(combined, "device offline") ||
+		strings.Contains(combined, "no devices/emulators found")
 }
 
 // adbShell runs `adb ... shell <args>` and returns trimmed text output.
@@ -457,8 +488,16 @@ func (s *Service) CurrentActivity(ctx context.Context, id string) (string, error
 func (s *Service) OpenApp(ctx context.Context, id, name string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, interactiveTimeout)
 	defer cancel()
-	if _, err := s.resolve(ctx, id); err != nil {
+	inst, err := s.resolve(ctx, id)
+	if err != nil {
 		return "", err
+	}
+	// Goes over the runner tunnel, which only a desktop has. Previously this
+	// called through unconditionally, so anything non-Cuttlefish reached it —
+	// a physical handset would have failed deep inside the tunnel instead of
+	// here. Android launches apps via LaunchApp.
+	if inst.Source() != domain.SourceRunner {
+		return "", fmt.Errorf("%w: open_app needs a desktop runner; use launch_app for Android", ErrUnsupported)
 	}
 	var out struct {
 		Opened string `json:"opened"`
@@ -573,7 +612,17 @@ func (s *Service) InstallAPK(ctx context.Context, id, hostPath string) error {
 // makes `adb install` hang phoning home, so we clear it before every install.
 // Best-effort: settings are idempotent and persist on the device, and a device
 // that rejects the setting should still install, so errors are only logged.
+//
+// Only ever applied to devices this appliance provisions. The change is
+// *persistent* — it weakens Play Protect until someone turns it back on — which
+// is unremarkable on a disposable VM and unacceptable on a person's handset. A
+// physical device pays the phone-home cost instead; if that becomes a real
+// problem it should be an explicit, per-device opt-in rather than something the
+// appliance does silently.
 func (s *Service) disableInstallVerification(ctx context.Context, instance domain.Instance) {
+	if !instance.IsProvisioned() {
+		return
+	}
 	for _, kv := range [2][2]string{
 		{"verifier_verify_adb_installs", "0"},
 		{"package_verifier_enable", "0"},
@@ -589,8 +638,14 @@ func (s *Service) disableInstallVerification(ctx context.Context, instance domai
 // silently; installs run longer than the tunnel call timeout, so this triggers
 // asynchronously and polls install_status until it completes.
 func (s *Service) InstallDesktopBuild(ctx context.Context, id, buildID, filename, args string) error {
-	if _, err := s.resolve(ctx, id); err != nil {
+	inst, err := s.resolve(ctx, id)
+	if err != nil {
 		return err
+	}
+	// Runner-only, for the same reason as OpenApp: an Android device installs
+	// through InstallAPK over ADB.
+	if inst.Source() != domain.SourceRunner {
+		return fmt.Errorf("%w: desktop build install needs a runner; Android uses APK install", ErrUnsupported)
 	}
 	if err := s.callRunner(ctx, id, "install_app", map[string]string{"buildId": buildID, "filename": filename, "args": args}, nil); err != nil {
 		return err

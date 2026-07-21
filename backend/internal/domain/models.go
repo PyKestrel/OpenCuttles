@@ -442,4 +442,12 @@ type CreateInstanceRequest struct {
 	DisplayWidth   int    `json:"displayWidth,omitempty"`
 	DisplayHeight  int    `json:"displayHeight,omitempty"`
 	DPI            int    `json:"dpi,omitempty"`
+
+	// Source selects how the device is reached. Empty keeps the existing
+	// behavior (Cuttlefish for android, the runner tunnel for a desktop
+	// platform); "physical" registers a real handset we only talk to.
+	Source string `json:"source,omitempty"`
+	// ADBTarget addresses a physical device: a USB serial, or host:port for
+	// adb-over-TCP.
+	ADBTarget string `json:"adbTarget,omitempty"`
 }

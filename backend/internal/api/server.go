@@ -650,6 +650,12 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, badRequest("instance name is required"))
 		return
 	}
+	// A physical handset is registered, not provisioned: we only record how to
+	// reach it over ADB. No enrollment token — there is no runner to install.
+	if strings.TrimSpace(req.Source) == domain.SourcePhysical {
+		s.registerPhysicalAndroid(w, r, req)
+		return
+	}
 	// Desktop targets are onboarded (not provisioned): register the device and
 	// return a one-time enrollment token instead of deploying a Cuttlefish VM.
 	if isDesktopPlatform(req.Platform) {
@@ -682,6 +688,29 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 	} else {
 		s.audit(r, principal, "create_instance", "instance", instance.ID, "accepted", instance.Name)
 	}
+	writeJSON(w, http.StatusCreated, instance)
+}
+
+// registerPhysicalAndroid records how to reach a real handset over ADB.
+//
+// Nothing is provisioned and no credential is issued: unlike a desktop, there is
+// no runner to install, and unlike a Cuttlefish VM there is nothing to launch.
+// The device shows offline until the reachability poller can see it.
+func (s *Server) registerPhysicalAndroid(w http.ResponseWriter, r *http.Request, req domain.CreateInstanceRequest) {
+	// Reject a bad ADB target here rather than at first use: an operator typo
+	// would otherwise surface much later as an inscrutable adb error.
+	if err := store.ValidateADBTarget(req.ADBTarget); err != nil {
+		writeError(w, badRequest(err.Error()))
+		return
+	}
+	instance, err := s.store.CreatePhysicalAndroid(r.Context(), req.Name, req.ADBTarget)
+	if err != nil {
+		writeError(w, badRequest(err.Error()))
+		return
+	}
+	principal, _ := principalFromContext(r.Context())
+	s.audit(r, principal, "register_device", "instance", instance.ID, "succeeded",
+		"physical android "+instance.ADBTarget)
 	writeJSON(w, http.StatusCreated, instance)
 }
 
@@ -944,8 +973,10 @@ func (s *Server) instanceRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		s.consoleProxy(w, r, id)
 	case r.Method == http.MethodPost && action == "start":
-		// Desktops come online via their runner dialing home, not a start command.
-		if inst, err := s.store.GetInstance(r.Context(), id); err == nil && isDesktopInstance(inst) {
+		// Devices this appliance does not provision have no start command: a
+		// desktop comes online when its runner dials home, a physical handset
+		// when ADB can reach it. Neither is something we can switch on.
+		if inst, err := s.store.GetInstance(r.Context(), id); err == nil && !inst.IsProvisioned() {
 			writeJSON(w, http.StatusAccepted, map[string]any{"instance": inst})
 			return
 		}
@@ -958,7 +989,7 @@ func (s *Server) instanceRoute(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, principal, "start_instance", "instance", id, "accepted", operation.ID)
 		writeJSON(w, http.StatusAccepted, map[string]any{"instance": instance, "operation": operation})
 	case r.Method == http.MethodPost && action == "stop":
-		if inst, err := s.store.GetInstance(r.Context(), id); err == nil && isDesktopInstance(inst) {
+		if inst, err := s.store.GetInstance(r.Context(), id); err == nil && !inst.IsProvisioned() {
 			writeJSON(w, http.StatusAccepted, map[string]any{"instance": inst})
 			return
 		}
@@ -971,8 +1002,9 @@ func (s *Server) instanceRoute(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, principal, "stop_instance", "instance", id, "accepted", operation.ID)
 		writeJSON(w, http.StatusAccepted, map[string]any{"instance": instance, "operation": operation})
 	case r.Method == http.MethodDelete && action == "":
-		// Desktops aren't provisioned, so delete just removes the registration.
-		if inst, err := s.store.GetInstance(r.Context(), id); err == nil && isDesktopInstance(inst) {
+		// Not provisioned, so deleting only removes the registration — the
+		// machine or handset itself is left alone.
+		if inst, err := s.store.GetInstance(r.Context(), id); err == nil && !inst.IsProvisioned() {
 			if err := s.store.DeleteInstance(r.Context(), id); err != nil {
 				writeError(w, err)
 				return
