@@ -833,8 +833,15 @@ func isDesktopPlatform(p string) bool {
 	}
 }
 
+// isDesktopInstance reports whether a device is a desktop driven by the
+// dial-home runner.
+//
+// Keyed on the explicit source rather than inferred from "not Android", which
+// was the old test and is exactly what left a physical Android phone with
+// nowhere to live. isDesktopPlatform survives for the creation request, where
+// only the requested platform is known.
 func isDesktopInstance(inst domain.Instance) bool {
-	return isDesktopPlatform(inst.Platform)
+	return inst.Source() == domain.SourceRunner
 }
 
 // newRunnerToken returns a 32-byte random enrollment token as hex.

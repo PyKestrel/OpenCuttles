@@ -287,6 +287,14 @@ func (s *SQLite) migrate(ctx context.Context) error {
 		{"instances", "control_endpoint", `ALTER TABLE instances ADD COLUMN control_endpoint TEXT NOT NULL DEFAULT ''`},
 		// Content hash of the uploaded artifact, so the runner can verify what it
 		// downloads before executing it.
+		// How a device is reached, separate from what OS it runs. "platform"
+		// was doing both jobs, which left a physical Android phone with nowhere
+		// to live: code asking "is it Android?" really meant "is it a Cuttlefish
+		// VM we launched?". Empty defaults to cuttlefish for existing rows.
+		{"instances", "source", `ALTER TABLE instances ADD COLUMN source TEXT NOT NULL DEFAULT ''`},
+		// USB serial, or host:port for adb-over-TCP. Cuttlefish leaves this
+		// empty and is addressed by its allocated ADB port as before.
+		{"instances", "adb_target", `ALTER TABLE instances ADD COLUMN adb_target TEXT NOT NULL DEFAULT ''`},
 		{"builds", "sha256", `ALTER TABLE builds ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''`},
 		{"instances", "control_token_ciphertext", `ALTER TABLE instances ADD COLUMN control_token_ciphertext TEXT NOT NULL DEFAULT ''`},
 		// v4: per-case executions within a cycle run reuse the test_runs table.
@@ -308,6 +316,14 @@ func (s *SQLite) migrate(ctx context.Context) error {
 		return err
 	}
 
+	// v5: classify existing devices by source. Runs once, guarded by the version
+	// row — re-running it would be wrong, not merely wasteful, because an
+	// operator may legitimately change a device's source afterwards and a
+	// repeated backfill would stamp over that.
+	if err := s.backfillInstanceSource(ctx); err != nil {
+		return err
+	}
+
 	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (1, ?)`, formatTime(time.Now().UTC()))
 	if err != nil {
 		return err
@@ -324,7 +340,51 @@ func (s *SQLite) migrate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	_, err = s.db.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (5, ?)`, formatTime(time.Now().UTC()))
+	if err != nil {
+		return err
+	}
 	return nil
+}
+
+// backfillInstanceSource classifies pre-existing devices, once.
+//
+// Before the source column, "platform != android" was the de-facto test for
+// "desktop running the dial-home runner" — including in raw SQL. That inference
+// is now recorded explicitly so a physical Android device can exist without
+// being mistaken for a Cuttlefish VM.
+//
+// Guarded by the v5 version row rather than by "is the column empty", because
+// an operator may deliberately change a device's source later and a repeated
+// backfill would silently overwrite that.
+func (s *SQLite) backfillInstanceSource(ctx context.Context) error {
+	var applied int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM schema_migrations WHERE version = 5`).Scan(&applied)
+	if err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE instances SET source = ? WHERE source = '' AND platform NOT IN ('', 'android')`,
+		domain.SourceRunner); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE instances SET source = ? WHERE source = ''`,
+		domain.SourceCuttlefish); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // rebuildTestRunsIfFK recreates test_runs without the tests foreign key when an
@@ -708,7 +768,7 @@ func ValidateImagePath(path string, requireExisting bool) error {
 	return nil
 }
 
-const instanceColumns = `id, name, host_id, image_id, android_version, state, cpu_cores, memory_mb, display_width, display_height, dpi, adb_port, webrtc_port, device_id, console_provider, console_url, last_error, created_at, updated_at, platform, control_endpoint`
+const instanceColumns = `id, name, host_id, image_id, android_version, state, cpu_cores, memory_mb, display_width, display_height, dpi, adb_port, webrtc_port, device_id, console_provider, console_url, last_error, created_at, updated_at, platform, control_endpoint, source, adb_target`
 
 func (s *SQLite) ListInstances(ctx context.Context) ([]domain.Instance, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+instanceColumns+` FROM instances ORDER BY created_at DESC`)
@@ -878,7 +938,7 @@ func scanInstance(row scanner) (domain.Instance, error) {
 		&instance.CPUCores, &instance.MemoryMB, &instance.DisplayWidth, &instance.DisplayHeight, &instance.DPI,
 		&instance.ADBPort, &instance.WebRTCPort, &instance.DeviceID,
 		&instance.ConsoleProvider, &instance.ConsoleURL, &instance.LastError, &createdAt, &updatedAt,
-		&instance.Platform, &instance.ControlEndpoint,
+		&instance.Platform, &instance.ControlEndpoint, &instance.Src, &instance.ADBTarget,
 	); err != nil {
 		return domain.Instance{}, err
 	}

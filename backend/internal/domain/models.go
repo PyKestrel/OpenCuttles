@@ -112,6 +112,43 @@ type Instance struct {
 	LastError       string    `json:"lastError,omitempty"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
+
+	// Src is where this device comes from: a Cuttlefish VM we provision, a
+	// physical handset we merely talk to, or a desktop running the dial-home
+	// runner. Empty means cuttlefish, for rows written before this existed.
+	//
+	// This exists because "platform" was carrying two unrelated meanings. Code
+	// kept asking "is it Android?" when it actually meant "is it a Cuttlefish VM
+	// we launched?" — which is why a physical Android phone had nowhere to live.
+	// Use Source(), not this field, so the legacy default is applied.
+	Src string `json:"source,omitempty"`
+
+	// ADBTarget is how ADB addresses this device: a USB serial, or host:port for
+	// adb-over-TCP. Empty for Cuttlefish, which is addressed by its ADBPort.
+	ADBTarget string `json:"adbTarget,omitempty"`
+}
+
+// Device sources.
+const (
+	SourceCuttlefish = "cuttlefish" // a VM this appliance launches and manages
+	SourcePhysical   = "physical"   // a real handset reached over ADB
+	SourceRunner     = "runner"     // a desktop running the dial-home runner
+)
+
+// Source returns the device's source, treating an empty value as cuttlefish so
+// rows predating the column keep working.
+func (i Instance) Source() string {
+	if i.Src == "" {
+		return SourceCuttlefish
+	}
+	return i.Src
+}
+
+// IsProvisioned reports whether this appliance creates and destroys the device
+// itself. Provisioned devices have a start/stop lifecycle; the rest are simply
+// reachable or not, and deleting one only deregisters it.
+func (i Instance) IsProvisioned() bool {
+	return i.Source() == SourceCuttlefish
 }
 
 type Operation struct {

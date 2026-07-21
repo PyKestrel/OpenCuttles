@@ -87,33 +87,67 @@ func (s *Service) resolve(ctx context.Context, id string) (domain.Instance, erro
 	if err != nil {
 		return domain.Instance{}, err
 	}
-	if isAndroid(instance.Platform) {
-		if !s.execute {
-			return domain.Instance{}, ErrExecutionDisabled
-		}
-		if instance.State != domain.StateRunning {
-			return domain.Instance{}, ErrNotRunning
-		}
-		if instance.ADBPort == 0 {
-			return domain.Instance{}, fmt.Errorf("instance %s has no ADB port", id)
-		}
-		return instance, nil
-	}
-	// Desktop target.
-	if instance.ControlEndpoint == "" {
-		return domain.Instance{}, fmt.Errorf("device %s has no control endpoint", id)
-	}
-	if instance.State != domain.StateOnline && instance.State != domain.StateRunning {
-		return domain.Instance{}, ErrNotRunning
+	if err := s.checkResolvable(instance); err != nil {
+		return domain.Instance{}, err
 	}
 	return instance, nil
+}
+
+// checkResolvable reports whether a device is in a state where it can be driven.
+//
+// The gate depends on where the device comes from, not what OS it runs.
+// Conflating those is what made a physical Android device impossible: the old
+// Android branch demanded OPENCUTTLES_EXECUTE_CVD and a Cuttlefish ADB port,
+// neither of which means anything for a real handset.
+//
+// Split out from resolve so the matrix of source x state x execute can be tested
+// without a database.
+func (s *Service) checkResolvable(instance domain.Instance) error {
+	switch instance.Source() {
+	case domain.SourceCuttlefish:
+		// A VM this appliance launches: it must actually be launched.
+		if !s.execute {
+			return ErrExecutionDisabled
+		}
+		if instance.State != domain.StateRunning {
+			return ErrNotRunning
+		}
+		if instance.ADBPort == 0 {
+			return fmt.Errorf("instance %s has no ADB port", instance.ID)
+		}
+		return nil
+
+	case domain.SourcePhysical:
+		// A device we did not provision — no EXECUTE_CVD gate, because that
+		// setting is about launching VMs, not about talking to hardware.
+		if strings.TrimSpace(instance.ADBTarget) == "" {
+			return fmt.Errorf("device %s has no ADB target", instance.ID)
+		}
+		if instance.State != domain.StateOnline && instance.State != domain.StateRunning {
+			return ErrNotRunning
+		}
+		return nil
+
+	default: // domain.SourceRunner
+		if instance.ControlEndpoint == "" {
+			return fmt.Errorf("device %s has no control endpoint", instance.ID)
+		}
+		if instance.State != domain.StateOnline && instance.State != domain.StateRunning {
+			return ErrNotRunning
+		}
+		return nil
+	}
 }
 
 // driverFor returns the control driver for an instance's platform: ADB for
 // Android, or the tunnel-backed MCP driver for a desktop target whose runner is
 // connected.
 func (s *Service) driverFor(inst domain.Instance) (Driver, error) {
-	if isAndroid(inst.Platform) {
+	// Routing is by source: anything ADB-reachable (a Cuttlefish VM or a real
+	// handset) takes the ADB driver; only runner-backed desktops go over the
+	// tunnel. isAndroid survives as a *capability* predicate — what the OS can
+	// do — never as a routing one.
+	if inst.Source() != domain.SourceRunner {
 		return adbDriver{svc: s, inst: inst}, nil
 	}
 	if s.runners == nil {
@@ -139,15 +173,37 @@ func (s *Service) Capabilities(ctx context.Context, id string) (Capabilities, er
 }
 
 
-// adb runs an adb command scoped to the instance's transport and returns raw
-// stdout. args should not include the leading "-s <target>". ADB is Android-only;
-// desktop targets that reach an ADB-only operation are rejected here so they get
-// a clear message instead of a malformed transport.
-func (s *Service) adb(ctx context.Context, instance domain.Instance, args ...string) ([]byte, error) {
-	if !isAndroid(instance.Platform) {
-		return nil, fmt.Errorf("%w: ADB operations are Android-only", ErrUnsupported)
+// adbTarget resolves how ADB should address a device.
+//
+// A Cuttlefish VM is reached on its allocated loopback port, which is the only
+// addressing this used to support. A physical device carries its own target —
+// a USB serial, or host:port for adb-over-TCP — so the two coexist without the
+// caller caring which it has.
+func adbTarget(instance domain.Instance) (string, error) {
+	if t := strings.TrimSpace(instance.ADBTarget); t != "" {
+		return t, nil
 	}
-	target := fmt.Sprintf("127.0.0.1:%d", instance.ADBPort)
+	if instance.ADBPort > 0 {
+		return fmt.Sprintf("127.0.0.1:%d", instance.ADBPort), nil
+	}
+	return "", fmt.Errorf("%w: device %s has no ADB address", ErrUnsupported, instance.ID)
+}
+
+// adb runs an adb command scoped to the instance's transport and returns raw
+// stdout. args should not include the leading "-s <target>".
+//
+// Rejected for runner-backed desktops, which have no ADB at all — they get a
+// clear message rather than a malformed transport. Note the test is the device's
+// source, not its platform: "not Android" used to stand in for "desktop", which
+// is precisely what a physical Android device breaks.
+func (s *Service) adb(ctx context.Context, instance domain.Instance, args ...string) ([]byte, error) {
+	if instance.Source() == domain.SourceRunner {
+		return nil, fmt.Errorf("%w: ADB operations need an ADB-reachable device", ErrUnsupported)
+	}
+	target, err := adbTarget(instance)
+	if err != nil {
+		return nil, err
+	}
 	full := append([]string{"-s", target}, args...)
 	out, err := s.runner.Run(ctx, nil, "adb", full...)
 	if err != nil {

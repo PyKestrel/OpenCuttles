@@ -24,6 +24,7 @@ func (s *SQLite) CreateDesktopInstance(ctx context.Context, name, platform, toke
 		Name:            name,
 		HostID:          "local",
 		Platform:        platform,
+		Src:             domain.SourceRunner,
 		ControlEndpoint: "tunnel", // dial-home; the runner connects to us
 		ImageID:         img.ID,
 		State:           domain.StateOffline,
@@ -35,13 +36,13 @@ func (s *SQLite) CreateDesktopInstance(ctx context.Context, name, platform, toke
 		id, name, host_id, image_id, android_version, state, cpu_cores, memory_mb,
 		display_width, display_height, dpi, adb_port, webrtc_port, device_id,
 		console_provider, console_url, last_error, created_at, updated_at,
-		platform, control_endpoint, control_token_ciphertext
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		platform, control_endpoint, control_token_ciphertext, source
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		inst.ID, inst.Name, inst.HostID, inst.ImageID, "", inst.State,
 		0, 0, 0, 0, 0, 0, 0, "",
 		inst.ConsoleProvider, "", "",
 		formatTime(now), formatTime(now),
-		inst.Platform, inst.ControlEndpoint, tokenHash)
+		inst.Platform, inst.ControlEndpoint, tokenHash, inst.Src)
 	if err != nil {
 		return domain.Instance{}, err
 	}
@@ -59,7 +60,7 @@ func (s *SQLite) CreateDesktopInstance(ctx context.Context, name, platform, toke
 func (s *SQLite) SetDesktopTokenHash(ctx context.Context, id, tokenHash string) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE instances SET control_token_ciphertext = ?, updated_at = ?
-		 WHERE id = ? AND platform NOT IN ('', 'android')`,
+		 WHERE id = ? AND source = 'runner'`,
 		tokenHash, formatTime(time.Now().UTC()), id)
 	if err != nil {
 		return false, err
@@ -76,6 +77,6 @@ func (s *SQLite) FindDesktopByTokenHash(ctx context.Context, tokenHash string) (
 	}
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+instanceColumns+` FROM instances
-		 WHERE control_token_ciphertext = ? AND platform NOT IN ('', 'android') LIMIT 1`, tokenHash)
+		 WHERE control_token_ciphertext = ? AND source = 'runner' LIMIT 1`, tokenHash)
 	return scanInstance(row)
 }
