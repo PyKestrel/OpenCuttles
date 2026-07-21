@@ -37,7 +37,7 @@ func installBinPath() (string, error) {
 // autostart via HKCU\...\Run, and starts it now. Per-user (not a service)
 // because the runner drives the interactive desktop — a Session-0 service would
 // only see a black screen — and HKCU so no admin prompt is needed.
-func runInstall(appliance, token string) error {
+func runInstall(e enrollment) error {
 	binPath, err := installBinPath()
 	if err != nil {
 		return err
@@ -46,11 +46,11 @@ func runInstall(appliance, token string) error {
 		return fmt.Errorf("copy runner to %s: %w", binPath, err)
 	}
 
-	if err := autostartRegister(binPath, appliance, token); err != nil {
+	if err := autostartRegister(binPath, e); err != nil {
 		return err
 	}
 
-	if err := startDetached(binPath, appliance, token); err != nil {
+	if err := startDetached(binPath, e); err != nil {
 		fmt.Printf("Installed, but could not start it now (it will start at your next login): %v\n", err)
 	} else {
 		fmt.Println("OpenCuttles runner installed — it will auto-start at login and is connecting now.")
@@ -65,10 +65,10 @@ func runUninstall() error {
 
 // autostartRegister writes the HKCU\...\Run value pointing at binPath. Shared by
 // the CLI install and the tray's "Start at login" toggle.
-func autostartRegister(binPath, appliance, token string) error {
+func autostartRegister(binPath string, e enrollment) error {
 	// /f overwrites an existing value so re-running install just updates the token.
 	add := exec.Command("reg", "add", runKey, "/v", winRunValueName,
-		"/t", "REG_SZ", "/d", winRunCommand(binPath, appliance, token), "/f")
+		"/t", "REG_SZ", "/d", winRunCommand(binPath, e), "/f")
 	if out, err := add.CombinedOutput(); err != nil {
 		return fmt.Errorf("set autostart registry value: %w: %s", err, out)
 	}
@@ -99,8 +99,8 @@ func isRegValueMissing(out []byte) bool {
 
 // startDetached launches the installed runner in its own process, detached from
 // the installing shell so it survives that shell closing.
-func startDetached(binPath, appliance, token string) error {
-	cmd := exec.Command(binPath, runArgs(appliance, token)...)
+func startDetached(binPath string, e enrollment) error {
+	cmd := exec.Command(binPath, runArgs(e)...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: detachedProcess | createNewProcessGroup}
 	return cmd.Start()
 }

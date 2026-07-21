@@ -33,7 +33,7 @@ func autostartPath() (string, error) {
 // runInstall installs a per-user XDG autostart entry (runs at graphical login)
 // and starts the runner now so it connects immediately. A user-level autostart —
 // not a system service — because the runner needs the logged-in X11 session.
-func runInstall(appliance, token string) error {
+func runInstall(e enrollment) error {
 	binPath, err := installBinPath()
 	if err != nil {
 		return err
@@ -50,11 +50,11 @@ func runInstall(appliance, token string) error {
 		return err
 	}
 	// 0600: the entry embeds the enrollment token.
-	if err := os.WriteFile(entryPath, []byte(desktopEntry(binPath, appliance, token)), 0o600); err != nil {
+	if err := os.WriteFile(entryPath, []byte(desktopEntry(binPath, e)), 0o600); err != nil {
 		return fmt.Errorf("write autostart entry: %w", err)
 	}
 
-	if err := startDetached(binPath, appliance, token); err != nil {
+	if err := startDetached(binPath, e); err != nil {
 		fmt.Printf("Installed, but could not start it now (it will start at your next login): %v\n", err)
 	} else {
 		fmt.Println("OpenCuttles runner installed — it will auto-start at login and is connecting now.")
@@ -76,8 +76,8 @@ func runUninstall() error {
 
 // startDetached launches the installed runner in its own session so it survives
 // the installing shell exiting.
-func startDetached(binPath, appliance, token string) error {
-	cmd := exec.Command(binPath, runArgs(appliance, token)...)
+func startDetached(binPath string, e enrollment) error {
+	cmd := exec.Command(binPath, runArgs(e)...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return cmd.Start()
 }

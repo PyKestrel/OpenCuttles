@@ -55,6 +55,15 @@ var sharedTransport = &http.Transport{
 	ExpectContinueTimeout: 1 * time.Second,
 }
 
+// configureTLS installs the appliance's TLS settings on the shared transport.
+//
+// Called once from main before any request is made, so every client created by
+// httpClient picks it up. Kept separate from the transport definition because
+// the pin isn't known until flags are parsed.
+func configureTLS(pin []byte, insecure bool) {
+	sharedTransport.TLSClientConfig = tlsConfigFor(pin, insecure)
+}
+
 // httpClient returns a client for one request class. Callers pass the timeout
 // that suits their payload; all of them share the transport above.
 func httpClient(timeout time.Duration) doer {

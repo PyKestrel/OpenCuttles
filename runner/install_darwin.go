@@ -29,7 +29,7 @@ func launchAgentPath() (string, error) {
 // it, which starts the runner immediately. A LaunchAgent — not a daemon — so it
 // runs in the user's GUI session, where the Accessibility/Screen-Recording
 // grants the runner needs apply.
-func runInstall(appliance, token string) error {
+func runInstall(e enrollment) error {
 	binPath, err := installBinPath()
 	if err != nil {
 		return err
@@ -46,7 +46,7 @@ func runInstall(appliance, token string) error {
 		return err
 	}
 	// 0600: the plist embeds the enrollment token.
-	if err := os.WriteFile(plistPath, []byte(launchAgentPlist(binPath, appliance, token)), 0o600); err != nil {
+	if err := os.WriteFile(plistPath, []byte(launchAgentPlist(binPath, e)), 0o600); err != nil {
 		return fmt.Errorf("write LaunchAgent: %w", err)
 	}
 

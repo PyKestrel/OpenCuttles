@@ -130,8 +130,10 @@ type notifyIconData struct {
 // trayApp owns the hidden window + notification icon. There is one per process.
 type trayApp struct {
 	st        *agentState
-	appliance string
-	token     string
+	// The full enrollment, not just appliance/token: re-registering autostart
+	// from the tray must preserve the certificate pin, or the runner would come
+	// back after a reboot unable to verify a self-signed appliance.
+	enroll enrollment
 	hwnd      uintptr
 	nid       notifyIconData
 }
@@ -141,21 +143,21 @@ var tray *trayApp
 // runAgentUI (windows) shows the system tray and runs the tunnel loop beside the
 // message pump. If the tray can't be created it falls back to running headless,
 // so the agent still works.
-func runAgentUI(appliance, token string, st *agentState) {
+func runAgentUI(e enrollment, st *agentState) {
 	runtime.LockOSThread() // the window + message loop must stay on one thread
 
-	t := &trayApp{st: st, appliance: appliance, token: token}
+	t := &trayApp{st: st, enroll: e}
 	tray = t
 	if err := t.create(); err != nil {
 		log.Printf("system tray unavailable (%v) — running headless", err)
-		runAgentLoop(appliance, token, st)
+		runAgentLoop(e.Appliance, e.Token, st)
 		return
 	}
 	defer t.remove()
 
 	// Reflect connection status in the tray by posting a refresh to the UI thread.
 	st.setOnChange(func(bool) { t.postRefresh() })
-	go runAgentLoop(appliance, token, st)
+	go runAgentLoop(e.Appliance, e.Token, st)
 
 	t.messageLoop()
 }
@@ -342,8 +344,8 @@ func (t *trayApp) onCommand(id uint16) {
 }
 
 func (t *trayApp) openDashboard() {
-	if t.appliance != "" {
-		shellOpen(t.appliance)
+	if t.enroll.Appliance != "" {
+		shellOpen(t.enroll.Appliance)
 	}
 }
 
@@ -372,7 +374,7 @@ func (t *trayApp) toggleAutostart() {
 		log.Printf("autostart copy: %v", err)
 		return
 	}
-	if err := autostartRegister(binPath, t.appliance, t.token); err != nil {
+	if err := autostartRegister(binPath, t.enroll); err != nil {
 		log.Printf("enable autostart: %v", err)
 	}
 }

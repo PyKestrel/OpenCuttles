@@ -7,8 +7,8 @@ import (
 )
 
 func TestWinRunCommand(t *testing.T) {
-	got := winRunCommand(`C:\Program Files\OpenCuttles\opencuttles-runner.exe`, "http://host", "tok123")
-	want := `"C:\Program Files\OpenCuttles\opencuttles-runner.exe" --appliance "http://host" --token "tok123"`
+	got := winRunCommand(`C:\Program Files\OpenCuttles\opencuttles-runner.exe`, enrollment{Appliance: "https://host", Token: "tok123"})
+	want := `"C:\Program Files\OpenCuttles\opencuttles-runner.exe" --appliance "https://host" --token "tok123"`
 	if got != want {
 		t.Errorf("winRunCommand =\n %q\nwant\n %q", got, want)
 	}
@@ -19,12 +19,12 @@ func TestWinRunCommand(t *testing.T) {
 }
 
 func TestDesktopEntry(t *testing.T) {
-	got := desktopEntry("/home/me/.local/share/opencuttles/opencuttles-runner", "http://host", "tok123")
+	got := desktopEntry("/home/me/.local/share/opencuttles/opencuttles-runner", enrollment{Appliance: "https://host", Token: "tok123"})
 	for _, want := range []string{
 		"[Desktop Entry]",
 		"Type=Application",
 		"X-GNOME-Autostart-enabled=true",
-		`Exec="/home/me/.local/share/opencuttles/opencuttles-runner" --appliance "http://host" --token "tok123"`,
+		`Exec="/home/me/.local/share/opencuttles/opencuttles-runner" --appliance "https://host" --token "tok123"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("desktop entry missing %q in:\n%s", want, got)
@@ -35,7 +35,7 @@ func TestDesktopEntry(t *testing.T) {
 // The plist must be well-formed XML and carry the exact program arguments — a
 // malformed plist means launchctl silently refuses to load it.
 func TestLaunchAgentPlistIsValidXML(t *testing.T) {
-	got := launchAgentPlist("/Users/me/Library/Application Support/OpenCuttles/opencuttles-runner", "http://host", "tok123")
+	got := launchAgentPlist("/Users/me/Library/Application Support/OpenCuttles/opencuttles-runner", enrollment{Appliance: "https://host", Token: "tok123"})
 
 	// Parses as XML (DOCTYPE and all).
 	dec := xml.NewDecoder(strings.NewReader(got))
@@ -53,7 +53,7 @@ func TestLaunchAgentPlistIsValidXML(t *testing.T) {
 		"<key>RunAtLoad</key>",
 		"<true/>",
 		"<string>--appliance</string>",
-		"<string>http://host</string>",
+		"<string>https://host</string>",
 		"<string>--token</string>",
 		"<string>tok123</string>",
 	} {
@@ -72,7 +72,7 @@ func TestXMLEscape(t *testing.T) {
 	if got := xmlEscape("a&b<c>"); got != "a&amp;b&lt;c&gt;" {
 		t.Errorf("xmlEscape = %q", got)
 	}
-	plist := launchAgentPlist("/bin/x", "http://host?a=1&b=2", "tok")
+	plist := launchAgentPlist("/bin/x", enrollment{Appliance: "https://host?a=1&b=2", Token: "tok"})
 	if strings.Contains(plist, "a=1&b=2") {
 		t.Error("ampersand in the URL must be XML-escaped in the plist")
 	}

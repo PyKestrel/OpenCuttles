@@ -42,6 +42,7 @@ const (
 	// Wizard control ids.
 	idEditAppliance = 201
 	idEditToken     = 202
+	idEditPin       = 203
 	idButtonInstall = 203
 	idButtonCancel  = 204
 )
@@ -51,6 +52,7 @@ type wizardState struct {
 	hwnd          uintptr
 	editAppliance uintptr
 	editToken     uintptr
+	editPin       uintptr
 	done          bool
 }
 
@@ -85,7 +87,7 @@ func showWizard() error {
 		return err
 	}
 
-	const w, h = 440, 240
+	const w, h = 440, 300
 	cx, _, _ := procGetSystemMetrics.Call(smCxScreenIdx)
 	cy, _, _ := procGetSystemMetrics.Call(smCyScreenIdx)
 	x := (int32(cx) - w) / 2
@@ -149,15 +151,20 @@ func buildWizardControls(ws *wizardState, hInst uintptr) {
 	}
 
 	mk(static, "Appliance URL", 0, 20, 18, 400, 18, 0)
-	ws.editAppliance = mk(edit, "http://", wsBorder|wsTabstop|esAutoHScroll, 20, 38, 400, 24, idEditAppliance)
+	// Prefilled https, not http: the runner refuses plaintext, and the old
+	// "http://" prefill actively steered operators into the insecure setup.
+	ws.editAppliance = mk(edit, "https://", wsBorder|wsTabstop|esAutoHScroll, 20, 38, 400, 24, idEditAppliance)
 
 	mk(static, "Enrollment token", 0, 20, 76, 400, 18, 0)
 	ws.editToken = mk(edit, "", wsBorder|wsTabstop|esAutoHScroll, 20, 96, 400, 24, idEditToken)
 
-	mk(static, "Copy both from the dashboard when you add this device.", 0, 20, 130, 400, 18, 0)
+	mk(static, "Certificate pin (leave blank if the appliance has a public certificate)", 0, 20, 134, 400, 18, 0)
+	ws.editPin = mk(edit, "", wsBorder|wsTabstop|esAutoHScroll, 20, 154, 400, 24, idEditPin)
 
-	mk(button, "Install", wsTabstop|bsDefPushButton, 250, 160, 80, 30, idButtonInstall)
-	mk(button, "Cancel", wsTabstop, 340, 160, 80, 30, idButtonCancel)
+	mk(static, "Copy these from the dashboard when you add this device.", 0, 20, 188, 400, 18, 0)
+
+	mk(button, "Install", wsTabstop|bsDefPushButton, 250, 220, 80, 30, idButtonInstall)
+	mk(button, "Cancel", wsTabstop, 340, 220, 80, 30, idButtonCancel)
 }
 
 func wizardProc(hwnd, msg, wParam, lParam uintptr) uintptr {
@@ -181,13 +188,29 @@ func wizardProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 }
 
 func (ws *wizardState) onInstall() {
-	appliance := strings.TrimRight(strings.TrimSpace(controlText(ws.editAppliance)), "/")
+	rawAppliance := strings.TrimSpace(controlText(ws.editAppliance))
 	token := strings.TrimSpace(controlText(ws.editToken))
-	if appliance == "" || token == "" {
+	if rawAppliance == "" || token == "" {
 		messageBox(ws.hwnd, "Enter both the appliance URL and the enrollment token.", "Missing details", mbIconError)
 		return
 	}
-	if err := runInstall(appliance, token); err != nil {
+	appliance, err := normalizeAppliance(rawAppliance, false)
+	if err != nil {
+		messageBox(ws.hwnd, err.Error(), "Check the appliance URL", mbIconError)
+		return
+	}
+	pin := strings.TrimSpace(controlText(ws.editPin))
+	pinBytes, err := parsePin(pin)
+	if err != nil {
+		messageBox(ws.hwnd, "That certificate pin isn't valid:\n\n"+err.Error(), "Check the pin", mbIconError)
+		return
+	}
+	// The install starts the runner immediately, so TLS has to be configured
+	// before it dials home.
+	configureTLS(pinBytes, false)
+
+	e := enrollment{Appliance: appliance, Token: token, Pin: pin}
+	if err := runInstall(e); err != nil {
 		messageBox(ws.hwnd, "Install failed:\n\n"+err.Error(), "OpenCuttles Runner", mbIconError)
 		return
 	}

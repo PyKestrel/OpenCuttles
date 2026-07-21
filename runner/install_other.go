@@ -13,7 +13,7 @@ func installBinPath() (string, error) {
 	return "", fmt.Errorf("no install location on %s", runtime.GOOS)
 }
 
-func runInstall(appliance, token string) error {
+func runInstall(e enrollment) error {
 	return fmt.Errorf("auto-start install is not implemented for %s — run the runner directly instead", runtime.GOOS)
 }
 

@@ -68,25 +68,66 @@ func containsFold(s, substr string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
+// enrollment is everything the runner needs to dial home, persisted into the
+// auto-start entry so it survives a reboot.
+//
+// A struct rather than positional parameters because this list grows: the pin
+// was added for TLS, and optional client-certificate material would be next.
+type enrollment struct {
+	Appliance string
+	Token     string
+	// Pin is the appliance's SPKI SHA-256. Empty means verify against the
+	// system trust store (the right mode for a real domain with an ACME cert).
+	Pin string
+	// Insecure allows plaintext and skips verification. Development only.
+	Insecure bool
+}
+
 // runArgs is the argument list the auto-start entry runs the binary with.
-func runArgs(appliance, token string) []string {
-	return []string{"--appliance", appliance, "--token", token}
+func runArgs(e enrollment) []string {
+	args := []string{"--appliance", e.Appliance, "--token", e.Token}
+	if e.Pin != "" {
+		args = append(args, "--pin", e.Pin)
+	}
+	if e.Insecure {
+		args = append(args, "--insecure")
+	}
+	return args
+}
+
+// quotedArgs renders runArgs as a quoted command-line tail. Values are wrapped
+// in double quotes so a path with spaces can't split; no inner escaping is
+// needed because the token is hex, the pin is base64, and a URL contains none
+// of the characters these formats treat as special.
+func quotedArgs(e enrollment) string {
+	var b strings.Builder
+	args := runArgs(e)
+	for i := 0; i < len(args); i++ {
+		b.WriteString(" ")
+		if strings.HasPrefix(args[i], "--") {
+			b.WriteString(args[i]) // flag name, never quoted
+			continue
+		}
+		b.WriteString(`"` + args[i] + `"`)
+	}
+	return b.String()
 }
 
 // ---- Windows: HKCU\...\Run registry value ----
 
 // winRunCommand builds the command string stored in the Run key: the quoted
 // binary path plus its run args, so a Program Files-style space can't split it.
-func winRunCommand(binPath, appliance, token string) string {
-	return fmt.Sprintf(`"%s" --appliance "%s" --token "%s"`, binPath, appliance, token)
+func winRunCommand(binPath string, e enrollment) string {
+	return fmt.Sprintf(`"%s"%s`, binPath, quotedArgs(e))
 }
 
 // ---- Linux: XDG autostart .desktop ----
 
-func desktopEntry(binPath, appliance, token string) string {
+func desktopEntry(binPath string, e enrollment) string {
 	// Exec values with spaces are wrapped in double quotes per the Desktop Entry
-	// spec; the token is hex and the URL simple, so no inner escaping is needed.
-	exec := fmt.Sprintf(`"%s" --appliance "%s" --token "%s"`, binPath, appliance, token)
+	// spec. The spec reserves ", `, $ and \ inside a quoted value; none of our
+	// values can contain those.
+	exec := fmt.Sprintf(`"%s"%s`, binPath, quotedArgs(e))
 	return "[Desktop Entry]\n" +
 		"Type=Application\n" +
 		"Name=OpenCuttles Runner\n" +
@@ -98,8 +139,8 @@ func desktopEntry(binPath, appliance, token string) string {
 
 // ---- macOS: LaunchAgent plist ----
 
-func launchAgentPlist(binPath, appliance, token string) string {
-	args := append([]string{binPath}, runArgs(appliance, token)...)
+func launchAgentPlist(binPath string, e enrollment) string {
+	args := append([]string{binPath}, runArgs(e)...)
 	var items strings.Builder
 	for _, a := range args {
 		items.WriteString("\n    <string>" + xmlEscape(a) + "</string>")
