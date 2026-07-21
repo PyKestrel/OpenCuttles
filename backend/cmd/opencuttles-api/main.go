@@ -12,6 +12,7 @@ import (
 	"github.com/opencuttles/opencuttles/backend/internal/api"
 	"github.com/opencuttles/opencuttles/backend/internal/auth"
 	"github.com/opencuttles/opencuttles/backend/internal/devicecontrol"
+	"github.com/opencuttles/opencuttles/backend/internal/devicewatch"
 	"github.com/opencuttles/opencuttles/backend/internal/orchestrator"
 	"github.com/opencuttles/opencuttles/backend/internal/store"
 )
@@ -50,6 +51,13 @@ func main() {
 	} else if swept > 0 {
 		logger.Warn("marked interrupted cycle runs as failed", "count", swept)
 	}
+	// Reachability for registered physical Android devices. Desktop runners
+	// report themselves by connecting; a handset is simply plugged in or not, so
+	// something has to look. Opt-in via OPENCUTTLES_WATCH_PHYSICAL_DEVICES=1 —
+	// otherwise running the API on a laptop would start driving whatever phone
+	// happens to be attached.
+	go devicewatch.New(db, devicecontrol.NewExecRunner(logger), logger, 0).Run(context.Background())
+
 	apiServer := api.New(db, service, authService, devices, logger, secureCookies, allowedOrigin)
 	server := &http.Server{
 		Addr:              listenAddr,

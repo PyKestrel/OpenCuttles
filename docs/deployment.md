@@ -150,6 +150,45 @@ the runner verifies it before executing the file. Artifacts uploaded before this
 existed have no hash — the runner logs that it cannot verify them rather than
 failing.
 
+### Physical Android devices
+
+A handset is *registered*, not provisioned: the appliance records how to reach it
+over ADB and nothing else. There is no VM to launch and no runner to install, so
+no enrollment token is issued.
+
+```bash
+OPENCUTTLES_WATCH_PHYSICAL_DEVICES=1   # enables the reachability poller
+```
+
+**Opt-in on purpose.** Without the switch, running the API on a laptop would
+start driving whatever phone happened to be plugged into it.
+
+Register a device with its ADB target — a USB serial, or `host:port` for
+adb-over-TCP. The poller runs `adb devices -l` every few seconds and flips each
+device online/offline, reading its real screen geometry on the way up (stale
+dimensions put taps in the wrong place). `unauthorized` and `no permissions` are
+surfaced distinctly rather than as a flat "offline": the first means the USB
+debugging prompt has not been accepted on the phone, the second means udev rules
+or group membership on the appliance.
+
+Two differences from a Cuttlefish VM, both deliberate:
+
+- **`OPENCUTTLES_EXECUTE_CVD` does not apply.** That setting governs launching
+  VMs; it has nothing to say about talking to hardware.
+- **Play Protect is left alone.** The appliance disables package verification
+  before `adb install` on a VM it owns, because verification hangs on a device
+  with no network. That change is persistent, so it is never applied to a real
+  handset — installs there pay the phone-home cost instead.
+
+> `adb` is a single shared daemon. The appliance's adb server is also used for
+> Cuttlefish boot polling, so never run `adb kill-server` on the appliance: it
+> disrupts both. Pin `ANDROID_ADB_SERVER_PORT` if something else on the host
+> uses adb.
+
+> **adb-over-TCP is unauthenticated on the LAN** once paired — anyone who can
+> reach port 5555 owns the device. Prefer USB, and never expose it to an
+> untrusted network. See the architecture notes on device hosts.
+
 ### Optional: mutual TLS for runners
 
 **Off by default.** An enrollment token is a bearer credential — replayable by

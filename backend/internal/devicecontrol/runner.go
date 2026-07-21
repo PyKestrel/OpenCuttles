@@ -15,6 +15,13 @@ type ExecRunner struct {
 	logger *slog.Logger
 }
 
+// NewExecRunner builds the default exec-backed runner. Exported so other
+// packages (the physical-device poller) can shell out to adb with the same
+// raw-stdout semantics rather than defining a near-duplicate.
+func NewExecRunner(logger *slog.Logger) ExecRunner {
+	return ExecRunner{logger: logger}
+}
+
 func (r ExecRunner) Run(ctx context.Context, stdin []byte, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	if len(stdin) > 0 {

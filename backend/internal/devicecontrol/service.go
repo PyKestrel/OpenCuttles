@@ -546,12 +546,15 @@ func (s *Service) InputSize(ctx context.Context, id string) (w, h int, err error
 	if err != nil {
 		return 0, 0, err
 	}
-	return parseWmSize(out)
+	return ParseWMSize(out)
 }
 
-// parseWmSize reads `wm size` output, preferring an "Override size" over the
+// ParseWMSize reads `wm size` output, preferring an "Override size" over the
 // "Physical size" (the override is the active input coordinate space).
-func parseWmSize(out string) (int, int, error) {
+//
+// Exported so the reachability poller can persist real screen geometry without
+// duplicating this preference — getting it wrong puts taps in the wrong place.
+func ParseWMSize(out string) (int, int, error) {
 	var physW, physH, ovrW, ovrH int
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
