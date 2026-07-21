@@ -66,7 +66,7 @@ export function SpecDraftDialog({ folder, onClose, onSaved }: { folder: string; 
             <input
               ref={fileRef}
               type="file"
-              accept=".md,.markdown,.txt,.text,.docx"
+              accept=".md,.markdown,.txt,.text,.docx,.pdf"
               hidden
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
@@ -88,7 +88,7 @@ export function SpecDraftDialog({ folder, onClose, onSaved }: { folder: string; 
             ) : (
               <>
                 <Button variant="secondary" onClick={() => fileRef.current?.click()} className="w-full">
-                  <Upload className="size-3.5" /> Choose a document — Markdown, text, or Word
+                  <Upload className="size-3.5" /> Choose a document — Markdown, text, Word, or PDF
                 </Button>
                 <div className="flex items-center gap-3 text-[11.5px] uppercase tracking-wide text-muted-foreground/60">
                   <span className="h-px flex-1" style={{ background: "var(--border)" }} />or paste<span className="h-px flex-1" style={{ background: "var(--border)" }} />

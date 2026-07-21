@@ -3,9 +3,11 @@ module github.com/opencuttles/opencuttles/backend
 go 1.25.0
 
 require (
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/xuri/excelize/v2 v2.11.0
+	golang.org/x/sys v0.46.0
 	modernc.org/sqlite v1.37.1
 )
 
@@ -28,7 +30,6 @@ require (
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 	modernc.org/libc v1.65.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

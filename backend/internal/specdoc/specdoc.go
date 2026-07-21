@@ -47,7 +47,21 @@ func (e ErrNoText) Error() string {
 type ErrUnsupported struct{ Ext string }
 
 func (e ErrUnsupported) Error() string {
-	return fmt.Sprintf("cannot read %q documents; supported: .md, .txt, .docx, or pasted text", e.Ext)
+	return fmt.Sprintf("cannot read %q documents; supported: .md, .txt, .docx, .pdf, or pasted text", e.Ext)
+}
+
+// ErrPoorText reports text that was extracted but is too damaged to use.
+//
+// The realistic case is a PDF whose inter-word spacing did not survive
+// extraction. Sending it to the model anyway is worse than refusing: the model
+// will confidently produce cases from text it has effectively guessed at, and a
+// reviewer reading fluent output has no way to tell it came from mush.
+type ErrPoorText struct{ Format string }
+
+func (e ErrPoorText) Error() string {
+	return fmt.Sprintf("the text in this %s came out garbled — the words run together, "+
+		"which happens with some PDF generators. Copy the relevant section and paste it "+
+		"in instead", e.Format)
 }
 
 // Extract reads a document, choosing a parser by filename extension.
@@ -63,6 +77,24 @@ func Extract(filename string, data []byte) (Result, error) {
 			return Result{}, err
 		}
 		return finish(text, "Word document")
+	case ".pdf":
+		text, err := extractPDF(data)
+		if err != nil {
+			return Result{}, err
+		}
+		res, err := finish(text, "PDF")
+		if err != nil {
+			return Result{}, err
+		}
+		// The spacing check runs only for PDFs. Other formats carry their word
+		// boundaries in the file itself and cannot fail this way, and a legitimate
+		// document full of long tokens (hashes, URLs) should not be refused.
+		if warn, err := checkWordSpacing(res.Text, "PDF"); err != nil {
+			return Result{}, err
+		} else if warn != "" {
+			res.Warnings = append(res.Warnings, warn)
+		}
+		return res, nil
 	default:
 		return Result{}, ErrUnsupported{Ext: filepath.Ext(filename)}
 	}
