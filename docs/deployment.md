@@ -150,6 +150,41 @@ the runner verifies it before executing the file. Artifacts uploaded before this
 existed have no hash — the runner logs that it cannot verify them rather than
 failing.
 
+### Optional: mutual TLS for runners
+
+**Off by default.** An enrollment token is a bearer credential — replayable by
+anyone who observes it. A client certificate adds proof-of-possession, so an
+attacker also needs a private key that never leaves the enrolled machine.
+
+```bash
+OPENCUTTLES_RUNNER_MTLS_LISTEN=0.0.0.0:8443   # enables it; empty = off
+OPENCUTTLES_RUNNER_MTLS_URL=                  # override if port-forwarded
+```
+
+The appliance mints its own CA on first use and stores the key encrypted with
+`OPENCUTTLES_SECRET_KEY` — which is therefore required. Enrolling or rotating a
+device then also issues it a client certificate, which the dashboard hands over
+with the token.
+
+The certificate is verified by the API process on its own TLS listener, not by
+Caddy with the identity forwarded in a header. Trusting a header for
+authentication is the same shape as the `X-Forwarded-For` spoofing this codebase
+already had to fix, and it would hold only while the backend port stayed
+unreachable. The listener reuses the appliance certificate
+(`OPENCUTTLES_TLS_CERT` / `OPENCUTTLES_TLS_KEY`), so runners verify it with the
+pin they already hold. Open the port in your firewall.
+
+> **Enabling this disconnects every existing runner.** Once on, the
+> Caddy-fronted path refuses runner traffic outright — otherwise an attacker
+> with a stolen token would simply use that port and the certificate requirement
+> would be decorative. Each device must be re-enrolled (or have its token
+> rotated) to receive a certificate. Plan the cutover.
+
+Revocation needs no certificate machinery: the appliance checks the device
+record on every connection, so revoking a device stops its certificate working
+immediately. Certificates are also short-lived, so a lost machine's key expires
+on its own.
+
 ### Secrets
 
 Three values in that file are real credentials:

@@ -277,6 +277,24 @@ func testServer(t *testing.T) http.Handler {
 	return handler
 }
 
+// newTestAPIServer hands back the concrete *Server alongside its handler, for
+// tests that need to reach past the HTTP surface (the runner CA, the mTLS mux).
+func newTestAPIServer(t *testing.T) (*Server, http.Handler) {
+	t.Helper()
+	t.Setenv("OPENCUTTLES_DEV_MODE", "1")
+
+	db, err := store.OpenSQLite(filepath.Join(t.TempDir(), "opencuttles.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	authService := auth.NewService(db)
+	orch := orchestrator.NewService(db, noopRunner{}, slog.Default())
+	devices := devicecontrol.NewService(db, nil, slog.Default())
+	srv := New(db, orch, authService, devices, slog.Default(), false, "")
+	return srv, srv.Handler()
+}
+
 // testServerWithStore is testServer but also hands back the store, for tests
 // that need to seed data behind the API.
 func testServerWithStore(t *testing.T) (http.Handler, *store.SQLite) {

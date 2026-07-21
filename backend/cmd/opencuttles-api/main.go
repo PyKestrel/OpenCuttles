@@ -50,9 +50,10 @@ func main() {
 	} else if swept > 0 {
 		logger.Warn("marked interrupted cycle runs as failed", "count", swept)
 	}
+	apiServer := api.New(db, service, authService, devices, logger, secureCookies, allowedOrigin)
 	server := &http.Server{
 		Addr:              listenAddr,
-		Handler:           api.NewServer(db, service, authService, devices, logger, secureCookies, allowedOrigin),
+		Handler:           apiServer.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -64,12 +65,38 @@ func main() {
 		}
 	}()
 
+	// Optional runner mutual-TLS listener. Off unless
+	// OPENCUTTLES_RUNNER_MTLS_LISTEN is set. It terminates TLS here rather than
+	// behind Caddy so the client certificate is verified by the process that acts
+	// on it, instead of being asserted by a forwarded header.
+	var mtlsServer *http.Server
+	if mtls, err := apiServer.MTLSServer(context.Background()); err != nil {
+		// Misconfigured mTLS must not silently fall back to token-only auth: the
+		// operator asked for it, and every runner would otherwise be refused with
+		// no explanation.
+		logger.Error("runner mTLS is enabled but could not start", "error", err)
+		os.Exit(1)
+	} else if mtls != nil {
+		mtlsServer = mtls
+		go func() {
+			logger.Info("starting runner mTLS listener", "addr", mtls.Addr)
+			// Certificates come from TLSConfig, so the file arguments are empty.
+			if err := mtls.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+				logger.Error("runner mTLS listener failed", "error", err)
+				os.Exit(1)
+			}
+		}()
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	<-ctx.Done()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if mtlsServer != nil {
+		_ = mtlsServer.Shutdown(shutdownCtx)
+	}
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown failed", "error", err)
 		os.Exit(1)

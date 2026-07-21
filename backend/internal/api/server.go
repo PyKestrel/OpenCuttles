@@ -62,6 +62,7 @@ type Server struct {
 	cycles        *scenario.CycleExecutor
 	secrets       *secretbox.Box
 	runners       *runnerhub.Hub
+	handler       http.Handler
 }
 
 // operatorPortFromEnv resolves the host-wide cuttlefish-operator HTTPS port.
@@ -76,7 +77,18 @@ func operatorPortFromEnv() int {
 	return 1443
 }
 
+// NewServer builds the API handler for the main (Caddy-fronted) listener.
+// Callers that also need the optional runner mTLS listener use New instead.
 func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *auth.Service, devices *devicecontrol.Service, logger *slog.Logger, secureCookies bool, allowedOrigin string) http.Handler {
+	return New(store, orch, authService, devices, logger, secureCookies, allowedOrigin).Handler()
+}
+
+// Handler is the HTTP handler for the main listener.
+func (s *Server) Handler() http.Handler { return s.handler }
+
+// New builds the server and returns it, so the caller can reach both the main
+// handler and the optional runner mTLS listener.
+func New(store *store.SQLite, orch *orchestrator.Service, authService *auth.Service, devices *devicecontrol.Service, logger *slog.Logger, secureCookies bool, allowedOrigin string) *Server {
 	server := &Server{
 		store:         store,
 		orch:          orch,
@@ -94,7 +106,7 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	server.operatorPort = operatorPortFromEnv()
 	visionClient := vision.NewFromEnv()
 	server.mcp = mcpserver.New(devices, store, visionClient, logger)
-	server.mcp.SetSink(store)                     // report_step_result → store.AppendStep
+	server.mcp.SetSink(store)                      // report_step_result → store.AppendStep
 	server.mcp.SetVQA(llmVisionQuerier{s: server}) // ask_screen → configured LLM vision (caption fallback)
 	server.mcpHandler = server.mcp.Handler()
 	server.tests = scenario.New(store, devices, visionClient, logger)
@@ -136,7 +148,8 @@ func NewServer(store *store.SQLite, orch *orchestrator.Service, authService *aut
 	// without bound (window from the retention.days setting; default 30, 0=off).
 	go retention.New(scenario.ArtifactRoot(), store, logger).Run(context.Background())
 	server.routes()
-	return server.withMiddleware(server.mux)
+	server.handler = server.withMiddleware(server.mux)
+	return server
 }
 
 func (s *Server) routes() {
@@ -689,12 +702,23 @@ func (s *Server) onboardDesktop(w http.ResponseWriter, r *http.Request, req doma
 	principal, _ := principalFromContext(r.Context())
 	s.audit(r, principal, "onboard_device", "instance", instance.ID, "accepted", req.Platform)
 	origin, pin := enrollmentTLS()
-	writeJSON(w, http.StatusCreated, map[string]any{
+	payload := map[string]any{
 		"instance":        instance,
 		"enrollmentToken": token,
 		"applianceOrigin": origin,
 		"appliancePin":    pin,
-	})
+	}
+	// When mutual TLS is on, the device also needs a client identity. A failure
+	// here must not leave a half-enrolled device that can never connect, so it
+	// is surfaced rather than logged and swallowed.
+	if bundle, err := s.issueRunnerBundle(r.Context(), instance.ID); err != nil {
+		writeError(w, err)
+		return
+	} else if bundle != nil {
+		payload["clientBundle"] = bundle
+		payload["mtlsEndpoint"] = mtlsEndpoint(origin)
+	}
+	writeJSON(w, http.StatusCreated, payload)
 }
 
 // rotateDesktopToken issues a new enrollment token for a desktop device and
@@ -770,6 +794,16 @@ func (s *Server) replaceDesktopToken(w http.ResponseWriter, r *http.Request, iss
 		body["enrollmentToken"] = token
 		body["applianceOrigin"] = origin
 		body["appliancePin"] = pin
+		// Rotation reissues the client identity too, so a rotated device gets a
+		// complete set of credentials rather than a token its old certificate no
+		// longer pairs with.
+		if bundle, err := s.issueRunnerBundle(r.Context(), id); err != nil {
+			writeError(w, err)
+			return
+		} else if bundle != nil {
+			body["clientBundle"] = bundle
+			body["mtlsEndpoint"] = mtlsEndpoint(origin)
+		}
 	}
 	writeJSON(w, http.StatusOK, body)
 }
@@ -814,6 +848,11 @@ func newRunnerToken() (string, error) {
 
 // authenticateRunner resolves a runner request's bearer/X-Runner-Token to its
 // device id by matching the token hash. Wired into the runner hub.
+//
+// When mutual TLS is enabled the token alone is not sufficient: the request must
+// also arrive on the mTLS listener carrying a client certificate this appliance
+// issued for that same device. Both are required, so neither a copied token nor
+// a stolen key is enough on its own.
 func (s *Server) authenticateRunner(r *http.Request) (string, bool) {
 	tok := runnerTokenFromRequest(r)
 	if tok == "" {
@@ -823,6 +862,20 @@ func (s *Server) authenticateRunner(r *http.Request) (string, bool) {
 	inst, err := s.store.FindDesktopByTokenHash(r.Context(), hex.EncodeToString(sum[:]))
 	if err != nil {
 		return "", false
+	}
+
+	if MTLSEnabled() {
+		// Refuse runner traffic that did not come over the mTLS listener.
+		// Without this the feature would be pointless: an attacker holding a
+		// stolen token would simply use the Caddy-fronted port and skip the
+		// certificate entirely.
+		if err := verifyRunnerClientCert(r, inst.ID); err != nil {
+			if s.logger != nil {
+				s.logger.Warn("rejected runner: mutual TLS is required",
+					"device", inst.ID, "error", err)
+			}
+			return "", false
+		}
 	}
 	return inst.ID, true
 }
